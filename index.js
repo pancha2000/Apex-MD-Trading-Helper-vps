@@ -1,4 +1,3 @@
-// සියලුම පරණ modules සහ imports එලෙසම පවතී
 const {
     default: makeWASocket,
     useMultiFileAuthState,
@@ -8,7 +7,7 @@ const {
     Browsers
 } = require('@whiskeysockets/baileys');
 
-// මුල් කේතයේ තිබූ සියලුම functions (කිසිවක් අඩු කර නැත)
+// සියලුම පරණ functions එලෙසම ඇත
 const { getBuffer, getGroupAdmins, getRandom, h2k, isUrl, Json, runtime, sleep, fetchJson } = require('./lib/functions');
 const fs = require('fs');
 const P = require('pino');
@@ -24,17 +23,13 @@ const express = require("express");
 const app = express();
 const port = process.env.PORT || 8000;
 
+const authPath = path.join(__dirname, 'auth_info_baileys');
+
+// WhatsApp සම්බන්ධතාවය හසුරුවන ප්‍රධාන ශ්‍රිතය
 async function startBot() {
-    // 1. ඩේටාබේස් සම්බන්ධ කිරීම (Auto Reset පාලනය මෙහි ඇත)
-    await connectDB();
-    await readEnv();
-    let botSettings = getBotSettings();
+    console.log("🚀 Starting APEX-MD Connection...");
 
-    console.log("🚀 Starting APEX-MD Core...");
-
-    const authPath = path.join(__dirname, 'auth_info_baileys');
-
-    // 2. සෙෂන් ඩවුන්ලෝඩ් කිරීමේ ශ්‍රිතය
+    // සෙෂන් එක නැත්නම් Mega එකෙන් බාගත කිරීම
     if (!fs.existsSync(authPath) && config.SESSION_ID) {
         console.log("📥 Downloading Session...");
         try {
@@ -43,13 +38,13 @@ async function startBot() {
             await new Promise((resolve, reject) => {
                 file.download((err, data) => {
                     if (err) reject(err);
-                    if (!fs.existsSync(authPath)) fs.mkdirSync(authPath);
+                    if (!fs.existsSync(authPath)) fs.mkdirSync(authPath, { recursive: true });
                     fs.writeFileSync(path.join(authPath, 'creds.json'), data);
                     resolve();
                 });
             });
-            console.log("✅ Session Loaded");
-        } catch (e) { console.log("❌ Mega Session Error"); }
+            console.log("✅ Session Downloaded");
+        } catch (e) { console.log("❌ Mega Download Error"); }
     }
 
     const { state, saveCreds } = await useMultiFileAuthState(authPath);
@@ -62,20 +57,21 @@ async function startBot() {
 
     conn.ev.on('creds.update', saveCreds);
 
-    conn.ev.on('connection.update', (update) => {
+    conn.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect } = update;
         if (connection === 'close') {
-            if (lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut) startBot();
+            const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
+            if (shouldReconnect) startBot(); // සම්බන්ධතාවය බිඳ වැටුණොත් නැවත උත්සාහ කරයි
         } else if (connection === 'open') {
             console.log('✅ APEX-MD IS ONLINE');
             
-            // Plugins ලෝඩ් කිරීම
+            // ප්ලගින්ස් ලෝඩ් කිරීම
             const pDir = path.join(__dirname, 'plugins');
             if (fs.existsSync(pDir)) {
                 fs.readdirSync(pDir).forEach(file => {
                     if (file.endsWith('.js')) {
                         require(path.join(pDir, file));
-                        if (config.DEBUG_MODE === 'true') console.log(`[OK] ${file} loaded`);
+                        if (config.DEBUG_MODE === 'true') console.log(`[PLUGIN] ${file} loaded`);
                     }
                 });
             }
@@ -91,9 +87,8 @@ async function startBot() {
             const body = m.body || '';
             const from = m.chat;
 
-            // DEBUG_MODE ලොග්ස් පාලනය
             if (config.DEBUG_MODE === 'true' && body) {
-                console.log(`📩 [LOG] ${m.sender.split('@')[0]}: ${body}`);
+                console.log(`📩 [${m.sender.split('@')[0]}]: ${body}`);
             }
 
             const prefix = config.PREFIX || ".";
@@ -105,13 +100,10 @@ async function startBot() {
                             events.commands.find((c) => c.alias && c.alias.includes(command));
 
                 if (cmd) {
-                    if (config.DEBUG_MODE === 'true') console.log(`⚡ Executing: ${command}`);
-                    
                     const args = body.trim().split(/ +/).slice(1);
                     const q = args.join(' ');
                     const isOwner = config.OWNER_CONTACT.includes(m.sender.split('@')[0]);
 
-                    // විධානය ක්‍රියාත්මක කිරීම (පරණ සියලුම params එලෙසම ඇත)
                     await cmd.function(conn, mek, m, {
                         from, prefix, q, args, isOwner, 
                         reply: (text) => conn.sendMessage(from, { text }, { quoted: mek }),
@@ -119,14 +111,23 @@ async function startBot() {
                     });
                 }
             }
-        } catch (e) { console.log(e); }
+        } catch (e) { console.log("Handler Error:", e); }
     });
 }
 
-// Keep alive server
-app.get("/", (req, res) => res.send("Bot is Alive"));
-app.listen(port, () => startBot());
+// මුලින්ම DB එකට සම්බන්ධ වී පසුව සර්වර් එක සහ බොට් පණගන්වයි
+async function initApp() {
+    await connectDB(); // එක පාරක් පමණක් DB එකට සම්බන්ධ වේ
+    await readEnv();
+    
+    app.get("/", (req, res) => res.send("APEX-MD Online"));
+    app.listen(port, () => {
+        console.log(`Server running on port ${port}`);
+        startBot();
+    });
+}
 
-// Anti-crash logic
-process.on('uncaughtException', (err) => console.error(err));
-process.on('unhandledRejection', (err) => console.error(err));
+initApp();
+
+process.on('uncaughtException', (err) => console.error('Exception:', err));
+process.on('unhandledRejection', (err) => console.error('Rejection:', err));

@@ -3,7 +3,7 @@ if (fs.existsSync('config.env')) require('dotenv').config({ path: './config.env'
 
 module.exports = {
     // =================== අනිවාර්යයෙන් පිරවිය යුතුයි ===================
-    SESSION_ID: process.env.SESSION_ID || "ඔයාගේ_නව_සෙෂන්_ID_එක",
+    SESSION_ID: process.env.SESSION_ID || "nuYCSZQA#Pc_Upj0_WJMv_KbrsVH1mVSxTxkvFavKilM1B6vlQLQ",
     MONGODB: process.env.MONGODB || "mongodb+srv://realpancha:2006.Shehan@cluster0.jh6kzmp.mongodb.net/APEX_NEW?retryWrites=true&w=majority",
     
     // =================== බොට්ගේ තොරතුරු ============================

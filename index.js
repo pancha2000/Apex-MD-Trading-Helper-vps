@@ -3,11 +3,9 @@ const {
     useMultiFileAuthState,
     DisconnectReason,
     fetchLatestBaileysVersion,
-    Browsers,
-    getContentType
+    Browsers
 } = require('@whiskeysockets/baileys');
 
-// සියලුම පරණ හෙල්පර් ෆන්ක්ෂන්ස් (කිසිවක් අඩු කර නැත)
 const helpers = require('./lib/functions');
 const fs = require('fs');
 const P = require('pino');
@@ -23,17 +21,19 @@ const app = express();
 const port = process.env.PORT || 8000;
 const authPath = path.join(__dirname, 'auth_info_baileys');
 
-let isBotStarted = false;
+// බොට් පණගැන්වීමේ තත්ත්වය පාලනයට
+let isBotStarting = false;
 
 async function startBot() {
-    if (isBotStarted) return;
-    isBotStarted = true;
+    // එකම වෙලාවේ දෙපාරක් රන් වීම වැළැක්වීමට
+    if (isBotStarting) return;
+    isBotStarting = true;
 
-    console.log("🚀 Initializing APEX-MD Core...");
+    console.log("🚀 Initializing APEX-MD...");
 
-    // 1. සෙෂන් බාගත කිරීම
+    // 1. සෙෂන් එක නැත්නම් පමණක් ඩවුන්ලෝඩ් කිරීම
     if (!fs.existsSync(path.join(authPath, 'creds.json')) && config.SESSION_ID) {
-        console.log("📥 Syncing Session...");
+        console.log("📥 Syncing Session from Mega...");
         try {
             const sessUrl = config.SESSION_ID.includes("https://mega.nz") 
                 ? config.SESSION_ID 
@@ -46,10 +46,11 @@ async function startBot() {
 
             if (!fs.existsSync(authPath)) fs.mkdirSync(authPath, { recursive: true });
             fs.writeFileSync(path.join(authPath, 'creds.json'), data);
-            console.log("✅ Session Synced Successfully!");
+            console.log("✅ Session Ready.");
         } catch (e) {
-            console.log("❌ Session Sync Fail:", e.message);
-            isBotStarted = false;
+            console.log("❌ Mega Sync Fail:", e.message);
+            isBotStarting = false;
+            return;
         }
     }
 
@@ -61,20 +62,35 @@ async function startBot() {
         printQRInTerminal: false,
         browser: Browsers.macOS("Desktop"),
         auth: state,
-        version
+        version,
+        // සෙෂන් එක ස්ථාවරව තබා ගැනීමට පහත සෙටින්ග්ස් එක් කළා
+        connectTimeoutMs: 60000,
+        defaultQueryTimeoutMs: 0,
+        keepAliveIntervalMs: 10000
     });
 
     conn.ev.on('creds.update', saveCreds);
 
     conn.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect } = update;
+        
         if (connection === 'close') {
-            isBotStarted = false;
+            isBotStarting = false;
             const reason = lastDisconnect?.error?.output?.statusCode;
+            console.log(`📡 Disconnected. Reason: ${reason}`);
+
+            // සෙෂන් එක වැඩ කරන්නේ නැත්නම් ෆයිල් එක මකන්න (එවිට ඊළඟ වතාවේ අලුතින් බාගත වේ)
+            if (reason === 401 || reason === 428) {
+                console.log("⚠️ Session Invalid. Clearing cache...");
+                if (fs.existsSync(authPath)) fs.rmSync(authPath, { recursive: true, force: true });
+            }
+
             if (reason !== DisconnectReason.loggedOut) {
-                setTimeout(() => startBot(), 5000);
+                console.log("🔄 Reconnecting in 10s...");
+                setTimeout(() => startBot(), 10000);
             }
         } else if (connection === 'open') {
+            isBotStarting = false;
             console.log('✅ APEX-MD IS CONNECTED');
             
             // Plugins load කිරීම
@@ -82,14 +98,9 @@ async function startBot() {
             if (fs.existsSync(pDir)) {
                 fs.readdirSync(pDir).forEach(file => {
                     if (file.endsWith('.js')) {
-                        try {
-                            require(path.join(pDir, file));
-                        } catch (e) {
-                            console.log(`Plugin Load Error [${file}]:`, e.message);
-                        }
+                        try { require(path.join(pDir, file)); } catch (e) {}
                     }
                 });
-                console.log("📂 All Plugins Loaded.");
             }
         }
     });
@@ -99,7 +110,6 @@ async function startBot() {
             const mek = mEvent.messages[0];
             if (!mek || !mek.message) return;
             
-            // මැසේජ් එක කියවිය හැකි ලෙස සකස් කිරීම
             const m = sms(conn, mek);
             const body = m.body || '';
             const from = m.chat;
@@ -109,43 +119,33 @@ async function startBot() {
             }
 
             const prefix = config.PREFIX || ".";
-            const isCmd = body.startsWith(prefix);
-            
-            if (isCmd) {
-                const commandName = body.slice(prefix.length).trim().split(' ')[0].toLowerCase();
-                const cmd = events.commands.find(c => c.pattern === commandName) || 
-                            events.commands.find(c => c.alias && c.alias.includes(commandName));
+            if (!body.startsWith(prefix)) return;
 
-                if (cmd) {
-                    if (config.DEBUG_MODE === 'true') console.log(`⚡ [EXEC] ${commandName}`);
-                    
-                    const args = body.trim().split(/ +/).slice(1);
-                    const q = args.join(' ');
-                    const isOwner = config.OWNER_CONTACT.includes(m.sender.split('@')[0]);
+            const commandName = body.slice(prefix.length).trim().split(' ')[0].toLowerCase();
+            const cmd = events.commands.find(c => c.pattern === commandName) || 
+                        events.commands.find(c => c.alias && c.alias.includes(commandName));
 
-                    // විධානයට අදාළ සියලුම functions ලබා දීම
-                    await cmd.function(conn, mek, m, {
-                        from, 
-                        prefix, 
-                        q, 
-                        args, 
-                        isOwner, 
-                        reply: (text) => conn.sendMessage(from, { text }, { quoted: mek }),
-                        // පරණ සියලුම හෙල්පර්ස් මෙහි ඇත
-                        getBuffer: helpers.getBuffer,
-                        getGroupAdmins: helpers.getGroupAdmins,
-                        getRandom: helpers.getRandom,
-                        h2k: helpers.h2k,
-                        isUrl: helpers.isUrl,
-                        Json: helpers.Json,
-                        runtime: helpers.runtime,
-                        sleep: helpers.sleep,
-                        fetchJson: helpers.fetchJson
-                    });
-                }
+            if (cmd) {
+                const args = body.trim().split(/ +/).slice(1);
+                const q = args.join(' ');
+                const isOwner = config.OWNER_CONTACT.includes(m.sender.split('@')[0]);
+
+                await cmd.function(conn, mek, m, {
+                    from, prefix, q, args, isOwner, 
+                    reply: (text) => conn.sendMessage(from, { text }, { quoted: mek }),
+                    getBuffer: helpers.getBuffer,
+                    getGroupAdmins: helpers.getGroupAdmins,
+                    getRandom: helpers.getRandom,
+                    h2k: helpers.h2k,
+                    isUrl: helpers.isUrl,
+                    Json: helpers.Json,
+                    runtime: helpers.runtime,
+                    sleep: helpers.sleep,
+                    fetchJson: helpers.fetchJson
+                });
             }
         } catch (e) {
-            console.error("Critical Handler Error:", e);
+            console.error("Handler Error:", e.message);
         }
     });
 }
@@ -154,7 +154,7 @@ async function runSystem() {
     try {
         await connectDB();
         await readEnv();
-        app.get("/", (req, res) => res.send("APEX-MD Running ✅"));
+        app.get("/", (req, res) => res.send("APEX-MD Active ✅"));
         app.listen(port, () => {
             console.log(`🌐 Web Server on port ${port}`);
             startBot();
@@ -166,5 +166,6 @@ async function runSystem() {
 
 runSystem();
 
+// Crash නොවී තබා ගැනීමට
 process.on('uncaughtException', (err) => console.log('Runtime Error:', err.message));
-process.on('unhandledRejection', (err) => console.log('Promise Rejection:', err.message));
+process.on('unhandledRejection', (err) => console.log('Rejection:', err.message));

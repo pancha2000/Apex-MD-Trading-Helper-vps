@@ -1,19 +1,23 @@
 const fs = require('fs');
-if (fs.existsSync('config.env')) require('dotenv').config({ path: './config.env' });
+if (fs.existsSync('config.env')) {
+    require('dotenv').config({ path: './config.env' });
+}
 
 module.exports = {
-    // =================== අනිවාර්යයෙන් පිරවිය යුතුයි ===================
+    // =================== Bot Info ===============================
     SESSION_ID: process.env.SESSION_ID || "nuYCSZQA#Pc_Upj0_WJMv_KbrsVH1mVSxTxkvFavKilM1B6vlQLQ",
-    MONGODB: process.env.MONGODB || "mongodb+srv://realpancha:2006.Shehan@cluster0.jh6kzmp.mongodb.net/APEX_NEW?retryWrites=true&w=majority",
+    MONGODB: process.env.MONGODB || "mongodb+srv://realpancha:2006.Shehan@cluster0.jh6kzmp.mongodb.net/APEX_V4?retryWrites=true&w=majority",
     
-    // =================== බොට්ගේ තොරතුරු ============================
+    // =================== Settings ===============================
     PREFIX: process.env.PREFIX || ".",
     MODE: process.env.MODE || "public",
-    OWNER_NAME: process.env.OWNER_NAME || "Shehan Vimukthi",
-    OWNER_CONTACT: process.env.OWNER_CONTACT || "94701391585",
-    GEMINI_API_KEY: process.env.GEMINI_API_KEY || "AIzaSyCItRq9qKhyDo5ZjO_ZBtRC1Z-Y3UD9Ma0",
     
-    // =================== Alive තොරතුරු ==============================
+    // =================== Owner Info =============================
+    OWNER_NAME: process.env.OWNER_NAME || "Shehan Vimukthi",
+    OWNER_CONTACT: process.env.OWNER_CONTACT || "94701391585", // wa.me කෑල්ල අයින් කරන්න
+    
+    // =================== Other =================================
+    GEMINI_API_KEY: process.env.GEMINI_API_KEY || "AIzaSyCItRq9qKhyDo5ZjO_ZBtRC1Z-Y3UD9Ma0",
     ALIVE_IMG: process.env.ALIVE_IMG || "https://telegra.ph/file/ad25b2227fa2a1a01b707.jpg",
-    ALIVE_MSG: process.env.ALIVE_MSG || "I am APEX-MD, always ready to help! ✅"
+    ALIVE_MSG: process.env.ALIVE_MSG || "*BOT IS RUNNING SUCCESSFULLY* ✅"
 };

@@ -1,4 +1,3 @@
-
 /**
  * APEX-MD WhatsApp Bot - Stable Core
  * Created by Shehan Vimukthi

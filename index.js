@@ -1,33 +1,36 @@
-const {
-    default: makeWASocket,
-    useMultiFileAuthState,
-    DisconnectReason,
-    fetchLatestBaileysVersion,
-    Browsers,
-    makeCacheableSignalKeyStore
+const { 
+    default: makeWASocket, 
+    useMultiFileAuthState, 
+    DisconnectReason, 
+    Browsers, 
+    fetchLatestBaileysVersion 
 } = require('@whiskeysockets/baileys');
-
-const fs = require('fs');
 const P = require('pino');
+const fs = require('fs');
 const path = require('path');
+const express = require("express");
+const { File } = require('megajs');
 const config = require('./config');
 const { sms } = require('./lib/msg');
-const { connectDB, getBotSettings, readEnv } = require('./lib/mongodb');
-const express = require("express");
+const { connectDB, readEnv } = require('./lib/mongodb');
+
 const app = express();
 const port = process.env.PORT || 8000;
-const { File } = require('megajs');
+const authPath = path.join(__dirname, 'auth_info_baileys');
 
-const authFile = 'auth_info_baileys';
-const authPath = path.join(__dirname, authFile);
+// බොට්ව 24/7 පණගන්වා තැබීමට සර්වර් එකක් සෑදීම
+app.get("/", (req, res) => res.send("APEX-MD is Running ✅"));
 
 async function startBot() {
-    console.log("🚀 Starting APEX-MD...");
+    console.log("🚀 Initializing APEX-MD...");
+
+    // 1. ඩේටාබේස් එකට සම්බන්ධ වීම (Auto Reset මෙහිදී සිදුවේ)
     await connectDB();
     await readEnv();
 
+    // 2. සෙෂන් එක නැත්නම් Mega එකෙන් ඩවුන්ලෝඩ් කිරීම
     if (!fs.existsSync(authPath) && config.SESSION_ID) {
-        console.log("📥 Downloading Session...");
+        console.log("📥 Downloading Session from Mega...");
         try {
             const sessdata = config.SESSION_ID.replace("https://mega.nz/file/", "").trim();
             const file = File.fromURL(`https://mega.nz/file/${sessdata}`);
@@ -36,40 +39,44 @@ async function startBot() {
                     if (err) reject(err);
                     if (!fs.existsSync(authPath)) fs.mkdirSync(authPath);
                     fs.writeFileSync(path.join(authPath, 'creds.json'), data);
-                    console.log("✅ Session Downloaded!");
                     resolve();
                 });
             });
+            console.log("✅ Session Downloaded!");
         } catch (e) {
-            console.log("❌ Session Download Failed.");
+            console.log("❌ Session Error:", e.message);
         }
     }
 
     const { state, saveCreds } = await useMultiFileAuthState(authPath);
     const { version } = await fetchLatestBaileysVersion();
 
+    // 3. WhatsApp සම්බන්ධතාවය ගොඩනැගීම
     const conn = makeWASocket({
         logger: P({ level: 'silent' }),
-        printQRInTerminal: false,
+        printQRInTerminal: true,
         browser: Browsers.ubuntu("Chrome"),
-        auth: {
-            creds: state.creds,
-            keys: makeCacheableSignalKeyStore(state.keys, P({ level: "silent" })),
-        },
+        auth: state,
         version
     });
 
+    // සම්බන්ධතාවයේ යාවත්කාලීන කිරීම් පරීක්ෂාව
     conn.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect } = update;
         if (connection === 'close') {
-            const reason = lastDisconnect.error?.output?.statusCode;
-            if (reason !== DisconnectReason.loggedOut) startBot();
+            const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
+            if (shouldReconnect) startBot(); // නැවත සම්බන්ධ වීම
         } else if (connection === 'open') {
-            console.log('✅ APEX-MD IS ONLINE');
-            const pluginDir = path.join(__dirname, 'plugins');
-            if (fs.existsSync(pluginDir)) {
-                fs.readdirSync(pluginDir).forEach(file => {
-                    if (file.endsWith('.js')) require(path.join(pluginDir, file));
+            console.log('✅ APEX-MD ONLINE');
+            
+            // Plugins ලෝඩ් කිරීම
+            const pDir = path.join(__dirname, 'plugins');
+            if (fs.existsSync(pDir)) {
+                fs.readdirSync(pDir).forEach(f => {
+                    if (f.endsWith('.js')) {
+                        require(path.join(pDir, f));
+                        if (config.DEBUG_MODE === 'true') console.log(`Loaded: ${f}`);
+                    }
                 });
             }
         }
@@ -77,48 +84,53 @@ async function startBot() {
 
     conn.ev.on('creds.update', saveCreds);
 
-    conn.ev.on('messages.upsert', async (mekEvent) => {
+    // 4. මැසේජ් ලැබෙන විට ක්‍රියාත්මක වන කොටස
+    conn.ev.on('messages.upsert', async (mEvent) => {
         try {
-            const mek = mekEvent.messages[0];
+            const mek = mEvent.messages[0];
             if (!mek.message) return;
-            const m = sms(conn, mek);
-            const from = m.chat;
-            const body = m.body || '';
             
+            const m = sms(conn, mek); // මැසේජ් එක කියවිය හැකි ලෙස සකස් කිරීම
+            const body = m.body || '';
+            const from = m.chat;
+
+            // Debug Mode එක ON නම් පණිවිඩ Log කිරීම
+            if (config.DEBUG_MODE === 'true' && body) {
+                console.log(`📩 [${m.sender.split('@')[0]}]: ${body}`);
+            }
+
+            // කමාන්ඩ් එකක්දැයි පරීක්ෂා කිරීම
             const prefix = config.PREFIX || ".";
             const isCmd = body.startsWith(prefix);
-            const command = isCmd ? body.slice(prefix.length).trim().split(' ')[0].toLowerCase() : '';
-            const args = body.trim().split(/ +/).slice(1);
-            const q = args.join(' ');
-            const isOwner = config.OWNER_CONTACT.includes(m.sender.split('@')[0]);
-
-            // ===== DEBUG MODE CONTROL =====
-            if (config.DEBUG_MODE === 'true' && body) {
-                console.log(`[MSG] From: ${m.sender.split('@')[0]} | Text: ${body}`);
-            }
-            // ==============================
-
+            
             if (isCmd) {
+                const commandName = body.slice(prefix.length).trim().split(' ')[0].toLowerCase();
                 const events = require('./command');
-                const cmd = events.commands.find((c) => c.pattern === command) || events.commands.find((c) => c.alias && c.alias.includes(command));
+                const cmd = events.commands.find(c => c.pattern === commandName) || 
+                            events.commands.find(c => c.alias && c.alias.includes(commandName));
 
                 if (cmd) {
-                    if (config.DEBUG_MODE === 'true') console.log(`[CMD] Executing: ${command}`);
+                    if (config.DEBUG_MODE === 'true') console.log(`⚡ Executing: ${commandName}`);
                     
+                    // කමාන්ඩ් එකට අදාළ දත්ත යැවීම
                     await cmd.function(conn, mek, m, {
-                        from, prefix, q, args, isOwner, 
+                        from, prefix, body, isOwner: config.OWNER_CONTACT.includes(m.sender.split('@')[0]),
                         reply: (text) => conn.sendMessage(from, { text }, { quoted: mek })
                     });
                 }
             }
         } catch (e) {
-            console.error(e);
+            console.error("Handler Error:", e);
         }
     });
 }
 
-app.get("/", (req, res) => res.send("APEX-MD Running"));
+// සර්වර් එක සහ බොට් පණගැන්වීම
 app.listen(port, () => {
     console.log(`Server running on port ${port}`);
     startBot();
 });
+
+// බොට් ක්‍රෑෂ් වීම වැළැක්වීමේ කේතය (Anti-Crash)
+process.on('uncaughtException', (err) => console.log('Caught exception: ', err));
+process.on('unhandledRejection', (reason) => console.log('Unhandled Rejection: ', reason));

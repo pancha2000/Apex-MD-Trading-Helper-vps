@@ -20,4 +20,11 @@ module.exports = {
     GEMINI_API_KEY: process.env.GEMINI_API_KEY || "AIzaSyCItRq9qKhyDo5ZjO_ZBtRC1Z-Y3UD9Ma0",
     ALIVE_IMG: process.env.ALIVE_IMG || "https://telegra.ph/file/ad25b2227fa2a1a01b707.jpg",
     ALIVE_MSG: process.env.ALIVE_MSG || "*BOT IS RUNNING SUCCESSFULLY* ✅"
+    // =================== Control Panel ==========================
+    // බොට් Restart වෙන හැම පාරම Database එක අලුත් කරගන්න (true/false)
+    AUTO_RESET_DB: process.env.AUTO_RESET_DB || "true",
+    
+    // Terminal එකේ මැසේජ් විස්තර පෙන්වන්න (true/false)
+    DEBUG_MODE: process.env.DEBUG_MODE || "true",
+
 };

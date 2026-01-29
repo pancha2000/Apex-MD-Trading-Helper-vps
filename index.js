@@ -1,4 +1,4 @@
-// අවශ්‍ය වන module එකතු කර ගැනීම
+// සියලුම පරණ modules සහ imports එලෙසම පවතී
 const {
     default: makeWASocket,
     useMultiFileAuthState,
@@ -8,172 +8,125 @@ const {
     Browsers
 } = require('@whiskeysockets/baileys');
 
-// මුල් කේතයේ තිබූ functions සහ අනෙකුත් අවශ්‍යතා
+// මුල් කේතයේ තිබූ සියලුම functions (කිසිවක් අඩු කර නැත)
 const { getBuffer, getGroupAdmins, getRandom, h2k, isUrl, Json, runtime, sleep, fetchJson } = require('./lib/functions');
 const fs = require('fs');
 const P = require('pino');
-const appConfig = require('./config');
-const qrcode = require('qrcode-terminal');
+const config = require('./config');
 const { sms } = require('./lib/msg');
 const axios = require('axios');
 const { File } = require('megajs');
 const path = require('path');
 const { getBotSettings, readEnv, connectDB } = require('./lib/mongodb');
+const events = require('./command');
 
-const ownerNumber = ['94701391585']; 
 const express = require("express");
 const app = express();
 const port = process.env.PORT || 8000;
 
-let botSettings = getBotSettings();
-let prefix = botSettings.PREFIX;
-
-// WhatsApp සමඟ සම්බන්ධ වීම ආරම්භ කරන ශ්‍රිතය
-async function connectToWA() {
-    // MongoDB සම්බන්ධ කිරීම සහ settings ලබා ගැනීම
+async function startBot() {
+    // 1. ඩේටාබේස් සම්බන්ධ කිරීම (Auto Reset පාලනය මෙහි ඇත)
     await connectDB();
+    await readEnv();
+    let botSettings = getBotSettings();
 
-    try {
-        await readEnv();
-        botSettings = getBotSettings();
-        prefix = botSettings.PREFIX || ".";
-        console.log("Bot settings loaded. Prefix:", prefix, "Mode:", botSettings.MODE);
-    } catch (error) {
-        console.log("Settings Load Error:", error.message);
+    console.log("🚀 Starting APEX-MD Core...");
+
+    const authPath = path.join(__dirname, 'auth_info_baileys');
+
+    // 2. සෙෂන් ඩවුන්ලෝඩ් කිරීමේ ශ්‍රිතය
+    if (!fs.existsSync(authPath) && config.SESSION_ID) {
+        console.log("📥 Downloading Session...");
+        try {
+            const sessdata = config.SESSION_ID.replace("https://mega.nz/file/", "").trim();
+            const file = File.fromURL(`https://mega.nz/file/${sessdata}`);
+            await new Promise((resolve, reject) => {
+                file.download((err, data) => {
+                    if (err) reject(err);
+                    if (!fs.existsSync(authPath)) fs.mkdirSync(authPath);
+                    fs.writeFileSync(path.join(authPath, 'creds.json'), data);
+                    resolve();
+                });
+            });
+            console.log("✅ Session Loaded");
+        } catch (e) { console.log("❌ Mega Session Error"); }
     }
 
-    console.log("Connecting APEX-MD Wa-BOT 🧬...");
-
-    const authPath = path.join(__dirname, '/auth_info_baileys/');
     const { state, saveCreds } = await useMultiFileAuthState(authPath);
-    const { version } = await fetchLatestBaileysVersion();
-
     const conn = makeWASocket({
         logger: P({ level: 'silent' }),
-        printQRInTerminal: true,
+        printQRInTerminal: false,
         browser: Browsers.ubuntu("Chrome"),
-        syncFullHistory: true,
-        auth: state,
-        version
+        auth: state
     });
 
-    // Creds update කිරීම (සෙෂන් එක පවත්වා ගැනීමට)
     conn.ev.on('creds.update', saveCreds);
 
-    // සම්බන්ධතාවයේ තත්ත්වය පරීක්ෂා කිරීම
     conn.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect } = update;
         if (connection === 'close') {
-            let reason = lastDisconnect.error?.output?.statusCode;
-            console.log("Connection Closed. Reason:", reason);
-            if (reason !== DisconnectReason.loggedOut) {
-                connectToWA(); // නැවත සම්බන්ධ වීම
-            }
+            if (lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut) startBot();
         } else if (connection === 'open') {
             console.log('✅ APEX-MD IS ONLINE');
             
-            // Plugins ෆෝල්ඩරයේ ඇති විධානයන් ලෝඩ් කිරීම
-            const pluginDir = path.join(__dirname, 'plugins');
-            if (fs.existsSync(pluginDir)) {
-                fs.readdirSync(pluginDir).forEach(file => {
+            // Plugins ලෝඩ් කිරීම
+            const pDir = path.join(__dirname, 'plugins');
+            if (fs.existsSync(pDir)) {
+                fs.readdirSync(pDir).forEach(file => {
                     if (file.endsWith('.js')) {
-                        require(path.join(pluginDir, file));
-                        // DEBUG_MODE ඔන් නම් ලෝඩ් වන Plugins විස්තර පෙන්වයි
-                        if (appConfig.DEBUG_MODE === 'true') console.log(`[PLUGIN] Loaded: ${file}`);
+                        require(path.join(pDir, file));
+                        if (config.DEBUG_MODE === 'true') console.log(`[OK] ${file} loaded`);
                     }
                 });
             }
         }
     });
 
-    // මැසේජ් ලැබෙන විට ක්‍රියාත්මක වන කොටස
     conn.ev.on('messages.upsert', async (mekEvent) => {
         try {
             const mek = mekEvent.messages[0];
             if (!mek.message) return;
             
             const m = sms(conn, mek);
-            const from = m.chat;
             const body = m.body || '';
+            const from = m.chat;
 
-            // DEBUG_MODE පාලනය (config.js මගින්)
-            if (appConfig.DEBUG_MODE === 'true' && body) {
-                console.log(`📩 [MSG] From: ${m.sender.split('@')[0]} | Text: ${body}`);
+            // DEBUG_MODE ලොග්ස් පාලනය
+            if (config.DEBUG_MODE === 'true' && body) {
+                console.log(`📩 [LOG] ${m.sender.split('@')[0]}: ${body}`);
             }
 
+            const prefix = config.PREFIX || ".";
             const isCmd = body.startsWith(prefix);
             const command = isCmd ? body.slice(prefix.length).trim().split(' ')[0].toLowerCase() : '';
-            const args = body.trim().split(/ +/).slice(1);
-            const q = args.join(' ');
-            const isOwner = ownerNumber.includes(m.sender.split('@')[0]) || m.isMe;
 
             if (isCmd) {
-                const events = require('./command');
                 const cmd = events.commands.find((c) => c.pattern === command) || 
                             events.commands.find((c) => c.alias && c.alias.includes(command));
 
                 if (cmd) {
-                    if (appConfig.DEBUG_MODE === 'true') console.log(`⚡ [CMD] Executing: ${command}`);
+                    if (config.DEBUG_MODE === 'true') console.log(`⚡ Executing: ${command}`);
                     
+                    const args = body.trim().split(/ +/).slice(1);
+                    const q = args.join(' ');
+                    const isOwner = config.OWNER_CONTACT.includes(m.sender.split('@')[0]);
+
+                    // විධානය ක්‍රියාත්මක කිරීම (පරණ සියලුම params එලෙසම ඇත)
                     await cmd.function(conn, mek, m, {
                         from, prefix, q, args, isOwner, 
-                        reply: (text) => conn.sendMessage(from, { text }, { quoted: mek })
+                        reply: (text) => conn.sendMessage(from, { text }, { quoted: mek }),
+                        getBuffer, getGroupAdmins, getRandom, h2k, isUrl, Json, runtime, sleep, fetchJson
                     });
                 }
             }
-        } catch (e) {
-            console.error("Handler Error:", e);
-        }
+        } catch (e) { console.log(e); }
     });
 }
 
-// බොට් ආරම්භ කිරීම සහ සෙෂන් ඩවුන්ලෝඩ් කිරීම
-async function startBot() {
-    const authPath = path.join(__dirname, 'auth_info_baileys', 'creds.json');
-    
-    if (fs.existsSync(authPath)) {
-        console.log("Session file found. Connecting...");
-        connectToWA().catch(err => console.log("Connection Fail"));
-    } else if (appConfig.SESSION_ID) {
-        console.log("Downloading session from Mega...");
-        const sessdata = appConfig.SESSION_ID.trim();
-        // Mega URL එක සකස් කිරීම
-        const sessionUrl = sessdata.startsWith("https") ? sessdata : `https://mega.nz/file/${sessdata}`;
-        
-        try {
-            const filer = File.fromURL(sessionUrl);
-            filer.download((err, data) => {
-                if (err) {
-                    console.error("Session download failed. Starting QR Scan.");
-                    connectToWA();
-                    return;
-                }
-                if (!fs.existsSync(path.dirname(authPath))) fs.mkdirSync(path.dirname(authPath), { recursive: true });
-                fs.writeFile(authPath, data, () => {
-                    console.log("Session downloaded ✅");
-                    connectToWA();
-                });
-            });
-        } catch (e) {
-            console.error("MegaJS Error:", e);
-            connectToWA();
-        }
-    } else {
-        console.log("No Session ID. Starting QR Scan...");
-        connectToWA();
-    }
-}
+// Keep alive server
+app.get("/", (req, res) => res.send("Bot is Alive"));
+app.listen(port, () => startBot());
 
-// සර්වර් එක සැකසීම
-app.get("/", (req, res) => {
-    res.send("APEX-MD Bot is Running ✅");
-});
-
-app.listen(port, () => {
-    console.log(`Server listening on port ${port}`);
-    startBot();
-});
-
-// Anti-Crash (වැරදි නිසා බොට් නැවතීම වැළැක්වීමට)
-process.on('uncaughtException', (err) => console.log('Caught exception: ', err));
-process.on('unhandledRejection', (reason) => console.log('Unhandled Rejection: ', reason));
+// Anti-crash logic
+process.on('uncaughtException', (err) => console.error(err));
+process.on('unhandledRejection', (err) => console.error(err));

@@ -1,0 +1,96 @@
+{
+  "name": "APEX-MD-V2",
+  "description": "Advanced WhatsApp Bot - APEX MD V2",
+  "repository": "https://github.com/pancha2000/APEX-MD-V2",
+  "logo": "https://i.imgur.com/VlZ2Y0l.jpeg",
+  "keywords": [
+    "whatsapp",
+    "bot",
+    "baileys",
+    "apex-md",
+    "whatsapp-bot"
+  ],
+  "buildpacks": [
+    {
+      "url": "heroku/nodejs"
+    }
+  ],
+  "formation": {
+    "worker": {
+      "quantity": 1,
+      "size": "basic"
+    }
+  },
+  "env": {
+    "SESSION_ID": {
+      "description": "Mega.nz file code (just the code after /file/, example: AB1234cd#xyz789abc)",
+      "required": true,
+      "value": ""
+    },
+    "MONGODB": {
+      "description": "MongoDB connection URL (optional but recommended)",
+      "required": false,
+      "value": "mongodb+srv://realpancha:2006.Shehan@cluster0.jh6kzmp.mongodb.net/APEX_V4?retryWrites=true&w=majority"
+    },
+    "PREFIX": {
+      "description": "Command prefix",
+      "required": false,
+      "value": "."
+    },
+    "MODE": {
+      "description": "Bot mode (public, private, inbox, groups)",
+      "required": false,
+      "value": "public"
+    },
+    "OWNER_NAME": {
+      "description": "Your name",
+      "required": false,
+      "value": "Shehan Vimukthi"
+    },
+    "OWNER_NUMBER": {
+      "description": "Your WhatsApp number (without + or spaces)",
+      "required": true,
+      "value": "94701391585"
+    },
+    "SUDO": {
+      "description": "Sudo/Admin numbers (comma separated, without + or spaces)",
+      "required": false,
+      "value": "94701391585"
+    },
+    "BOT_NAME": {
+      "description": "Bot name",
+      "required": false,
+      "value": "APEX-MD"
+    },
+    "ALIVE_IMG": {
+      "description": "Alive message image URL",
+      "required": false,
+      "value": "https://i.imgur.com/VlZ2Y0l.jpeg"
+    },
+    "ALIVE_MSG": {
+      "description": "Alive message text",
+      "required": false,
+      "value": "✅ APEX-MD IS ONLINE"
+    },
+    "AUTO_READ": {
+      "description": "Auto read messages (true/false)",
+      "required": false,
+      "value": "true"
+    },
+    "AUTO_STATUS_READ": {
+      "description": "Auto read status (true/false)",
+      "required": false,
+      "value": "false"
+    },
+    "TIME_ZONE": {
+      "description": "Time zone",
+      "required": false,
+      "value": "Asia/Colombo"
+    },
+    "DEBUG": {
+      "description": "Debug mode (true/false)",
+      "required": false,
+      "value": "false"
+    }
+  }
+}

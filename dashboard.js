@@ -405,12 +405,19 @@ setInterval(async () => {
 
     // ── Settings Page ──────────────────────────────────────────
     app.get('/dashboard/settings', (req, res) => {
-        const m  = config.modules;
-        const t  = config.trading;
-        const pr = config.modes.proMode;
-        const ind = config.indicators;
-        const smc = config.smc;
-        const tgt = config.targets;
+        const m   = config.modules  || {};
+        const t   = config.trading  || {};
+        const pr  = (config.modes   || {}).proMode || false;
+        const ind = config.indicators || {};
+        const smc = config.smc        || {};
+        const tgt = config.targets    || {};
+
+        // ── Safe-read helpers (prevents crash if key missing) ──
+        const iv = (obj, key, def) => (obj[key] !== undefined ? obj[key] : def);
+        const tv = (key, def) => iv(t,   key, def);
+        const indv = (key, def) => iv(ind, key, def);
+        const smcv = (key, def) => iv(smc, key, def);
+        const tgtv = (key, def) => iv(tgt, key, def);
 
         // ── Component helpers ──────────────────────────────────
         const modToggle = (id, label, desc, checked) => `
@@ -521,12 +528,12 @@ ${_nav('settings', _botState.pendingUpdate)}
     <div class="section">
       <h2>💼 Core Trading Parameters</h2>
       <p style="font-size:.82rem;color:var(--text2);margin-bottom:16px">Saved to database — persist across restarts.</p>
-      ${tradingRow('DEFAULT_RISK_PCT',    '💰 Risk per Trade',       t.DEFAULT_RISK_PCT,    0.1, 10,   0.1, '%')}
-      ${tradingRow('MANUAL_MARGIN',       '🏦 Manual Margin (USDT)', t.MANUAL_MARGIN,       10,  100000, 10, 'USDT')}
-      ${tradingRow('DEFAULT_LEVERAGE',    '⚡ Default Leverage',     t.DEFAULT_LEVERAGE,    1,   125,  1,   'x')}
-      ${tradingRow('MAX_OPEN_TRADES',     '📂 Max Open Trades',      t.MAX_OPEN_TRADES,     1,   20,   1)}
-      ${tradingRow('MIN_SCORE_THRESHOLD', '📊 Min Signal Score',     t.MIN_SCORE_THRESHOLD, 5,   80,   1)}
-      ${tradingRow('SIGNAL_COOLDOWN_HOURS','⏱️ Signal Cooldown',      t.SIGNAL_COOLDOWN_HOURS, 0.5, 48, 0.5, 'hr')}
+      ${tradingRow('DEFAULT_RISK_PCT',    '💰 Risk per Trade',       tv('DEFAULT_RISK_PCT',2),       0.1, 10,   0.1, '%')}
+      ${tradingRow('MANUAL_MARGIN',       '🏦 Manual Margin (USDT)', tv('MANUAL_MARGIN',50),         10,  100000, 10, 'USDT')}
+      ${tradingRow('DEFAULT_LEVERAGE',    '⚡ Default Leverage',     tv('DEFAULT_LEVERAGE',10),      1,   125,  1,   'x')}
+      ${tradingRow('MAX_OPEN_TRADES',     '📂 Max Open Trades',      tv('MAX_OPEN_TRADES',5),        1,   20,   1)}
+      ${tradingRow('MIN_SCORE_THRESHOLD', '📊 Min Signal Score',     tv('MIN_SCORE_THRESHOLD',20),   5,   80,   1)}
+      ${tradingRow('SIGNAL_COOLDOWN_HOURS','⏱️ Signal Cooldown',      tv('SIGNAL_COOLDOWN_HOURS',4),  0.5, 48, 0.5, 'hr')}
     </div>
   </div>
 
@@ -545,17 +552,17 @@ ${_nav('settings', _botState.pendingUpdate)}
         </div>
         <div class="pro-section-body">
           <div style="padding:10px 0 6px;font-size:.78rem;color:var(--text2);text-transform:uppercase;letter-spacing:.04em">RSI</div>
-          ${indRow('RSI_PERIOD',     'Period',         ind.RSI_PERIOD,     2,  50,  1,   'bars')}
-          ${indRow('RSI_OVERSOLD',   'Oversold Level', ind.RSI_OVERSOLD,   10, 50,  1,   '',    'Score: Long when RSI < this')}
-          ${indRow('RSI_OVERBOUGHT', 'Overbought Level',ind.RSI_OVERBOUGHT,50, 90,  1,   '',    'Score: Short when RSI > this')}
+          ${indRow('RSI_PERIOD',     'Period',         indv('RSI_PERIOD',14),      2,  50,  1,   'bars')}
+          ${indRow('RSI_OVERSOLD',   'Oversold Level', indv('RSI_OVERSOLD',45),    10, 50,  1,   '',    'Score: Long when RSI < this')}
+          ${indRow('RSI_OVERBOUGHT', 'Overbought Level',indv('RSI_OVERBOUGHT',55), 50, 90,  1,   '',    'Score: Short when RSI > this')}
           <div style="padding:10px 0 6px;font-size:.78rem;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;border-top:1px solid #21262d;margin-top:8px">MACD</div>
-          ${indRow('MACD_FAST',   'Fast EMA',    ind.MACD_FAST,   2,  50,  1, 'bars')}
-          ${indRow('MACD_SLOW',   'Slow EMA',    ind.MACD_SLOW,   5,  100, 1, 'bars')}
-          ${indRow('MACD_SIGNAL', 'Signal Line', ind.MACD_SIGNAL, 2,  30,  1, 'bars')}
+          ${indRow('MACD_FAST',   'Fast EMA',    indv('MACD_FAST',12),   2,  50,  1, 'bars')}
+          ${indRow('MACD_SLOW',   'Slow EMA',    indv('MACD_SLOW',26),   5,  100, 1, 'bars')}
+          ${indRow('MACD_SIGNAL', 'Signal Line', indv('MACD_SIGNAL',9),  2,  30,  1, 'bars')}
           <div style="padding:10px 0 6px;font-size:.78rem;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;border-top:1px solid #21262d;margin-top:8px">EMA Ribbon</div>
-          ${indRow('EMA_FAST',        'Fast EMA',        ind.EMA_FAST,        2,   100,  1, 'bars')}
-          ${indRow('EMA_SLOW',        'Slow EMA',        ind.EMA_SLOW,        10,  500,  5, 'bars', '200 = classic trend filter')}
-          ${indRow('EMA_RIBBON_FAST', 'Ribbon Fast EMA', ind.EMA_RIBBON_FAST, 5,   50,   1, 'bars', 'Pullback entry trigger')}
+          ${indRow('EMA_FAST',        'Fast EMA',        indv('EMA_FAST',50),        2,   100,  1, 'bars')}
+          ${indRow('EMA_SLOW',        'Slow EMA',        indv('EMA_SLOW',200),       10,  500,  5, 'bars', '200 = classic trend filter')}
+          ${indRow('EMA_RIBBON_FAST', 'Ribbon Fast EMA', indv('EMA_RIBBON_FAST',21), 5,   50,   1, 'bars', 'Pullback entry trigger')}
         </div>
       </div>
 
@@ -568,17 +575,17 @@ ${_nav('settings', _botState.pendingUpdate)}
         </div>
         <div class="pro-section-body">
           <div style="padding:10px 0 6px;font-size:.78rem;color:var(--text2);text-transform:uppercase;letter-spacing:.04em">ATR (Average True Range)</div>
-          ${indRow('ATR_PERIOD',      'ATR Period',       ind.ATR_PERIOD,      2,  50, 1, 'bars')}
-          ${indRow('ATR_SL_MULTIPLIER','SL ATR Multiplier',ind.ATR_SL_MULTIPLIER, 0.5, 6, 0.1, 'x', 'Default SL = entry ± (ATR × this)')}
-          ${indRow('ATR_MAX_SL_MULT', 'Max SL Range',     ind.ATR_MAX_SL_MULT, 1,  10, 0.5, '×ATR', 'Reject SL beyond this ATR distance')}
+          ${indRow('ATR_PERIOD',        'ATR Period',          indv('ATR_PERIOD',14),         2,  50,  1,     'bars')}
+          ${indRow('ATR_SL_MULTIPLIER', 'SL ATR Multiplier',   indv('ATR_SL_MULTIPLIER',1.5), 0.5, 6,  0.1,   'x',    'Default SL = entry ± (ATR × this)')}
+          ${indRow('ATR_MAX_SL_MULT',   'Max SL Range',        indv('ATR_MAX_SL_MULT',4),     1,  10,  0.5,   '×ATR', 'Reject SL beyond this ATR distance')}
           <div style="padding:10px 0 6px;font-size:.78rem;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;border-top:1px solid #21262d;margin-top:8px">Bollinger Bands</div>
-          ${indRow('BB_PERIOD',         'BB Length',          ind.BB_PERIOD,         5,  100, 1,    'bars')}
-          ${indRow('BB_STDDEV',         'Std Deviation Mult', ind.BB_STDDEV,         0.5, 5,  0.1,  'σ',   '2.0 = standard')}
-          ${indRow('BB_SQUEEZE_THRESH', 'Squeeze Threshold',  ind.BB_SQUEEZE_THRESH, 0.005, 0.1, 0.005, '%', 'Bandwidth < this = squeeze signal')}
+          ${indRow('BB_PERIOD',         'BB Length',           indv('BB_PERIOD',20),          5,  100, 1,     'bars')}
+          ${indRow('BB_STDDEV',         'Std Deviation Mult',  indv('BB_STDDEV',2),           0.5, 5,  0.1,   'σ',    '2.0 = standard')}
+          ${indRow('BB_SQUEEZE_THRESH', 'Squeeze Threshold',   indv('BB_SQUEEZE_THRESH',0.02),0.005,0.1,0.005,'%',    'Bandwidth < this = squeeze signal')}
           <div style="padding:10px 0 6px;font-size:.78rem;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;border-top:1px solid #21262d;margin-top:8px">ADX (Trend Strength)</div>
-          ${indRow('ADX_PERIOD',       'ADX Period',        ind.ADX_PERIOD,       2,  50, 1, 'bars')}
-          ${indRow('ADX_STRONG_THRESH','Trending Threshold',ind.ADX_STRONG_THRESH, 10, 40, 1, '', 'ADX > this = trending market')}
-          ${indRow('ADX_VERY_STRONG',  'Strong Threshold',  ind.ADX_VERY_STRONG,  20, 60, 1, '', 'ADX > this = very strong trend')}
+          ${indRow('ADX_PERIOD',       'ADX Period',         indv('ADX_PERIOD',14),        2,  50, 1, 'bars')}
+          ${indRow('ADX_STRONG_THRESH','Trending Threshold', indv('ADX_STRONG_THRESH',20), 10, 40, 1, '', 'ADX > this = trending market')}
+          ${indRow('ADX_VERY_STRONG',  'Strong Threshold',   indv('ADX_VERY_STRONG',35),   20, 60, 1, '', 'ADX > this = very strong trend')}
         </div>
       </div>
     </div>
@@ -595,15 +602,15 @@ ${_nav('settings', _botState.pendingUpdate)}
         </div>
         <div class="pro-section-body">
           <div style="padding:10px 0 6px;font-size:.78rem;color:var(--text2);text-transform:uppercase;letter-spacing:.04em">Lookback Windows</div>
-          ${smcRow('OB_LOOKBACK',     'Order Block Lookback',    smc.OB_LOOKBACK,     5,  60, 1,  'bars', 'Bars to scan for OB formation')}
-          ${smcRow('SWING_LOOKBACK',  'Swing High/Low Lookback', smc.SWING_LOOKBACK,  5,  100, 1, 'bars', 'Bars for swing structure detection')}
-          ${smcRow('CHOCH_LOOKBACK',  'ChoCH Lookback',          smc.CHOCH_LOOKBACK,  5,  100, 1, 'bars', 'Change of Character detection window')}
-          ${smcRow('SWEEP_LOOKBACK',  'Liquidity Sweep Lookback',smc.SWEEP_LOOKBACK,  3,  50, 1,  'bars', 'Liquidity sweep detection window')}
-          ${smcRow('FVG_LOOKBACK',    'Fair Value Gap Lookback', smc.FVG_LOOKBACK,    10, 200, 5, 'bars', 'Bars to scan for unfilled FVGs')}
-          ${smcRow('BOS_LOOKBACK',    'Break of Structure Lookback',smc.BOS_LOOKBACK, 5,  100, 1, 'bars')}
+          ${smcRow('OB_LOOKBACK',    'Order Block Lookback',      smcv('OB_LOOKBACK',15),    5,  60,  1,  'bars', 'Bars to scan for OB formation')}
+          ${smcRow('SWING_LOOKBACK', 'Swing High/Low Lookback',   smcv('SWING_LOOKBACK',20), 5,  100, 1,  'bars', 'Bars for swing structure detection')}
+          ${smcRow('CHOCH_LOOKBACK', 'ChoCH Lookback',            smcv('CHOCH_LOOKBACK',20), 5,  100, 1,  'bars', 'Change of Character detection window')}
+          ${smcRow('SWEEP_LOOKBACK', 'Liquidity Sweep Lookback',  smcv('SWEEP_LOOKBACK',10), 3,  50,  1,  'bars', 'Liquidity sweep detection window')}
+          ${smcRow('FVG_LOOKBACK',   'Fair Value Gap Lookback',   smcv('FVG_LOOKBACK',50),   10, 200, 5,  'bars', 'Bars to scan for unfilled FVGs')}
+          ${smcRow('BOS_LOOKBACK',   'Break of Structure Lookback',smcv('BOS_LOOKBACK',30),  5,  100, 1,  'bars')}
           <div style="padding:10px 0 6px;font-size:.78rem;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;border-top:1px solid #21262d;margin-top:8px">Tolerance Zones</div>
-          ${smcRow('OB_TOUCH_TOLERANCE',  'OB Touch Tolerance',  smc.OB_TOUCH_TOLERANCE,  0.001, 0.02, 0.001, '',  'Price proximity % to OB zone (0.003 = 0.3%)')}
-          ${smcRow('EQUAL_HL_TOLERANCE',  'Equal H/L Tolerance', smc.EQUAL_HL_TOLERANCE,  0.001, 0.02, 0.001, '',  'Price proximity % for EQH/EQL detection')}
+          ${smcRow('OB_TOUCH_TOLERANCE', 'OB Touch Tolerance',  smcv('OB_TOUCH_TOLERANCE',0.003), 0.001, 0.02, 0.001, '', 'Price proximity % to OB zone (0.003 = 0.3%)')}
+          ${smcRow('EQUAL_HL_TOLERANCE', 'Equal H/L Tolerance', smcv('EQUAL_HL_TOLERANCE',0.002), 0.001, 0.02, 0.001, '', 'Price proximity % for EQH/EQL detection')}
         </div>
       </div>
 
@@ -616,16 +623,16 @@ ${_nav('settings', _botState.pendingUpdate)}
         </div>
         <div class="pro-section-body">
           <div style="padding:10px 0 6px;font-size:.78rem;color:var(--text2);text-transform:uppercase;letter-spacing:.04em">Take Profit Levels (RRR)</div>
-          ${tgtRow('TP1_RRR', 'TP1 Risk:Reward', tgt.TP1_RRR, 0.5, 20, 0.1, ':1', 'TP1 = entry ± (SL distance × this)')}
-          ${tgtRow('TP2_RRR', 'TP2 Risk:Reward', tgt.TP2_RRR, 0.5, 30, 0.1, ':1', 'TP2 = entry ± (SL distance × this)')}
-          ${tgtRow('TP3_RRR', 'TP3 Risk:Reward', tgt.TP3_RRR, 1,   50, 0.5, ':1', 'TP3 = entry ± (SL distance × this)')}
+          ${tgtRow('TP1_RRR', 'TP1 Risk:Reward', tgtv('TP1_RRR',2.0), 0.5, 20,  0.1, ':1', 'TP1 = entry ± (SL distance × this)')}
+          ${tgtRow('TP2_RRR', 'TP2 Risk:Reward', tgtv('TP2_RRR',3.0), 0.5, 30,  0.1, ':1', 'TP2 = entry ± (SL distance × this)')}
+          ${tgtRow('TP3_RRR', 'TP3 Risk:Reward', tgtv('TP3_RRR',5.0), 1,   50,  0.5, ':1', 'TP3 = entry ± (SL distance × this)')}
           <div style="padding:10px 0 6px;font-size:.78rem;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;border-top:1px solid #21262d;margin-top:8px">Stop Loss</div>
-          ${tgtRow('ATR_SL_MULTIPLIER', 'Default SL Multiplier', tgt.ATR_SL_MULTIPLIER, 0.2, 10, 0.1, '×ATR', 'Fallback SL = entry ± (ATR × this)')}
-          ${tgtRow('DEFAULT_SL_PCT',    'Max SL %',               tgt.DEFAULT_SL_PCT,    0.1, 20,  0.1, '%',   'Hard max stop loss percentage')}
-          ${tgtRow('MIN_RRR',           'Minimum RRR Filter',     tgt.MIN_RRR,           0.5, 10,  0.1, ':1',  'Reject trades with RRR below this')}
+          ${tgtRow('ATR_SL_MULTIPLIER', 'Default SL Multiplier', tgtv('ATR_SL_MULTIPLIER',1.5), 0.2, 10, 0.1, '×ATR', 'Fallback SL = entry ± (ATR × this)')}
+          ${tgtRow('DEFAULT_SL_PCT',    'Max SL %',               tgtv('DEFAULT_SL_PCT',1.5),   0.1, 20, 0.1, '%',    'Hard max stop loss percentage')}
+          ${tgtRow('MIN_RRR',           'Minimum RRR Filter',     tgtv('MIN_RRR',1.5),           0.5, 10, 0.1, ':1',   'Reject trades with RRR below this')}
           <div style="padding:10px 0 6px;font-size:.78rem;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;border-top:1px solid #21262d;margin-top:8px">Fibonacci Thresholds</div>
-          ${tgtRow('FIB_TP1_THRESH', 'Fib TP1 Radius', tgt.FIB_TP1_THRESH, 0.05, 0.8, 0.05, '', 'Max distance from entry for Fib TP1 (0.25 = 25%)')}
-          ${tgtRow('FIB_TP2_THRESH', 'Fib TP2 Radius', tgt.FIB_TP2_THRESH, 0.1,  1.5, 0.05, '', 'Max distance from entry for Fib TP2 (0.50 = 50%)')}
+          ${tgtRow('FIB_TP1_THRESH', 'Fib TP1 Radius', tgtv('FIB_TP1_THRESH',0.25), 0.05, 0.8, 0.05, '', 'Max distance from entry for Fib TP1 (0.25 = 25%)')}
+          ${tgtRow('FIB_TP2_THRESH', 'Fib TP2 Radius', tgtv('FIB_TP2_THRESH',0.50), 0.1,  1.5, 0.05, '', 'Max distance from entry for Fib TP2 (0.50 = 50%)')}
         </div>
       </div>
     </div>
@@ -830,7 +837,12 @@ async function runUpdate() {
     app.post('/dashboard/api/promode', requireAuth, async (req, res) => {
         try {
             const enabled = Boolean(req.body.enabled);
-            config.setProMode(enabled);
+            if (!config.modes) config.modes = {};
+            if (typeof config.setProMode === 'function') {
+                config.setProMode(enabled);
+            } else {
+                config.modes.proMode = enabled;
+            }
             await db.updateSettings({ proMode: enabled }).catch(() => {});
             res.json({ ok: true, proMode: enabled });
         } catch (e) { res.status(400).json({ ok: false, error: e.message }); }
@@ -842,7 +854,12 @@ async function runUpdate() {
             const key = req.params.key;
             const val = parseFloat(req.body.value);
             if (isNaN(val)) throw new Error('Invalid number');
-            config.setIndicatorParam(key, val);
+            if (!config.indicators) config.indicators = {};
+            if (typeof config.setIndicatorParam === 'function') {
+                config.setIndicatorParam(key, val);
+            } else {
+                config.indicators[key] = val;
+            }
             await db.updateSettings({ [`ind_${key}`]: val }).catch(() => {});
             res.json({ ok: true, key, value: val });
         } catch (e) { res.status(400).json({ ok: false, error: e.message }); }
@@ -854,7 +871,12 @@ async function runUpdate() {
             const key = req.params.key;
             const val = parseFloat(req.body.value);
             if (isNaN(val)) throw new Error('Invalid number');
-            config.setSMCParam(key, val);
+            if (!config.smc) config.smc = {};
+            if (typeof config.setSMCParam === 'function') {
+                config.setSMCParam(key, val);
+            } else {
+                config.smc[key] = val;
+            }
             await db.updateSettings({ [`smc_${key}`]: val }).catch(() => {});
             res.json({ ok: true, key, value: val });
         } catch (e) { res.status(400).json({ ok: false, error: e.message }); }
@@ -866,7 +888,12 @@ async function runUpdate() {
             const key = req.params.key;
             const val = parseFloat(req.body.value);
             if (isNaN(val)) throw new Error('Invalid number');
-            config.setTargetParam(key, val);
+            if (!config.targets) config.targets = {};
+            if (typeof config.setTargetParam === 'function') {
+                config.setTargetParam(key, val);
+            } else {
+                config.targets[key] = val;
+            }
             await db.updateSettings({ [`tgt_${key}`]: val }).catch(() => {});
             res.json({ ok: true, key, value: val });
         } catch (e) { res.status(400).json({ ok: false, error: e.message }); }

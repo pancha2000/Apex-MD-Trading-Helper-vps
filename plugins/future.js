@@ -89,20 +89,38 @@ async (conn, mek, m, { reply, args }) => {
         let calcLeverage = 10, calcQty = 0, calcMarginUsed = 0, calcRiskAmt = 0;
         let marginWarning = "";
 
-        if (userMargin > 0) {
+        // ── Pro Mode: check for manual margin/leverage override ──────
+        const _proOn        = config.modules.PRO_MODE;
+        const _manualMargin = _proOn ? config.proParams.MANUAL_MARGIN   : 0;
+        const _manualLev    = _proOn ? config.proParams.MANUAL_LEVERAGE : 0;
+        // Use manual margin if set, otherwise fall back to wallet margin
+        const _baseMargin   = (_proOn && _manualMargin > 0) ? _manualMargin : userMargin;
+        const _proModeTag   = _proOn
+            ? `\n🔬 _Pro Custom Mode — RSI:${config.proParams.RSI_PERIOD} EMA:${config.proParams.FAST_EMA}/${config.proParams.SLOW_EMA}${_manualMargin > 0 ? ' | Manual Margin: $' + _manualMargin : ''}${_manualLev > 0 ? ' | Lev: ' + _manualLev + 'x' : ''}_`
+            : '';
+
+        if (_baseMargin > 0) {
             const entryNum  = parseFloat(aData.entryPrice);
             const slNum     = parseFloat(aData.sl);
             const slDist    = Math.abs(entryNum - slNum);
             const slDistPct = slDist / entryNum;
 
-            calcRiskAmt    = userMargin * 0.02;
-            calcQty        = slDist > 0 ? calcRiskAmt / slDist : 0;
-            const rawLev   = slDistPct > 0 ? (calcRiskAmt / slDistPct) / (userMargin * 0.10) : 10;
-            calcLeverage   = Math.min(Math.ceil(rawLev), 100);
-            calcMarginUsed = calcQty > 0 ? (calcQty * entryNum) / calcLeverage : 0;
+            calcRiskAmt = _baseMargin * 0.02;
+            calcQty     = slDist > 0 ? calcRiskAmt / slDist : 0;
+
+            if (_proOn && _manualLev > 0) {
+                // Pro Mode: use manually-set leverage
+                calcLeverage   = _manualLev;
+                calcMarginUsed = calcQty > 0 ? (calcQty * entryNum) / calcLeverage : 0;
+            } else {
+                // Auto AI Mode: derive optimal leverage from SL distance
+                const rawLev   = slDistPct > 0 ? (calcRiskAmt / slDistPct) / (_baseMargin * 0.10) : 10;
+                calcLeverage   = Math.min(Math.ceil(rawLev), 100);
+                calcMarginUsed = calcQty > 0 ? (calcQty * entryNum) / calcLeverage : 0;
+            }
 
             // Cap marginUsed to 20% of capital per trade (5 slots max)
-            const maxMarginPerTrade = userMargin * 0.20;
+            const maxMarginPerTrade = _baseMargin * 0.20;
             if (calcMarginUsed > maxMarginPerTrade) {
                 const scale    = maxMarginPerTrade / calcMarginUsed;
                 calcQty       *= scale;
@@ -111,16 +129,16 @@ async (conn, mek, m, { reply, args }) => {
                 marginWarning  = "\n⚠️ *Position capped to 20% of capital* (SL ඉතා ළඟ - " + (slDistPct*100).toFixed(3) + "%)";
             }
 
-            if (calcMarginUsed > userMargin) {
-                marginWarning = "\n❌ *Margin Insufficient!* Balance: $" + userMargin.toFixed(2) + " | Needed: $" + calcMarginUsed.toFixed(2);
+            if (calcMarginUsed > _baseMargin) {
+                marginWarning = "\n❌ *Margin Insufficient!* Balance: $" + _baseMargin.toFixed(2) + " | Needed: $" + calcMarginUsed.toFixed(2);
                 calcQty = 0; calcMarginUsed = 0;
             }
 
             if (calcQty > 0) {
                 const qtyFmt = calcQty < 1 ? calcQty.toFixed(4) : Math.round(calcQty).toString();
                 riskText   = "$" + calcRiskAmt.toFixed(2);
-                marginText = "$" + calcMarginUsed.toFixed(2);
-                levText    = calcLeverage + "x (Iso)";
+                marginText = "$" + calcMarginUsed.toFixed(2) + (_proOn && _manualMargin > 0 ? ' 🔬' : '');
+                levText    = calcLeverage + "x (Iso)" + (_proOn && _manualLev > 0 ? ' 🔬' : '');
                 qtyText    = qtyFmt + " " + coin.replace('USDT','');
             } else {
                 qtyText = "Insufficient balance";
@@ -339,11 +357,15 @@ EXACT JSON (copy this structure, fill values):
         if (!settings.strictMode && (aData.score < 5 || !rrrCheck.pass)) { dangerWarning = `\n\n🚨 *AI WARNING: DO NOT TAKE THIS TRADE!*`; }
 
         // 🖨️ 6. Output Message
+        const _paperBanner = config.modules.PAPER_TRADING
+            ? '\n📄 *PAPER TRADING MODE* — Signal auto-logged. No real order placed.\n'
+            : '';
+
         const out = `
 ╔═══════════════════════════╗
 ║ 🎯 *PRO SNIPER ANALYSIS* ║
 ╚═══════════════════════════╝
-${dangerWarning}
+${dangerWarning}${_paperBanner}${_proModeTag}
 🪙 *${coin.replace('USDT','')} / USDT*  ${data.emoji} *${data.direction}*  💵 $${aData.priceStr}
 📌 *Market:* ${aData.marketState} | *ADX:* ${aData.adxData.status}
 ⏱️ ${aData.marketSMC.killzone}${asianWarning}
@@ -450,6 +472,42 @@ ${entryConf.display}
 
         await reply(out.trim());
         await m.react('✅');
+
+        // ── Auto Paper Trade Logger ────────────────────────────────────
+        // When PAPER_TRADING mode is ON every .future signal is automatically
+        // saved as a paper trade — no need to manually type .paper
+        if (config.modules.PAPER_TRADING) {
+            try {
+                const _liveP  = parseFloat(aData.currentPrice);
+                const _entryN = parseFloat(aData.entryPrice);
+                // Avoid duplicating if user already has an open paper trade for this coin
+                const _already = await db.Trade.findOne({
+                    coin, isPaper: true, status: { $in: ['active', 'pending'] }
+                });
+                if (!_already && calcQty > 0) {
+                    const _diffPct = Math.abs(_liveP - _entryN) / _entryN * 100;
+                    const _oType   = _diffPct <= 0.3 ? 'MARKET' : 'LIMIT';
+                    const _status  = _oType === 'MARKET' ? 'active' : 'pending';
+                    await db.saveTrade({
+                        userJid: m.sender, coin, type: 'future',
+                        direction: aData.direction,
+                        entry: _entryN,
+                        tp: aData.tp3 || aData.tp2,
+                        tp1: aData.tp1, tp2: aData.tp2, sl: aData.sl,
+                        rrr: `1:${(Math.abs((aData.tp3||aData.tp2) - _entryN) / Math.abs(_entryN - aData.sl)).toFixed(2)}`,
+                        status: _status, orderType: _oType,
+                        fillPrice: _status === 'active' ? _liveP : 0,
+                        isPaper: true, source: 'PAPER_AUTO',
+                        leverage: calcLeverage, quantity: calcQty,
+                        marginUsed: calcMarginUsed,
+                        score: aData.score, timeframe,
+                    });
+                    console.log(`[PAPER_AUTO] 📄 Auto-logged: ${coin} ${aData.direction} @ $${_entryN}`);
+                }
+            } catch (_pe) {
+                console.warn('[PAPER_AUTO] Save failed:', _pe.message);
+            }
+        }
     } catch (e) {
         console.error('[future.js] CRASH:', e.stack || e.message);
         const errMsg = e.message || String(e) || 'Unknown error';

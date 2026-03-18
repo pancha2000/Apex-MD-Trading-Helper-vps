@@ -975,9 +975,7 @@ async function setStatus(userId, status) {
     <p style="text-align:center;margin-top:20px;font-size:.82rem;color:var(--text2)">
       New here? <a href="/auth/register">Create account →</a>
     </p>
-    <p style="text-align:center;margin-top:8px;font-size:.75rem;color:var(--text2)">
-      Are you the owner? <a href="/admin/login">Admin panel →</a>
-    </p>
+
   </div>
 </div>`));
     });

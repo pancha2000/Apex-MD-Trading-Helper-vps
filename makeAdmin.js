@@ -1,18 +1,25 @@
-const db = require('./lib/database'); // Database එකට කනෙක්ට් වීම
+require('dotenv').config({ path: './config.env' }); // Database passwords ලෝඩ් කරනවා
+const config = require('./config');
+const db = require('./lib/database');
 
 async function makeAdmin() {
     try {
-        // මෙතන ඔයාගේ නම දෙන්න (උදා: 'apex_owner')
+        console.log('⏳ Connecting to Database... (තත්පර 3ක් ඉන්න)');
+        
+        // Database එක කනෙක්ට් වෙනකන් තත්පර 3ක් ඉන්නවා
+        await new Promise(resolve => setTimeout(resolve, 3000));
+
+        // 🚨 පහළ තියෙන නම වෙනස් කරන්න 🚨
         const usernameToPromote = 'shehan_vimukthi'; 
         
         const user = await db.User.findOne({ username: usernameToPromote });
         
         if (!user) {
-            console.log('❌ User not found! නම හරියටම දුන්නද බලන්න.');
+            console.log(`❌ User '${usernameToPromote}' not found! නම හරියටම දුන්නද බලන්න.`);
             process.exit(1);
         }
         
-        user.role = 'admin'; // Role එක Admin කිරීම
+        user.role = 'admin';
         await user.save();
         
         console.log(`✅ Success! ${usernameToPromote} is now a SUPER ADMIN! 🔥`);

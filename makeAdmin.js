@@ -1,26 +1,20 @@
-require('dotenv').config({ path: './config.env' });
 const mongoose = require('mongoose');
-const config = require('./config');
-const db = require('./lib/database');
+// db ෆයිල් එක ලෝඩ් කරගන්නවා
+const db = require('./lib/database'); 
 
 async function makeAdmin() {
     try {
-        // Database Link එක හොයාගන්නවා
-        const mongoURI = process.env.MONGODB_URI || process.env.MONGO_URL || process.env.DATABASE_URL || config.MONGODB_URI;
+        // 🚨 1. මෙතනට ඔයාගේ ඇත්තම MongoDB URL එක දාන්න (Quotes ඇතුළේ) 🚨
+        const mongoURI = 'mongodb+srv://realpancha:2006.Shehan@cluster0.jh6kzmp.mongodb.net/APEX_V4?retryWrites=true&w=majority'; 
         
-        if (!mongoURI) {
-            console.log('❌ Database URL එක හොයාගන්න බැරි වුණා!');
-            process.exit(1);
-        }
-
         console.log('⏳ Connecting to Database...');
         
         // කෙලින්ම Database එකට කනෙක්ට් වෙනවා
         await mongoose.connect(mongoURI);
         console.log('✅ Database Connected Successfully!');
 
-        // 🚨 පහළ තියෙන නම ඔයාගේ වෙබ්සයිට් එකේ Username එකට වෙනස් කරන්න 🚨
-        const usernameToPromote = 'ඔයාගේ_Username_එක_මෙතන_ගහන්න'; 
+        // 🚨 2. පහළ තියෙන නම ඔයාගේ වෙබ්සයිට් එකේ Username එකට වෙනස් කරන්න 🚨
+        const usernameToPromote = 'shehan_vimukthi'; 
         
         const user = await db.User.findOne({ username: usernameToPromote });
         

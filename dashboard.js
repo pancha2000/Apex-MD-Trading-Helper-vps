@@ -6,8 +6,8 @@
  *  ──────────────────────────────────────────────────────────────
  *  SAAS UPGRADE — Route Architecture:
  *
- *    /admin/*    → Super-Admin Panel (owner-only, password from config.env)
- *                  All former /dashboard/* routes moved here.
+ *    /admin/*    → Super-Admin Panel (DB role='admin' required)
+ *                  No password bypass. Login via /auth/login only.
  *                  /dashboard/* redirects preserved for backward compat.
  *
  *    /auth/*     → Public Login / Register for SaaS users
@@ -67,61 +67,29 @@ console.error = (...a) => { _origError(...a); _pushLog('[ERROR] ' + a.join(' '))
 function log(msg) { _pushLog('[BOT] ' + msg); }
 
 // ─────────────────────────────────────────────────────────────────
-//  ADMIN AUTH  (single-password, owner-only — unchanged from v7.1)
+//  ADMIN AUTH  — DB role-based (no password bypass)
+//  Admin access requires: valid user session + role === 'admin'
+//  Both checks are enforced on every /admin/* request.
 // ─────────────────────────────────────────────────────────────────
-const ADMIN_COOKIE_NAME = 'apex_admin_session';
-const ADMIN_COOKIE_TTL  = 8 * 60 * 60 * 1000;
 
-function _signAdminToken(payload) {
-    const data = JSON.stringify(payload);
-    const sig  = crypto.createHmac('sha256', config.DASHBOARD_SECRET).update(data).digest('hex');
-    return Buffer.from(data).toString('base64url') + '.' + sig;
-}
-function _verifyAdminToken(token) {
-    try {
-        const [dataPart, sig] = token.split('.');
-        const data     = Buffer.from(dataPart, 'base64url').toString();
-        const expected = crypto.createHmac('sha256', config.DASHBOARD_SECRET).update(data).digest('hex');
-        if (sig.length !== expected.length) return null;
-        if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
-        const payload = JSON.parse(data);
-        if (payload.exp < Date.now()) return null;
-        return payload;
-    } catch { return null; }
-}
-function _parseCookies(header) {
-    const out = {};
-    if (!header) return out;
-    header.split(';').forEach(p => {
-        const [k, ...v] = p.trim().split('=');
-        out[k.trim()] = decodeURIComponent(v.join('='));
-    });
-    return out;
-}
-
-// Admin auth middleware
+/**
+ * Combined middleware: verify session cookie then enforce admin role.
+ * Applied to all /admin/* routes (except /admin/login redirect).
+ */
 function requireAdminAuth(req, res, next) {
-    const cookies = _parseCookies(req.headers.cookie);
-    const token   = cookies[ADMIN_COOKIE_NAME];
-    if (!token || !_verifyAdminToken(token)) {
-        if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'Unauthorized' });
-        return res.redirect('/admin/login');
-    }
-    next();
+    // Step 1: verify session token via saas-auth
+    saasAuth.requireUserAuth(req, res, () => {
+        // Step 2: enforce role === 'admin'
+        if (!req.saasUser || req.saasUser.role !== 'admin') {
+            if (req.path.startsWith('/api/')) {
+                return res.status(403).json({ error: 'Forbidden — admin role required' });
+            }
+            // Redirect regular users to their portal, not a login page
+            return res.redirect('/app/?forbidden=1');
+        }
+        next();
+    });
 }
-
-// Admin brute-force limiter (5 attempts / 15 min)
-const _adminLoginAttempts = new Map();
-function _checkAdminRateLimit(ip) {
-    const now  = Date.now();
-    const data = _adminLoginAttempts.get(ip) || { count: 0, first: now };
-    if (now - data.first > 15 * 60 * 1000) { _adminLoginAttempts.set(ip, { count: 1, first: now }); return true; }
-    if (data.count >= 5) return false;
-    data.count++;
-    _adminLoginAttempts.set(ip, data);
-    return true;
-}
-function _resetAdminLimit(ip) { _adminLoginAttempts.delete(ip); }
 
 // ─────────────────────────────────────────────────────────────────
 //  BOT STATE
@@ -270,7 +238,7 @@ function _adminNav(active, pendingUpdate, scannerActive) {
     <a href="/admin/scanner"  class="${active==='scanner' ?'active':''}">🔍 Scanner${scanBadge}</a>
     <a href="/admin/settings" class="${active==='settings'?'active':''}">⚙️ Settings</a>
     <a href="/admin/updater"  class="${active==='updater' ?'active':''}">🔄 Updater${upBadge}</a>
-    <a href="/admin/logout" class="btn btn-ghost" style="font-size:.78rem;padding:4px 10px">Logout</a>
+    <a href="/auth/logout" class="btn btn-ghost" style="font-size:.78rem;padding:4px 10px">Logout</a>
   </div>
 </nav>`;
 }
@@ -322,51 +290,19 @@ function initDashboard() {
     app.use(express.urlencoded({ extended: true }));
 
     // ────────────────────────────────────────────────────────────
-    //  SECTION 1 — ADMIN AUTH ROUTES  (/admin/login, /admin/logout)
+    //  SECTION 1 — ADMIN ROUTE GUARD
+    //  No separate login page. Admin must log in at /auth/login
+    //  with a DB account whose role === 'admin'.
     // ────────────────────────────────────────────────────────────
 
-    app.get('/admin/login', (req, res) => {
-        const err    = req.query.err    ? '<p class="err">❌ Incorrect password</p>' : '';
-        const locked = req.query.locked ? '<p class="err">🔒 Too many attempts. Try again in 15 minutes.</p>' : '';
-        res.send(_html('Admin Login', `
-<div style="min-height:100vh;display:flex;align-items:center;justify-content:center">
-  <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:38px 34px;width:360px">
-    <h1 style="font-size:1.35rem;margin-bottom:5px;text-align:center">🔐 Admin Panel</h1>
-    <p style="color:var(--text2);font-size:.85rem;text-align:center;margin-bottom:26px">Apex-MD Owner Access</p>
-    <form method="POST" action="/admin/login">
-      <div class="field"><label class="field-label">Password</label>
-        <input type="password" name="password" placeholder="Enter dashboard password" autofocus required>
-      </div>
-      ${err}${locked}
-      <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:12px">Sign In →</button>
-    </form>
-    <p style="text-align:center;margin-top:20px;font-size:.78rem;color:var(--text2)">
-      Not an admin? <a href="/auth/login">User Login →</a>
-    </p>
-  </div>
-</div>`));
-    });
+    // /admin/login and /admin/logout are thin redirects —
+    // no password form, no bypass possible.
+    app.get('/admin/login',  (req, res) => res.redirect('/auth/login'));
+    app.get('/admin/logout', (req, res) => res.redirect('/auth/logout'));
 
-    app.post('/admin/login', (req, res) => {
-        const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
-        if (!_checkAdminRateLimit(ip)) return res.redirect('/admin/login?locked=1');
-        if ((req.body.password || '').trim() !== config.DASHBOARD_PASSWORD) return res.redirect('/admin/login?err=1');
-        _resetAdminLimit(ip);
-        const token = _signAdminToken({ exp: Date.now() + ADMIN_COOKIE_TTL, role: 'owner' });
-        res.setHeader('Set-Cookie', `${ADMIN_COOKIE_NAME}=${token}; HttpOnly; Path=/; Max-Age=${ADMIN_COOKIE_TTL/1000}; SameSite=Strict`);
-        res.redirect('/admin/');
-    });
-
-    app.get('/admin/logout', (req, res) => {
-        res.setHeader('Set-Cookie', `${ADMIN_COOKIE_NAME}=; HttpOnly; Path=/; Max-Age=0`);
-        res.redirect('/admin/login');
-    });
-
-    // All /admin/* routes require admin auth
-    app.use('/admin', (req, res, next) => {
-        if (req.path === '/login' || (req.method === 'POST' && req.path === '/login')) return next();
-        requireAdminAuth(req, res, next);
-    });
+    // Every /admin/* request must pass requireAdminAuth
+    // (valid session cookie + role === 'admin' — checked in DB token payload)
+    app.use('/admin', requireAdminAuth);
 
     // ────────────────────────────────────────────────────────────
     //  SECTION 2 — ADMIN PAGES
@@ -1091,6 +1027,9 @@ async function setStatus(userId, status) {
     // ── App Home ──────────────────────────────────────────────────
     app.get('/app/', async (req, res) => {
         const user = req.saasUser;
+        const forbiddenBanner = req.query.forbidden
+            ? `<div style="background:#3a1a1a;border:1px solid var(--red);border-radius:8px;padding:11px 15px;margin-bottom:18px;font-size:.85rem;color:var(--red)">🚫 Admin panel requires an <strong>admin</strong> role account.</div>`
+            : '';
         let activeTrades = [], closedCount = 0, winRate = '—';
         try {
             activeTrades = await db.getSaasUserActiveTrades(user.userId);
@@ -1118,6 +1057,7 @@ async function setStatus(userId, status) {
         res.send(_html('My Dashboard', `
 ${_appNav('home', user.username)}
 <div class="wrap">
+  ${forbiddenBanner}
   <h1>👋 Welcome back, ${user.username}</h1>
 
   <div class="grid">

@@ -252,6 +252,7 @@ function _appNav(active, username) {
     <a href="/app/"          class="${active==='home'    ?'active':''}">🏠 Home</a>
     <a href="/app/trades"    class="${active==='trades'  ?'active':''}">📋 My Trades</a>
     <a href="/app/settings"  class="${active==='settings'?'active':''}">🔑 API Keys</a>
+    <a href="/app/scanner"   class="${active==='scanner' ?'active':''}">🔬 AI Scanner</a>
     <span style="font-size:.82rem;color:var(--text2);margin-left:auto;padding:0 4px">👤 ${username || ''}</span>
     <a href="/auth/logout" class="btn btn-ghost" style="font-size:.78rem;padding:4px 10px">Logout</a>
   </div>
@@ -1179,10 +1180,11 @@ ${_appNav('trades', user.username)}
     // ── App Settings (API Key management) ────────────────────────
     app.get('/app/settings', async (req, res) => {
         const user = req.saasUser;
-        let apiKeys = [], waLinked = false, waJid = '', waLinkedAt = '';
+        let apiKeys = [], waLinked = false, waJid = '', waLinkedAt = '', tradingMode = 'signals_only';
         try {
             const fullUser = await db.getSaasUserById(user.userId);
             if (fullUser) {
+                tradingMode = fullUser.tradingMode || 'signals_only';
                 apiKeys = (fullUser.apiKeys || []).map(k => ({
                     _id:      k._id.toString(),
                     label:    k.label,
@@ -1296,10 +1298,54 @@ ${_appNav('settings', user.username)}
     </div>
   </div>
 
+  <!-- ═══ Trading Mode Toggle ═══ -->
+  <div class="section" style="border-color:${tradingMode === 'auto_trade' ? 'var(--accent)' : 'var(--border)'}">
+    <h2>⚙️ Trading Mode</h2>
+    <p style="font-size:.82rem;color:var(--text2);margin-bottom:18px">
+      Choose how the bot handles signals on your account.
+    </p>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px">
+      <!-- Signals Only card -->
+      <div id="mode-card-signals" onclick="setMode('signals_only')" style="cursor:pointer;border:2px solid ${tradingMode === 'signals_only' ? 'var(--green)' : 'var(--border)'};border-radius:10px;padding:16px;background:${tradingMode === 'signals_only' ? '#0f2318' : '#0d1117'};transition:.2s">
+        <div style="font-size:1.4rem;margin-bottom:8px">📡</div>
+        <div style="font-weight:700;font-size:.95rem;color:${tradingMode === 'signals_only' ? 'var(--green)' : 'var(--text)'}">Signals Only</div>
+        <div style="font-size:.78rem;color:var(--text2);margin-top:5px;line-height:1.5">
+          Receive trade alerts on WhatsApp &amp; web portal.<br>
+          <strong>No automatic Binance execution.</strong><br>
+          You decide manually.
+        </div>
+        ${tradingMode === 'signals_only' ? '<div style="margin-top:10px;font-size:.75rem;font-weight:700;color:var(--green)">✅ ACTIVE</div>' : ''}
+      </div>
+      <!-- Auto Trade card -->
+      <div id="mode-card-auto" onclick="setMode('auto_trade')" style="cursor:pointer;border:2px solid ${tradingMode === 'auto_trade' ? 'var(--accent)' : 'var(--border)'};border-radius:10px;padding:16px;background:${tradingMode === 'auto_trade' ? '#0d1f37' : '#0d1117'};transition:.2s">
+        <div style="font-size:1.4rem;margin-bottom:8px">🤖</div>
+        <div style="font-weight:700;font-size:.95rem;color:${tradingMode === 'auto_trade' ? 'var(--accent)' : 'var(--text)'}">Auto Trade</div>
+        <div style="font-size:.78rem;color:var(--text2);margin-top:5px;line-height:1.5">
+          Bot executes trades <strong>automatically</strong> on Binance using your API keys.<br>
+          Also sends WhatsApp alerts.
+        </div>
+        ${tradingMode === 'auto_trade' ? '<div style="margin-top:10px;font-size:.75rem;font-weight:700;color:var(--accent)">✅ ACTIVE</div>' : ''}
+      </div>
+    </div>
+
+    ${tradingMode === 'auto_trade' ? `
+    <div style="background:#1a1a0d;border:1px solid var(--yellow);border-radius:8px;padding:11px 14px;font-size:.8rem;color:var(--yellow)">
+      ⚠️ <strong>Auto Trade requires linked Binance API keys</strong> with Futures trading permission.<br>
+      Make sure your API key is added above. The bot will use it to place orders automatically.
+    </div>` : `
+    <div style="background:#0d1117;border:1px solid var(--border);border-radius:8px;padding:11px 14px;font-size:.8rem;color:var(--text2)">
+      ℹ️ You are in <strong>Signals Only</strong> mode. Alerts arrive on WhatsApp and the web portal. No trades execute automatically.
+    </div>`}
+
+    <div id="mode-msg" style="margin-top:10px;font-size:.83rem"></div>
+  </div>
+
   <div class="section">
     <h2>👤 Account Info</h2>
     <div class="stat-row"><span>Username</span><span class="stat-val">${user.username}</span></div>
     <div class="stat-row"><span>Role</span><span class="stat-val">${user.role}</span></div>
+    <div class="stat-row"><span>Trading Mode</span><span class="stat-val">${tradingMode === 'auto_trade' ? '<span class="pill active" style="background:#0d1f37;color:var(--accent)">🤖 Auto Trade</span>' : '<span class="pill active-status">📡 Signals Only</span>'}</span></div>
     <div class="stat-row"><span>WhatsApp</span><span class="stat-val">${waLinked ? '<span class="pill active-status">linked</span>' : '<span class="pill suspended">not linked</span>'}</span></div>
     <div class="stat-row"><span>Account Status</span><span class="stat-val"><span class="pill active-status">active</span></span></div>
   </div>
@@ -1352,6 +1398,25 @@ async function unlinkWa() {
     if (d.ok) location.href = '/app/settings?unlinked=1';
     else alert('Error: ' + d.error);
   } catch(e) { alert('Network error'); }
+}
+async function setMode(mode) {
+  const msg = document.getElementById('mode-msg');
+  msg.textContent = '⏳ Saving...'; msg.style.color = 'var(--text2)';
+  try {
+    const r = await fetch('/app/api/trading-mode', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode })
+    });
+    const d = await r.json();
+    if (d.ok) {
+      msg.textContent = mode === 'auto_trade' ? '✅ Auto Trade enabled' : '✅ Signals Only mode enabled';
+      msg.style.color = 'var(--green)';
+      setTimeout(() => location.reload(), 900);
+    } else {
+      msg.textContent = '❌ ' + d.error; msg.style.color = 'var(--red)';
+    }
+  } catch(e) { msg.textContent = '❌ Network error'; msg.style.color = 'var(--red)'; }
 }
 </script>`));
     });
@@ -1409,7 +1474,464 @@ async function unlinkWa() {
         }
     });
 
-    // ── Root redirect ─────────────────────────────────────────────
+    // ── App API: Set trading mode ─────────────────────────────────
+    app.post('/app/api/trading-mode', saasAuth.requireUserAuth, async (req, res) => {
+        try {
+            const { mode } = req.body;
+            if (!['signals_only', 'auto_trade'].includes(mode)) {
+                return res.status(400).json({ ok: false, error: 'Invalid mode. Use signals_only or auto_trade.' });
+            }
+            await db.setTradingMode(req.saasUser.userId, mode);
+            console.log(`[Portal] User ${req.saasUser.username} set tradingMode → ${mode}`);
+            res.json({ ok: true, mode });
+        } catch (e) {
+            console.error('[Portal] Trading mode error:', e.message);
+            res.status(500).json({ ok: false, error: e.message });
+        }
+    });
+
+    // ════════════════════════════════════════════════════════════
+    //  AI SCANNER PAGE  (/app/scanner)
+    // ════════════════════════════════════════════════════════════
+
+    app.get('/app/scanner', saasAuth.requireUserAuth, (req, res) => {
+        const user = req.saasUser;
+        res.send(_html('AI Scanner', `
+${_appNav('scanner', user.username)}
+<div class="wrap">
+  <h1>🔬 AI Scanner</h1>
+
+  <!-- ── Input Form ─────────────────────────────────────── -->
+  <div class="section" style="max-width:640px">
+    <h2 style="margin-bottom:16px">Run 14-Factor SMC Analysis</h2>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+      <div style="flex:1;min-width:140px">
+        <label class="field-label" style="display:block;font-size:.78rem;color:var(--text2);margin-bottom:5px">Coin Symbol</label>
+        <input type="text" id="coin-input" placeholder="BTC, ETH, SOL..."
+          style="text-transform:uppercase;font-size:1rem;font-weight:600;letter-spacing:.05em"
+          maxlength="12" autocomplete="off">
+      </div>
+      <div style="min-width:120px">
+        <label class="field-label" style="display:block;font-size:.78rem;color:var(--text2);margin-bottom:5px">Timeframe</label>
+        <select id="tf-select" style="background:#0d1117;border:1px solid var(--border);border-radius:6px;padding:7px 10px;color:var(--text);font-size:.92rem;width:100%">
+          <option value="5m">5 Minutes</option>
+          <option value="15m" selected>15 Minutes</option>
+          <option value="1h">1 Hour</option>
+          <option value="4h">4 Hours</option>
+          <option value="1d">1 Day</option>
+        </select>
+      </div>
+      <button id="scan-btn" class="btn btn-primary" style="padding:10px 24px;font-size:.95rem;white-space:nowrap" onclick="runScan()">
+        ⚡ Analyse
+      </button>
+    </div>
+    <p style="font-size:.75rem;color:var(--text2);margin-top:10px">
+      Powered by 14-Factor MTF + SMC + Wyckoff + AI Engine
+    </p>
+  </div>
+
+  <!-- ── Loading State ──────────────────────────────────── -->
+  <div id="scan-loading" style="display:none;padding:48px 0;text-align:center">
+    <div style="font-size:2.5rem;animation:spin 1s linear infinite;display:inline-block">⚙️</div>
+    <div style="margin-top:16px;font-size:1rem;color:var(--text2)" id="loading-msg">Running 14-Factor Analysis...</div>
+    <div style="margin-top:8px;font-size:.8rem;color:var(--text2)">Fetching candles · Calculating indicators · AI scoring</div>
+  </div>
+
+  <!-- ── Error Banner ────────────────────────────────────── -->
+  <div id="scan-error" style="display:none;background:#3a1a1a;border:1px solid var(--red);border-radius:10px;padding:16px 20px;margin-bottom:18px;color:var(--red);font-size:.9rem"></div>
+
+  <!-- ── Results Panel ──────────────────────────────────── -->
+  <div id="scan-results" style="display:none">
+
+    <!-- Score Hero -->
+    <div id="res-hero" style="background:linear-gradient(135deg,#0d1f37,#0d1117);border:1px solid var(--accent);border-radius:14px;padding:28px 24px;margin-bottom:18px;display:flex;align-items:center;gap:24px;flex-wrap:wrap">
+      <div style="text-align:center;min-width:100px">
+        <div id="res-score-ring" style="width:88px;height:88px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.7rem;font-weight:800;margin:0 auto 8px;border:4px solid var(--accent)">—</div>
+        <div style="font-size:.75rem;color:var(--text2)">CONFLUENCE SCORE</div>
+      </div>
+      <div style="flex:1">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+          <span id="res-coin" style="font-size:1.5rem;font-weight:800;color:#fff"></span>
+          <span id="res-tf-badge" style="background:#21262d;padding:3px 9px;border-radius:6px;font-size:.78rem;color:var(--text2)"></span>
+          <span id="res-dir-badge" style="padding:4px 14px;border-radius:99px;font-size:.85rem;font-weight:700"></span>
+        </div>
+        <div id="res-price" style="font-size:1.1rem;font-weight:600;color:var(--text);margin-bottom:6px"></div>
+        <div id="res-reasons" style="font-size:.8rem;color:var(--text2);line-height:1.6"></div>
+      </div>
+    </div>
+
+    <!-- Entry/TP/SL -->
+    <div class="grid-3" style="margin-bottom:18px" id="res-levels-grid">
+      <div class="card" id="card-entry">
+        <div class="card-label">Entry Price</div>
+        <div class="card-val blue" id="res-entry">—</div>
+        <div class="card-sub" id="res-order-type"></div>
+      </div>
+      <div class="card">
+        <div class="card-label">Stop Loss</div>
+        <div class="card-val red" id="res-sl">—</div>
+        <div class="card-sub" id="res-sl-label"></div>
+      </div>
+      <div class="card">
+        <div class="card-label">Risk/Reward</div>
+        <div class="card-val green" id="res-rrr">—</div>
+        <div class="card-sub">vs TP2</div>
+      </div>
+    </div>
+    <div class="grid-3" style="margin-bottom:18px">
+      <div class="card">
+        <div class="card-label">TP1</div>
+        <div class="card-val green" id="res-tp1">—</div>
+        <div class="card-sub" id="res-tp1-label"></div>
+      </div>
+      <div class="card">
+        <div class="card-label">TP2</div>
+        <div class="card-val green" id="res-tp2">—</div>
+        <div class="card-sub" id="res-tp2-label"></div>
+      </div>
+      <div class="card">
+        <div class="card-label">TP3</div>
+        <div class="card-val green" id="res-tp3">—</div>
+        <div class="card-sub" id="res-tp3-label"></div>
+      </div>
+    </div>
+
+    <!-- Market Conditions Row -->
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));margin-bottom:18px">
+      <div class="card"><div class="card-label">Market State</div><div id="res-market" style="font-size:.9rem;font-weight:600;margin-top:4px"></div></div>
+      <div class="card"><div class="card-label">Main Trend</div><div id="res-trend" style="font-size:.9rem;font-weight:600;margin-top:4px"></div></div>
+      <div class="card"><div class="card-label">1H Trend</div><div id="res-1h" style="font-size:.9rem;font-weight:600;margin-top:4px"></div></div>
+      <div class="card"><div class="card-label">4H Trend</div><div id="res-4h" style="font-size:.9rem;font-weight:600;margin-top:4px"></div></div>
+      <div class="card"><div class="card-label">RSI</div><div class="card-val" id="res-rsi" style="font-size:1.2rem"></div></div>
+      <div class="card"><div class="card-label">ADX</div><div id="res-adx" style="font-size:.9rem;font-weight:600;margin-top:4px"></div></div>
+    </div>
+
+    <!-- Indicators Detail Grid -->
+    <div class="grid-2" style="margin-bottom:18px">
+
+      <!-- SMC Panel -->
+      <div class="section" style="margin:0">
+        <h2 style="margin-bottom:12px">🔮 Smart Money Concepts</h2>
+        <div class="stat-row"><span>Liquidity Sweep</span><span class="stat-val" id="res-sweep" style="font-size:.83rem"></span></div>
+        <div class="stat-row"><span>ChoCH / BOS</span><span class="stat-val" id="res-choch" style="font-size:.83rem"></span></div>
+        <div class="stat-row"><span>Bullish OB</span><span class="stat-val" id="res-ob-bull" style="font-size:.83rem"></span></div>
+        <div class="stat-row"><span>Bearish OB</span><span class="stat-val" id="res-ob-bear" style="font-size:.83rem"></span></div>
+        <div class="stat-row"><span>Wyckoff Phase</span><span class="stat-val" id="res-wyckoff" style="font-size:.83rem"></span></div>
+        <div class="stat-row"><span>P/D Zone</span><span class="stat-val" id="res-pd" style="font-size:.83rem"></span></div>
+      </div>
+
+      <!-- Indicators Panel -->
+      <div class="section" style="margin:0">
+        <h2 style="margin-bottom:12px">📈 Key Indicators</h2>
+        <div class="stat-row"><span>VWAP</span><span class="stat-val" id="res-vwap" style="font-size:.83rem"></span></div>
+        <div class="stat-row"><span>Supertrend</span><span class="stat-val" id="res-supertrend" style="font-size:.83rem"></span></div>
+        <div class="stat-row"><span>Ichimoku</span><span class="stat-val" id="res-ichimoku" style="font-size:.83rem"></span></div>
+        <div class="stat-row"><span>StochRSI</span><span class="stat-val" id="res-stochrsi" style="font-size:.83rem"></span></div>
+        <div class="stat-row"><span>RVOL</span><span class="stat-val" id="res-rvol" style="font-size:.83rem"></span></div>
+        <div class="stat-row"><span>Session</span><span class="stat-val" id="res-session" style="font-size:.83rem"></span></div>
+      </div>
+
+      <!-- Advanced Panel -->
+      <div class="section" style="margin:0">
+        <h2 style="margin-bottom:12px">🧠 Advanced Signals</h2>
+        <div class="stat-row"><span>Heikin Ashi</span><span class="stat-val" id="res-ha" style="font-size:.83rem"></span></div>
+        <div class="stat-row"><span>BB Squeeze</span><span class="stat-val" id="res-bb" style="font-size:.83rem"></span></div>
+        <div class="stat-row"><span>Fib Confluence</span><span class="stat-val" id="res-fib" style="font-size:.83rem"></span></div>
+        <div class="stat-row"><span>EQH / EQL</span><span class="stat-val" id="res-eqhl" style="font-size:.83rem"></span></div>
+        <div class="stat-row"><span>MM Trap</span><span class="stat-val" id="res-mmtrap" style="font-size:.83rem"></span></div>
+        <div class="stat-row"><span>CVD</span><span class="stat-val" id="res-cvd" style="font-size:.83rem"></span></div>
+      </div>
+
+      <!-- Confirmation Gate -->
+      <div class="section" style="margin:0">
+        <h2 style="margin-bottom:12px">✅ Confirmation Gate</h2>
+        <div id="res-conf-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:6px"></div>
+        <div style="margin-top:12px;padding-top:12px;border-top:1px solid #21262d;display:flex;align-items:center;justify-content:space-between">
+          <span style="font-size:.85rem">Gate Passed</span>
+          <span id="res-conf-gate" class="stat-val" style="font-size:.85rem"></span>
+        </div>
+        <div class="stat-row" style="margin-top:4px"><span>Conf Score</span><span class="stat-val" id="res-conf-score"></span></div>
+      </div>
+    </div>
+
+    <!-- AI Regime -->
+    <div class="section" id="res-regime-section" style="margin-bottom:18px">
+      <h2 style="margin-bottom:12px">🎛️ Dynamic Regime (AI Weights)</h2>
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(120px,1fr));margin:0">
+        <div class="card"><div class="card-label">Regime</div><div id="res-regime" style="font-size:.85rem;font-weight:600;margin-top:4px"></div></div>
+        <div class="card"><div class="card-label">Trend Weight</div><div class="card-val blue" id="res-w-trend" style="font-size:1.1rem">—</div></div>
+        <div class="card"><div class="card-label">Osc Weight</div><div class="card-val" id="res-w-osc" style="font-size:1.1rem">—</div></div>
+        <div class="card"><div class="card-label">Volume Wt</div><div class="card-val" id="res-w-vol" style="font-size:1.1rem">—</div></div>
+        <div class="card"><div class="card-label">PA Weight</div><div class="card-val" id="res-w-pa" style="font-size:1.1rem">—</div></div>
+      </div>
+    </div>
+
+    <!-- Timestamp -->
+    <div style="text-align:center;font-size:.75rem;color:var(--text2);margin-top:8px">
+      ⏱️ Analysis completed at <span id="res-timestamp"></span> · Data: Binance Futures
+    </div>
+  </div>
+
+</div>
+
+<style>
+@keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+@keyframes fadeUp { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
+#scan-results { animation: fadeUp .4s ease; }
+.conf-check { display:flex;align-items:center;gap:5px;font-size:.75rem;padding:3px 0;color:var(--text2) }
+.conf-check.pass { color:var(--green) }
+.conf-check.fail { color:var(--border) }
+</style>
+
+<script>
+// ── DOM helpers ──────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+function fmt(n, decimals=4) {
+  if (n == null || n === '' || isNaN(n)) return '—';
+  const num = parseFloat(n);
+  // Smart decimal places based on price magnitude
+  if (decimals === 4) {
+    if (num >= 1000) return '$' + num.toFixed(2);
+    if (num >= 1)    return '$' + num.toFixed(4);
+    return '$' + num.toFixed(6);
+  }
+  return num.toFixed(decimals);
+}
+function scoreColor(s) {
+  if (s >= 70) return 'var(--green)';
+  if (s >= 45) return 'var(--yellow)';
+  return 'var(--red)';
+}
+function boolBadge(v, yes='✅', no='—') { return v ? yes : no; }
+
+// ── Run Scan ─────────────────────────────────────────────────
+async function runScan() {
+  const coinRaw = $('coin-input').value.trim().toUpperCase();
+  const tf      = $('tf-select').value;
+  if (!coinRaw) { $('coin-input').focus(); return; }
+
+  // Hide old results, show loader
+  $('scan-results').style.display = 'none';
+  $('scan-error').style.display   = 'none';
+  $('scan-loading').style.display = 'block';
+  $('scan-btn').disabled = true;
+  $('scan-btn').textContent = '⏳ Analysing...';
+
+  const loadingMessages = [
+    'Fetching Binance candles...',
+    'Calculating SMC Order Blocks...',
+    'Running Wyckoff Phase detection...',
+    'Scoring 14 confluence factors...',
+    'Applying AI weight engine...',
+    'Almost done...'
+  ];
+  let msgIdx = 0;
+  const msgTimer = setInterval(() => {
+    $('loading-msg').textContent = loadingMessages[Math.min(++msgIdx, loadingMessages.length-1)];
+  }, 4000);
+
+  try {
+    const resp = await fetch('/app/api/scan', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ coin: coinRaw, timeframe: tf }),
+    });
+    const data = await resp.json();
+    clearInterval(msgTimer);
+
+    if (!resp.ok || !data.ok) {
+      $('scan-loading').style.display = 'none';
+      $('scan-error').style.display   = 'block';
+      $('scan-error').textContent     = '❌ ' + (data.error || 'Analysis failed. Check the coin symbol and try again.');
+      return;
+    }
+    renderResults(data.analysis, coinRaw, tf);
+  } catch (e) {
+    clearInterval(msgTimer);
+    $('scan-loading').style.display = 'none';
+    $('scan-error').style.display   = 'block';
+    $('scan-error').textContent     = '❌ Network error: ' + e.message;
+  } finally {
+    $('scan-btn').disabled = false;
+    $('scan-btn').textContent = '⚡ Analyse';
+  }
+}
+
+// ── Render Results ────────────────────────────────────────────
+function renderResults(a, coin, tf) {
+  $('scan-loading').style.display  = 'none';
+  $('scan-results').style.display  = 'block';
+
+  // ── Hero
+  const score = a.score ?? 0;
+  const ring  = $('res-score-ring');
+  ring.textContent = score;
+  ring.style.borderColor = scoreColor(score);
+  ring.style.color       = scoreColor(score);
+
+  $('res-coin').textContent = coin + '/USDT';
+  $('res-tf-badge').textContent = tf.toUpperCase();
+
+  const isLong = a.direction === 'LONG';
+  const dirBadge = $('res-dir-badge');
+  dirBadge.textContent = isLong ? '🟢 LONG' : '🔴 SHORT';
+  dirBadge.style.background = isLong ? '#1a3a2a' : '#3a1a1a';
+  dirBadge.style.color      = isLong ? 'var(--green)' : 'var(--red)';
+
+  $('res-price').textContent = 'Current Price: ' + fmt(a.currentPrice);
+
+  // Reasons as tags
+  const reasons = (a.reasons || '').split(',').map(r => r.trim()).filter(Boolean);
+  $('res-reasons').innerHTML = reasons.slice(0,8).map(r =>
+    '<span style="display:inline-block;background:#21262d;border-radius:4px;padding:2px 7px;margin:2px;font-size:.73rem">' + r + '</span>'
+  ).join('');
+
+  // ── Levels
+  $('res-entry').textContent    = fmt(a.entryPrice);
+  $('res-order-type').textContent = a.orderSuggestion || '';
+  $('res-sl').textContent       = fmt(a.sl);
+  $('res-sl-label').textContent = a.slLabel || 'ATR';
+  $('res-tp1').textContent      = fmt(a.tp1);
+  $('res-tp1-label').textContent = a.tp1Label || '';
+  $('res-tp2').textContent      = fmt(a.tp2);
+  $('res-tp2-label').textContent = a.tp2Label || '';
+  $('res-tp3').textContent      = fmt(a.tp3);
+  $('res-tp3-label').textContent = a.tp3Label || '';
+
+  // RRR
+  const entry = parseFloat(a.entryPrice), sl = parseFloat(a.sl), tp2 = parseFloat(a.tp2);
+  if (entry && sl && tp2 && Math.abs(entry-sl) > 0) {
+    const rrr = Math.abs(tp2-entry) / Math.abs(entry-sl);
+    $('res-rrr').textContent = rrr.toFixed(2) + ':1';
+    $('res-rrr').style.color = rrr >= 2 ? 'var(--green)' : rrr >= 1 ? 'var(--yellow)' : 'var(--red)';
+  }
+
+  // ── Market Conditions
+  $('res-market').innerHTML    = (a.marketState || '—').replace('🚀','<span style="color:var(--green)">🚀</span>').replace('⚖️','<span style="color:var(--yellow)">⚖️</span>');
+  $('res-trend').textContent   = a.mainTrend   || '—';
+  $('res-1h').textContent      = a.trend1H     || '—';
+  $('res-4h').textContent      = a.trend4H     || '—';
+
+  const rsiNum = parseFloat(a.rsi);
+  $('res-rsi').textContent     = isNaN(rsiNum) ? '—' : rsiNum.toFixed(1);
+  $('res-rsi').style.color     = rsiNum > 70 ? 'var(--red)' : rsiNum < 30 ? 'var(--green)' : 'var(--text)';
+  $('res-adx').textContent     = a.adxData ? (a.adxData.value?.toFixed(1) + ' — ' + a.adxData.status) : '—';
+
+  // ── SMC
+  $('res-sweep').textContent    = a.liquiditySweep || '—';
+  $('res-choch').textContent    = a.choch || '—';
+  $('res-ob-bull').textContent  = a.marketSMC?.bullishOBDisplay || '—';
+  $('res-ob-bear').textContent  = a.marketSMC?.bearishOBDisplay || '—';
+  $('res-wyckoff').textContent  = a.wyckoff ? (a.wyckoff.phase + ' · ' + a.wyckoff.signal) : '—';
+  $('res-pd').textContent       = a.pdZone  ? (a.pdZone.zone + ' · ' + a.pdZone.position + '%') : '—';
+
+  // ── Indicators
+  $('res-vwap').textContent        = fmt(a.vwap);
+  $('res-supertrend').textContent  = a.supertrend ? (a.supertrend.signal + (a.supertrend.justFlipUp ? ' ⚡UP' : a.supertrend.justFlipDown ? ' ⚡DOWN' : '')) : '—';
+  $('res-ichimoku').textContent    = a.ichimoku?.signal || '—';
+  $('res-stochrsi').textContent    = a.stochRSI ? (a.stochRSI.signal + ' (K:' + (a.stochRSI.k?.toFixed(1)||'—') + ')') : '—';
+  $('res-rvol').textContent        = a.rvol ? (a.rvol.rvol?.toFixed(2) + 'x · ' + a.rvol.signal) : '—';
+  $('res-session').textContent     = a.session ? (a.session.session + ' · ' + a.session.quality) : '—';
+
+  // ── Advanced
+  $('res-ha').textContent     = a.heikinAshi ? (a.heikinAshi.consecutive + '× ' + a.heikinAshi.signal + (a.heikinAshi.isStrong?' 💪':'')) : '—';
+  $('res-bb').textContent     = a.bbSqueeze  ? (a.bbSqueeze.squeezing ? '🔴 Squeezing' : a.bbSqueeze.exploding ? '💥 Exploding · ' + a.bbSqueeze.explosionDir : 'Normal') : '—';
+  $('res-fib').textContent    = a.fibConf?.hasConfluence ? (a.fibConf.count + ' levels @ $' + a.fibConf.zone) : 'No confluence';
+  $('res-eqhl').textContent   = a.equalHL?.display || '—';
+  $('res-mmtrap').textContent = a.mmTrap ? (a.mmTrap.bullTrap ? '🐂 Bull Trap!' : a.mmTrap.bearTrap ? '🐻 Bear Trap!' : 'None') : '—';
+  $('res-cvd').textContent    = a.cvd ? (a.cvd.trend + (a.cvd.bullDiv?' · Accumulation':a.cvd.bearDiv?' · Distribution':'')) : '—';
+
+  // ── Confirmation Gate
+  const confChecks = a.confChecks || {};
+  const confLabels = {
+    htfAligned:'HTF Aligned', chochPrimary:'ChoCH Primary', sweepPrimary:'Sweep',
+    volumeConf:'Volume', wyckoffConf:'Wyckoff', ichimokuConf:'Ichimoku',
+    supTrendConf:'Supertrend', fibZoneConf:'Fib Zone', bbExplosion:'BB Explosion',
+    mmTrapConf:'MM Trap', bosConf:'BOS', dailyGate:'Daily Gate',
+    aiConf:'AI Model', bybitConf:'Bybit',
+  };
+  const confHTML = Object.entries(confLabels).map(([k,label]) => {
+    const pass = confChecks[k];
+    return '<div class="conf-check ' + (pass?'pass':'fail') + '">' +
+      (pass?'✅':'○') + ' ' + label + '</div>';
+  }).join('');
+  $('res-conf-grid').innerHTML = confHTML;
+
+  const gateEl = $('res-conf-gate');
+  gateEl.textContent  = (a.confGate ? '✅ YES' : '❌ NO') + ' (' + (a.confScore||0) + '/14)';
+  gateEl.style.color  = a.confGate ? 'var(--green)' : 'var(--red)';
+  $('res-conf-score').textContent = (a.confScore || 0) + ' / 14';
+
+  // ── Regime
+  const dr = a.dynRegime;
+  if (dr) {
+    $('res-regime').textContent   = dr.regimeLabel || '—';
+    $('res-w-trend').textContent  = a.weights?.trend?.toFixed(2) || '—';
+    $('res-w-osc').textContent    = a.weights?.oscillator?.toFixed(2) || '—';
+    $('res-w-vol').textContent    = a.weights?.volume?.toFixed(2) || '—';
+    $('res-w-pa').textContent     = a.weights?.priceAction?.toFixed(2) || '—';
+  }
+
+  $('res-timestamp').textContent = new Date().toLocaleString();
+}
+
+// Enter key triggers scan
+document.addEventListener('DOMContentLoaded', () => {
+  $('coin-input').addEventListener('keydown', e => { if (e.key==='Enter') runScan(); });
+  $('coin-input').addEventListener('input', e => {
+    e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,'');
+  });
+});
+</script>
+`, `/* scanner extra */`));
+    });
+
+    // ════════════════════════════════════════════════════════════
+    //  AI SCANNER API  (POST /app/api/scan)
+    // ════════════════════════════════════════════════════════════
+
+    app.post('/app/api/scan', saasAuth.requireUserAuth, async (req, res) => {
+        try {
+            let { coin = '', timeframe = '15m' } = req.body;
+
+            // ── Sanitise inputs ────────────────────────────────────
+            coin = coin.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+            if (!coin) return res.status(400).json({ ok: false, error: 'Coin symbol required' });
+
+            // Append USDT if missing
+            if (!coin.endsWith('USDT')) coin += 'USDT';
+
+            // Stablecoin guard
+            const STABLES = ['USDCUSDT','BUSDUSDT','DAIUSDT','TUSDUSDT','EURUSDT','GBPUSDT'];
+            if (STABLES.includes(coin)) {
+                return res.status(400).json({ ok: false, error: coin.replace('USDT','') + ' is a stablecoin — no tradable signals.' });
+            }
+
+            const VALID_TF = ['1m','3m','5m','15m','30m','1h','2h','4h','6h','12h','1d','3d','1w'];
+            if (!VALID_TF.includes(timeframe)) timeframe = '15m';
+
+            console.log('[AI Scanner] ' + req.saasUser.username + ' → ' + coin + ' ' + timeframe);
+
+            // ── Run the 14-factor engine ───────────────────────────
+            const analyzer = require('./lib/analyzer');
+            const analysis  = await analyzer.run14FactorAnalysis(coin, timeframe);
+
+            // ── Slim down — strip candle arrays before sending to browser
+            // currentCandles can be 500 rows × ~12 fields = ~50 KB. Remove it.
+            const {
+                currentCandles,           // raw OHLCV — removed
+                ...safeAnalysis
+            } = analysis;
+
+            res.json({ ok: true, analysis: safeAnalysis });
+
+        } catch (e) {
+            console.error('[AI Scanner] Error:', e.message);
+            res.status(500).json({ ok: false, error: e.message });
+        }
+    });
+
+        // ── Root redirect ─────────────────────────────────────────────
     app.get('/', (req, res) => res.redirect('/auth/login'));
 
     // ─────────────────────────────────────────────────────────────

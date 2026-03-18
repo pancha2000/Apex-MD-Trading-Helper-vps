@@ -27,6 +27,7 @@ const db       = require('../lib/database');
 const axios    = require('axios');
 const binance  = require('../lib/binance');
 const analyzer = require('../lib/analyzer');
+const { broadcastSignal, dispatchSignal } = require('../lib/signalDispatch');
 
 // ─── Sentiment Cache ───────────────────────────────────────────
 let cachedSentiment    = null;
@@ -495,9 +496,10 @@ async function runSignalScan() {
         const setups = await getTopDownSetups(false);  // auto-scan: respect cooldown to avoid repeating same coins
         if (!setups || setups.length === 0) return;
         const sent  = await getSentimentCached();
-        let msg = `🚀 *14-FACTOR AUTO SIGNAL ALERT* 🚀\n_Top ${setups.length} Best Setups Now_\n\n`;
-        msg += `🧠 *Market:* ${sent.overallSentiment} | ${sent.fngEmoji} F&G: ${sent.fngValue}\n\n`;
 
+        // ── Owner summary message (market overview) ────────────────
+        let summaryMsg = `🚀 *14-FACTOR AUTO SIGNAL ALERT* 🚀\n_Top ${setups.length} Best Setups Now_\n\n`;
+        summaryMsg += `🧠 *Market:* ${sent.overallSentiment} | ${sent.fngEmoji} F&G: ${sent.fngValue}\n\n`;
         setups.forEach((s, i) => {
             const catTag   = s.tradeCategory ? `\n   📅 ${s.tradeCategory}` : '';
             const orderTag = s.orderType
@@ -506,15 +508,28 @@ async function runSignalScan() {
             const dayTag   = s.dailyTrend ? ` | Daily: ${s.dailyTrend} ${s.dailyAligned ? '✅' : '⚠️'}` : '';
             const trapTag  = s.mmTrap && (s.mmTrap.bullTrap || s.mmTrap.bearTrap) ? ` 🪤` : '';
             const sqzTag   = s.bbSqueeze && s.bbSqueeze.exploding ? ` 💥` : '';
-            msg +=
+            summaryMsg +=
                 `*${i + 1}. #${s.coin}* - ${s.type} (Score: ${s.score} ⭐) ${s.sentEmoji || ''}${orderTag}${trapTag}${sqzTag}${catTag}\n` +
                 `   📍 $${s.price} | ADX: ${s.adx}${dayTag}\n` +
                 `   ✔️ ${s.reasons}\n` +
                 `   🤖 .future ${s.coin} 15m\n\n`;
         });
-        msg += `_⏱️ Next scan on 15m candle close | .set 1 off ගසා Stop කරන්න_`;
+        summaryMsg += `_⏱️ Next scan on 15m candle close | .set 1 off ගසා Stop කරන්න_`;
 
-        await _connRef.sendMessage(_ownerJidRef, { text: msg.trim() });
+        // Send the summary overview to owner first
+        await _connRef.sendMessage(_ownerJidRef, { text: summaryMsg.trim() });
+
+        // ── Per-user dispatch (respects tradingMode per user) ───────
+        // Each setup is broadcast individually so each user receives
+        // a clean per-coin alert and the correct mode (auto/signal).
+        for (const setup of setups) {
+            try {
+                await broadcastSignal(_connRef, setup, _ownerJidRef);
+            } catch (_be) {
+                console.warn(`[Scanner] Broadcast failed for ${setup.coin}:`, _be.message);
+            }
+        }
+
     } catch (_e) { /* silent — keep the listener alive */ }
 }
 

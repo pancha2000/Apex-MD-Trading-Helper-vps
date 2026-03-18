@@ -1,7 +1,11 @@
 /**
  * ╔════════════════════════════════════════════╗
- * ║   APEX-MD v7 PRO VVIP  ·  index.js        ║
- * ║   SaaS-Grade Bot Entry Point               ║
+ * ║   APEX-MD v7.1 PRO VVIP  ·  index.js      ║
+ * ║   ✅ FIXES:                                ║
+ * ║    - Session only re-downloads if creds    ║
+ * ║      are missing or invalid (not every     ║
+ * ║      restart) — prevents MEGA rate limits  ║
+ * ║    - PORT conflict guard added             ║
  * ╚════════════════════════════════════════════╝
  */
 
@@ -23,12 +27,7 @@ const { initDashboard, setBotConnected, log: dashLog } = require('./dashboard');
 initDashboard();
 
 // ─── Serialize helper ─────────────────────────────────────────
-let serialize;
-if (fs.existsSync('./lib/functions.js')) {
-    serialize = require('./lib/functions').serialize;
-} else {
-    serialize = require('./lib/functions').serialize;
-}
+const serialize = require('./lib/functions').serialize;
 
 // ─── Load all plugins ─────────────────────────────────────────
 fs.readdirSync('./plugins/').forEach(plugin => {
@@ -37,43 +36,76 @@ fs.readdirSync('./plugins/').forEach(plugin => {
     }
 });
 
-// ─── WhatsApp keep-alive Express server (port 8000) ──────────
-// NOTE: The web dashboard runs on DASHBOARD_PORT (default 3000).
-// This server only serves the Heroku/railway keep-alive endpoint.
-const app  = express();
-const PORT = config.PORT;
+// ─── WhatsApp keep-alive Express server ──────────────────────
+// ✅ FIX: PORT conflict guard — keep-alive uses PORT (default 8000).
+// Dashboard uses DASHBOARD_PORT (default 3000). If both are set to
+// the same value by the hosting env, keep-alive falls back to PORT+1.
+const app      = express();
+let keepAlivePort = config.PORT;
+if (keepAlivePort === config.DASHBOARD_PORT) {
+    keepAlivePort = keepAlivePort + 1;
+    console.warn(`⚠️ PORT conflict: keep-alive port changed to ${keepAlivePort}`);
+}
 
 app.get('/', (req, res) => {
     res.send(`🚀 ${config.BOT_NAME} is Running! | Dashboard → port ${config.DASHBOARD_PORT}`);
 });
 
-app.listen(PORT, () => {
-    console.log(`🌐 Keep-alive server running on port ${PORT}`);
+app.listen(keepAlivePort, () => {
+    console.log(`🌐 Keep-alive server running on port ${keepAlivePort}`);
 });
 
 // ─── Session download ─────────────────────────────────────────
+/**
+ * ✅ FIX: Only re-download session from MEGA if:
+ *   1. auth_info folder doesn't exist, OR
+ *   2. creds.json is missing inside it, OR
+ *   3. creds.json is empty/corrupt
+ *
+ * Previously this deleted and re-downloaded on EVERY restart,
+ * which caused MEGA rate limiting and unnecessary delays.
+ */
 async function downloadSession() {
-    if (fs.existsSync(path.join(__dirname, 'auth_info'))) {
-        console.log('🗑️ Clearing old session files...');
-        fs.rmSync(path.join(__dirname, 'auth_info'), { recursive: true, force: true });
+    const authDir   = path.join(__dirname, 'auth_info');
+    const credsFile = path.join(authDir, 'creds.json');
+
+    // Check if valid session already exists
+    if (fs.existsSync(credsFile)) {
+        try {
+            const creds = JSON.parse(fs.readFileSync(credsFile, 'utf8'));
+            if (creds && creds.me) {
+                console.log('✅ Existing session found — skipping MEGA download.');
+                return;
+            }
+        } catch (_) {
+            console.log('⚠️ creds.json corrupt — re-downloading...');
+        }
     }
 
-    if (config.SESSION_ID) {
-        console.log('📥 Downloading Fresh Session from Mega...');
-        try {
-            const file = File.fromURL(`https://mega.nz/file/${config.SESSION_ID}`);
-            const data = await file.downloadBuffer();
-            fs.mkdirSync(path.join(__dirname, 'auth_info'), { recursive: true });
-            fs.writeFileSync(path.join(__dirname, 'auth_info', 'creds.json'), data);
-            console.log('✅ Session Downloaded Successfully!');
-        } catch (e) {
-            console.error('❌ Error downloading session:', e.message);
+    if (!config.SESSION_ID) {
+        console.log('⚠️ No SESSION_ID configured — skipping session download.');
+        return;
+    }
+
+    console.log('📥 Downloading Fresh Session from Mega...');
+    try {
+        // Clear old broken session
+        if (fs.existsSync(authDir)) {
+            fs.rmSync(authDir, { recursive: true, force: true });
         }
+        const file = File.fromURL(`https://mega.nz/file/${config.SESSION_ID}`);
+        const data = await file.downloadBuffer();
+        fs.mkdirSync(authDir, { recursive: true });
+        fs.writeFileSync(credsFile, data);
+        console.log('✅ Session Downloaded Successfully!');
+    } catch (e) {
+        console.error('❌ Error downloading session:', e.message);
     }
 }
 
 // ─── Bot Core ─────────────────────────────────────────────────
-let isFirstStart = true;
+let isFirstStart    = true;
+let reconnectCount  = 0;
 
 async function startBot() {
     if (isFirstStart) {
@@ -87,11 +119,11 @@ async function startBot() {
 
     const conn = makeWASocket({
         version,
-        logger: pino({ level: 'silent' }),
+        logger:            pino({ level: 'silent' }),
         printQRInTerminal: false,
-        browser: ['Ubuntu', 'Chrome', '20.0.04'],
-        auth:    state,
-        getMessage: async () => ({ conversation: 'Apex Crypto Bot' }),
+        browser:           ['Ubuntu', 'Chrome', '20.0.04'],
+        auth:              state,
+        getMessage:        async () => ({ conversation: 'Apex Crypto Bot' }),
     });
 
     conn.ev.on('connection.update', async (update) => {
@@ -99,19 +131,25 @@ async function startBot() {
 
         if (connection === 'close') {
             setBotConnected(false);
-            let reason = lastDisconnect?.error?.output?.statusCode;
+            const reason = lastDisconnect?.error?.output?.statusCode;
             console.log(`⚠️ Connection Closed. Reason: ${reason}`);
 
             if (reason === DisconnectReason.loggedOut || reason === 440 || reason === 401) {
                 console.log('❌ Session Invalid! Generate a NEW Session ID.');
+                // ✅ Clear corrupt session so next start forces fresh download
+                const credsFile = path.join(__dirname, 'auth_info', 'creds.json');
+                if (fs.existsSync(credsFile)) fs.unlinkSync(credsFile);
                 process.exit(1);
             } else {
-                console.log('🔄 Reconnecting in 5 seconds...');
+                reconnectCount++;
+                const delay = Math.min(5000 * reconnectCount, 60000); // cap at 60s
+                console.log(`🔄 Reconnecting in ${delay / 1000}s... (attempt ${reconnectCount})`);
                 conn.ev.removeAllListeners();
-                setTimeout(startBot, 5000);
+                setTimeout(startBot, delay);
             }
         } else if (connection === 'open') {
             setBotConnected(true);
+            reconnectCount = 0;
             console.log('✅ Bot Connected to WhatsApp Successfully!');
             console.log(`💡 Type ${config.PREFIX}scanstart in your WhatsApp to activate the Auto-Scanner!`);
             dashLog(`WhatsApp connected successfully`);
@@ -124,6 +162,14 @@ async function startBot() {
             } catch (e) {
                 console.log('⚠️ Trade Manager auto-start skipped:', e.message);
             }
+
+            // Auto-start daily report scheduler
+            try {
+                const { startDailyReport } = require('./plugins/scanner');
+                if (typeof startDailyReport === 'function') {
+                    startDailyReport(conn);
+                }
+            } catch (_) {}
         }
     });
 

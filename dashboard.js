@@ -1810,6 +1810,107 @@ async function setMode(mode){const msg=document.getElementById('mode-msg');msg.t
     });
 
     // ─── AI Scanner Page ───────────────────────────────────────────────
+    // ─── Global Market Scanner API ─────────────────────────────────────
+    app.get('/app/api/market-scan', saasAuth.requireUserAuth, async (req, res) => {
+        try {
+            const binance  = require('./lib/binance');
+            const analyzer = require('./lib/analyzer');
+
+            // Pull watched coins from live WS cache, or fall back to top trending
+            const allCoins = binance.isReady()
+                ? binance.getWatchedCoins()
+                : await binance.getTopTrendingCoins(20).catch(() => [
+                    'BTCUSDT','ETHUSDT','SOLUSDT','BNBUSDT','XRPUSDT','ADAUSDT',
+                    'AVAXUSDT','DOTUSDT','LINKUSDT','MATICUSDT','ATOMUSDT','NEARUSDT',
+                    'LTCUSDT','DOGEUSDT','UNIUSDT','INJUSDT','APTUSDT','ARBUSDT',
+                    'OPUSDT','SUIUSDT',
+                  ]);
+
+            const STABLES = new Set(['USDCUSDT','BUSDUSDT','DAIUSDT','TUSDUSDT','EURUSDT','GBPUSDT','USDPUSDT']);
+            const coins   = allCoins.filter(c => !STABLES.has(c));
+
+            const results = [];
+            const scanLimit = Math.min(coins.length, 25); // scan up to 25 coins
+
+            for (let i = 0; i < scanLimit; i++) {
+                const coin = coins[i];
+                try {
+                    const a = await analyzer.run14FactorAnalysis(coin, '15m');
+                    if (a.score < 18) continue; // only quality setups
+
+                    const entryNum = parseFloat(a.entryPrice);
+                    const slNum    = parseFloat(a.sl);
+                    const tp2Num   = parseFloat(a.tp2);
+                    const risk     = Math.abs(entryNum - slNum);
+                    const rrr      = risk > 0 ? (Math.abs(tp2Num - entryNum) / risk) : 0;
+
+                    // ── Auto Leverage Calculation (mirrors future.js logic) ──
+                    const slDistPct  = slNum > 0 ? risk / entryNum : 0.02;
+                    const riskAmt    = 100 * 0.02; // 2% of $100 placeholder wallet
+                    const rawLev     = slDistPct > 0 ? (riskAmt / slDistPct) / (100 * 0.10) : 10;
+                    const calcLev    = Math.min(Math.ceil(rawLev), 75);
+
+                    // ── DCA Points ──
+                    const dca1 = a.direction === 'LONG'
+                        ? entryNum - risk * 0.35
+                        : entryNum + risk * 0.35;
+                    const dca2 = a.direction === 'LONG'
+                        ? entryNum - risk * 0.70
+                        : entryNum + risk * 0.70;
+
+                    // Extract VWAP numeric value from string like "🟢 VWAP: $42500.1234"
+                    const vwapMatch = (a.vwap || '').match(/\$([0-9.]+)/);
+                    const vwapNum   = vwapMatch ? parseFloat(vwapMatch[1]) : null;
+
+                    results.push({
+                        coin:        coin.replace('USDT',''),
+                        direction:   a.direction,
+                        score:       a.score,
+                        maxScore:    a.maxScore || 100,
+                        price:       a.priceStr,
+                        currentPrice: a.currentPrice,
+                        entryPrice:  a.entryPrice,
+                        sl:          a.sl,  slLabel:  a.slLabel,
+                        tp1:         a.tp1, tp1Label: a.tp1Label,
+                        tp2:         a.tp2, tp2Label: a.tp2Label,
+                        tp3:         a.tp3, tp3Label: a.tp3Label,
+                        rrr:         rrr.toFixed(2),
+                        leverage:    calcLev,
+                        marginPct:   2,
+                        dca1:        dca1.toFixed(4),
+                        dca2:        dca2.toFixed(4),
+                        vwap:        vwapNum ? vwapNum.toFixed(4) : null,
+                        vwapRaw:     a.vwap,
+                        reasons:     a.reasons,
+                        adx:         a.adxData?.value,
+                        adxStatus:   a.adxData?.status,
+                        marketState: a.marketState,
+                        mainTrend:   a.mainTrend,
+                        confScore:   a.confScore,
+                        confGate:    a.confGate,
+                        orderType:   a.orderSuggestion?.type || 'MARKET',
+                        dailyAligned: a.dailyAligned,
+                        dailyTrend:  a.dailyTrend,
+                        bbSqueeze:   a.bbSqueeze?.exploding || false,
+                        mmTrap:      a.mmTrap?.bullTrap || a.mmTrap?.bearTrap || false,
+                        rsi:         a.rsi,
+                        session:     a.session?.session,
+                        sessionQuality: a.session?.quality,
+                    });
+                } catch (_) { /* skip failed coin silently */ }
+            }
+
+            // Sort by score descending, return top 5
+            results.sort((a, b) => b.score - a.score);
+            const top = results.slice(0, 5);
+
+            res.json({ ok: true, setups: top, scanned: scanLimit, ts: Date.now() });
+        } catch (e) {
+            console.error('[Market Scan] Error:', e.message);
+            res.status(500).json({ ok: false, error: e.message });
+        }
+    });
+
     app.get('/app/scanner', saasAuth.requireUserAuth, (req, res) => {
         const user = req.saasUser;
         res.send(_html('AI Scanner', `
@@ -1817,7 +1918,56 @@ ${_appNav('scanner', user.username)}
 <div class="wrap">
   <h1 class="page-title">🔬 AI Scanner <span>14-Factor MTF + SMC + Wyckoff Analysis</span></h1>
 
-  <div class="panel" style="max-width:660px;margin-bottom:24px">
+  <!-- ═══════════════════════════════════════════════════════
+       AUTO MARKET SCANNER — Top Opportunities Grid
+  ════════════════════════════════════════════════════════ -->
+  <div class="panel" style="margin-bottom:28px;border-color:rgba(0,200,255,.2);background:linear-gradient(135deg,rgba(0,200,255,.03),rgba(124,58,237,.03))">
+    <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+      <div class="panel-title" style="font-size:1rem;display:flex;align-items:center;gap:10px">
+        <span style="font-size:1.3rem">🌐</span> Auto Market Scanner
+        <span id="ms-badge" style="font-size:.68rem;padding:2px 8px;border-radius:99px;background:rgba(0,200,255,.1);color:var(--accent);font-family:var(--font-mono);border:1px solid rgba(0,200,255,.2)">READY</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-size:.75rem;color:var(--text2)" id="ms-sub">Scans top coins · Returns top 3–5 by Confluence Score</span>
+        <button id="ms-btn" class="btn btn-primary" style="padding:8px 20px;font-size:.82rem" onclick="runMarketScan()">⚡ Scan Market</button>
+      </div>
+    </div>
+
+    <div id="ms-loading" style="display:none;padding:44px 0;text-align:center">
+      <div style="font-size:2.6rem;animation:spin 1.2s linear infinite;display:inline-block">🌐</div>
+      <div style="margin-top:14px;font-size:.92rem;color:var(--text)">Scanning top coins across 14 factors...</div>
+      <div style="margin-top:4px;font-size:.74rem;color:var(--text2)" id="ms-loading-sub">Fetching candles · Scoring confluences · Ranking setups</div>
+    </div>
+
+    <div id="ms-error" style="display:none;background:rgba(255,51,85,.08);border:1px solid rgba(255,51,85,.22);border-radius:var(--radius);padding:14px 18px;margin:16px 20px 0;color:var(--red);font-size:.86rem"></div>
+
+    <!-- Top Opportunities Grid -->
+    <div id="ms-results" style="display:none;padding:16px 20px 20px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <div style="font-size:.78rem;color:var(--text2)" id="ms-meta"></div>
+        <div style="font-size:.72rem;color:var(--text2)" id="ms-ts"></div>
+      </div>
+      <div id="ms-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px"></div>
+    </div>
+
+    <!-- Empty state -->
+    <div id="ms-empty" style="display:none;padding:36px 20px;text-align:center;color:var(--text2)">
+      <div style="font-size:2rem;margin-bottom:10px">🔍</div>
+      <div style="font-size:.9rem">No high-quality setups found right now.</div>
+      <div style="font-size:.75rem;margin-top:4px">Score threshold: 18+/100 · Try again after the next 15m candle close.</div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════
+       SINGLE COIN DEEP SCANNER
+  ════════════════════════════════════════════════════════ -->
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+    <div style="flex:1;height:1px;background:var(--border)"></div>
+    <div style="font-size:.72rem;font-family:var(--font-mono);color:var(--text2);white-space:nowrap;padding:0 10px">SINGLE COIN DEEP ANALYSIS</div>
+    <div style="flex:1;height:1px;background:var(--border)"></div>
+  </div>
+
+  <div class="panel" style="max-width:680px;margin-bottom:24px">
     <div class="panel-body">
       <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
         <div style="flex:1;min-width:140px">
@@ -1856,6 +2006,7 @@ ${_appNav('scanner', user.username)}
   <div id="scan-error" style="display:none;background:rgba(255,51,85,.08);border:1px solid rgba(255,51,85,.25);border-radius:var(--radius);padding:16px 20px;margin-bottom:18px;color:var(--red);font-size:.9rem"></div>
 
   <div id="scan-results" style="display:none">
+    <!-- ── Hero Header ── -->
     <div class="scan-hero" id="res-hero">
       <div style="text-align:center;min-width:110px">
         <div class="score-ring-lg" id="res-score-ring">—</div>
@@ -1872,17 +2023,89 @@ ${_appNav('scanner', user.username)}
       </div>
     </div>
 
-    <div class="g-3" style="margin-bottom:18px">
-      <div class="stat-card"><div class="stat-label">Entry Price</div><div class="stat-val c-cyan" id="res-entry">—</div><div class="stat-sub" id="res-order-type"></div></div>
-      <div class="stat-card"><div class="stat-label">Stop Loss</div><div class="stat-val c-red" id="res-sl">—</div><div class="stat-sub" id="res-sl-label"></div></div>
-      <div class="stat-card"><div class="stat-label">Risk / Reward</div><div class="stat-val c-green" id="res-rrr">—</div><div class="stat-sub">vs TP2</div></div>
-    </div>
-    <div class="g-3" style="margin-bottom:18px">
-      <div class="stat-card"><div class="stat-label">TP1</div><div class="stat-val c-green" id="res-tp1">—</div><div class="stat-sub" id="res-tp1-label"></div></div>
-      <div class="stat-card"><div class="stat-label">TP2</div><div class="stat-val c-green" id="res-tp2">—</div><div class="stat-sub" id="res-tp2-label"></div></div>
-      <div class="stat-card"><div class="stat-label">TP3</div><div class="stat-val c-green" id="res-tp3">—</div><div class="stat-sub" id="res-tp3-label"></div></div>
+    <!-- ── Futures Setup Panel ── -->
+    <div class="panel" style="margin-bottom:18px;border-color:rgba(255,171,0,.25);background:linear-gradient(135deg,rgba(255,171,0,.04),rgba(255,51,85,.03))">
+      <div class="panel-head">
+        <div class="panel-title" style="color:var(--yellow)">⚡ Futures Trade Setup</div>
+      </div>
+      <div class="panel-body">
+        <!-- Row 1: Leverage + Margin -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:14px">
+          <div class="stat-card" style="border-color:rgba(255,171,0,.2);background:rgba(255,171,0,.05)">
+            <div class="stat-label">Recommended Leverage</div>
+            <div class="stat-val" id="res-leverage" style="color:var(--yellow);font-size:1.4rem">—</div>
+            <div class="stat-sub">Cross mode</div>
+          </div>
+          <div class="stat-card" style="border-color:rgba(255,171,0,.2);background:rgba(255,171,0,.05)">
+            <div class="stat-label">Margin Size</div>
+            <div class="stat-val" id="res-margin-pct" style="color:var(--yellow);font-size:1.4rem">2%</div>
+            <div class="stat-sub">of wallet per trade</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Entry Price</div>
+            <div class="stat-val c-cyan" id="res-entry" style="font-size:1.2rem">—</div>
+            <div class="stat-sub" id="res-order-type"></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Stop Loss</div>
+            <div class="stat-val c-red" id="res-sl" style="font-size:1.2rem">—</div>
+            <div class="stat-sub" id="res-sl-label"></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Risk / Reward</div>
+            <div class="stat-val c-green" id="res-rrr" style="font-size:1.2rem">—</div>
+            <div class="stat-sub">vs TP2</div>
+          </div>
+        </div>
+
+        <!-- Row 2: TP ladder -->
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px">
+          <div class="stat-card">
+            <div class="stat-label">🎯 TP1 — 33% Close</div>
+            <div class="stat-val c-green" id="res-tp1" style="font-size:1.1rem">—</div>
+            <div class="stat-sub" id="res-tp1-label"></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">🎯 TP2 — 33% Close</div>
+            <div class="stat-val c-green" id="res-tp2" style="font-size:1.1rem">—</div>
+            <div class="stat-sub" id="res-tp2-label"></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">🎯 TP3 — Full Exit</div>
+            <div class="stat-val c-green" id="res-tp3" style="font-size:1.1rem">—</div>
+            <div class="stat-sub" id="res-tp3-label"></div>
+          </div>
+        </div>
+
+        <!-- Row 3: DCA Points -->
+        <div style="background:rgba(0,200,255,.04);border:1px solid rgba(0,200,255,.12);border-radius:var(--radius);padding:14px 16px">
+          <div style="font-size:.75rem;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px">📉 DCA (Dollar Cost Avg) Points</div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px">
+            <div>
+              <div style="font-size:.7rem;color:var(--text2);margin-bottom:3px">Entry (Initial — 50% size)</div>
+              <div style="font-family:var(--font-mono);font-size:.95rem;color:var(--text);font-weight:600" id="res-dca-entry">—</div>
+            </div>
+            <div>
+              <div style="font-size:.7rem;color:var(--text2);margin-bottom:3px">DCA 1 — 35% toward SL (25% more)</div>
+              <div style="font-family:var(--font-mono);font-size:.95rem;color:var(--yellow);font-weight:600" id="res-dca1">—</div>
+            </div>
+            <div>
+              <div style="font-size:.7rem;color:var(--text2);margin-bottom:3px">DCA 2 — 70% toward SL (25% more)</div>
+              <div style="font-family:var(--font-mono);font-size:.95rem;color:var(--red);font-weight:600" id="res-dca2">—</div>
+            </div>
+            <div>
+              <div style="font-size:.7rem;color:var(--text2);margin-bottom:3px">Hard Stop Loss — Exit All</div>
+              <div style="font-family:var(--font-mono);font-size:.95rem;color:var(--red);font-weight:700" id="res-dca-sl">—</div>
+            </div>
+          </div>
+          <div style="font-size:.68rem;color:var(--text2);margin-top:10px;padding-top:8px;border-top:1px solid var(--border)">
+            ⚠️ Only DCA if SL has not been reached. Avg down only within the trade zone.
+          </div>
+        </div>
+      </div>
     </div>
 
+    <!-- ── Market Context Row ── -->
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:18px">
       <div class="stat-card"><div class="stat-label">Market State</div><div id="res-market" style="font-size:.88rem;font-weight:600;margin-top:6px"></div></div>
       <div class="stat-card"><div class="stat-label">Main Trend</div><div id="res-trend" style="font-size:.88rem;font-weight:600;margin-top:6px"></div></div>
@@ -1958,14 +2181,202 @@ ${_appNav('scanner', user.username)}
 </div>
 
 <style>
+/* ── Market Scanner Cards ───────────────────────────── */
+.opp-card{
+  border-radius:var(--radius);
+  border:1px solid var(--border);
+  padding:16px;
+  background:var(--card);
+  cursor:pointer;
+  transition:transform .15s,border-color .15s,box-shadow .15s;
+  position:relative;overflow:hidden;
+}
+.opp-card::before{
+  content:'';position:absolute;inset:0;
+  background:linear-gradient(135deg,rgba(0,200,255,.05),transparent);
+  opacity:0;transition:opacity .2s;pointer-events:none;
+}
+.opp-card:hover{transform:translateY(-2px);border-color:var(--border2);box-shadow:0 8px 28px rgba(0,0,0,.35);}
+.opp-card:hover::before{opacity:1;}
+.opp-card.long-card{border-left:3px solid var(--green);}
+.opp-card.short-card{border-left:3px solid var(--red);}
+.opp-rank{
+  position:absolute;top:10px;right:12px;
+  font-family:var(--font-mono);font-size:.62rem;font-weight:700;
+  color:var(--text2);opacity:.5;
+}
+.opp-score-bar{
+  height:3px;border-radius:99px;
+  background:var(--border);margin:10px 0 12px;overflow:hidden;
+}
+.opp-score-bar-fill{height:100%;border-radius:99px;transition:width .6s ease;}
+.opp-targets{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:6px;
+  margin-top:10px;
+}
+.opp-target{
+  background:rgba(0,0,0,.2);border-radius:var(--radius-sm);
+  padding:5px 6px;text-align:center;
+}
+.opp-target-label{font-size:.59rem;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;}
+.opp-target-val{font-family:var(--font-mono);font-size:.78rem;font-weight:600;color:var(--text);}
+.opp-dca-row{
+  display:flex;gap:4px;align-items:center;
+  font-family:var(--font-mono);font-size:.7rem;
+  color:var(--text2);margin-top:8px;flex-wrap:wrap;
+}
+.opp-dca-pill{
+  padding:1px 6px;border-radius:3px;font-size:.65rem;
+  background:rgba(0,200,255,.08);color:var(--accent);
+  border:1px solid rgba(0,200,255,.15);
+}
+
+/* ── Scan-hero keep ─────────────────────────────────── */
+.scan-hero{display:flex;gap:20px;align-items:flex-start;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:24px;margin-bottom:18px;}
+.score-ring-lg{width:80px;height:80px;border-radius:50%;border:3px solid var(--border2);display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-size:1.55rem;font-weight:700;color:var(--text);margin:0 auto;}
 .conf-check{display:flex;align-items:center;gap:5px;font-size:.72rem;padding:3px 0;color:var(--text2);}
 .conf-check.pass{color:var(--green);}
 </style>
+
 <script>
 const $ = id => document.getElementById(id);
-function fmt(n,d=4){if(n==null||n===''||isNaN(n))return '—';const p=parseFloat(n);if(d===4){if(p>=1000)return '$'+p.toFixed(2);if(p>=1)return '$'+p.toFixed(4);return '$'+p.toFixed(6);}return p.toFixed(d);}
+function fmt(n,d=4){
+  if(n==null||n===''||isNaN(Number(n)))return '—';
+  const p=parseFloat(n);
+  if(isNaN(p))return '—';
+  if(d===4){if(p>=1000)return '$'+p.toFixed(2);if(p>=1)return '$'+p.toFixed(4);return '$'+p.toFixed(6);}
+  return p.toFixed(d);
+}
+function fmtPrice(n){
+  if(n==null||isNaN(Number(n)))return '—';
+  const p=parseFloat(n);
+  if(p>=1000)return '$'+p.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  if(p>=1)return '$'+p.toFixed(4);
+  return '$'+p.toFixed(6);
+}
 function scoreColor(s){return s>=70?'var(--green)':s>=45?'var(--yellow)':'var(--red)';}
 
+// ════════════════════════════════════════════════════
+//  AUTO MARKET SCANNER
+// ════════════════════════════════════════════════════
+async function runMarketScan(){
+  $('ms-btn').disabled=true;$('ms-btn').textContent='⏳ Scanning...';
+  $('ms-badge').textContent='RUNNING';$('ms-badge').style.background='rgba(255,171,0,.15)';$('ms-badge').style.color='var(--yellow)';
+  $('ms-results').style.display='none';$('ms-empty').style.display='none';
+  $('ms-error').style.display='none';$('ms-loading').style.display='block';
+
+  const tips=['Fetching live candles...','Scoring 14 confluence factors...','Detecting SMC Order Blocks...','Ranking by Confluence Score...','Calculating DCA levels...'];
+  let ti=0;const tt=setInterval(()=>{ $('ms-loading-sub').textContent=tips[ti%tips.length];ti++; },3500);
+
+  try{
+    const r=await fetch('/app/api/market-scan');
+    const d=await r.json();
+    clearInterval(tt);$('ms-loading').style.display='none';
+
+    if(!r.ok||!d.ok){
+      $('ms-error').style.display='block';
+      $('ms-error').textContent='❌ '+(d.error||'Scan failed. Please try again.');
+      return;
+    }
+    if(!d.setups||d.setups.length===0){
+      $('ms-empty').style.display='block';
+    } else {
+      renderMarketScanResults(d);
+    }
+  }catch(e){
+    clearInterval(tt);$('ms-loading').style.display='none';
+    $('ms-error').style.display='block';
+    $('ms-error').textContent='❌ Network error: '+e.message;
+  }finally{
+    $('ms-btn').disabled=false;$('ms-btn').textContent='⚡ Scan Market';
+    $('ms-badge').textContent='DONE';$('ms-badge').style.background='rgba(0,230,118,.1)';$('ms-badge').style.color='var(--green)';
+  }
+}
+
+function renderMarketScanResults(d){
+  $('ms-meta').textContent='Top '+d.setups.length+' opportunities from '+d.scanned+' coins scanned';
+  $('ms-ts').textContent='Scanned '+new Date(d.ts).toLocaleTimeString();
+  const grid=$('ms-grid');grid.innerHTML='';
+
+  d.setups.forEach((s,i)=>{
+    const isLong=s.direction==='LONG';
+    const scoreBarColor=s.score>=70?'var(--green)':s.score>=45?'var(--yellow)':'var(--red)';
+    const scorePct=Math.min((s.score/s.maxScore)*100,100).toFixed(1);
+    const dirColor=isLong?'var(--green)':'var(--red)';
+    const dirArrow=isLong?'▲':'▼';
+    const levText='Cross '+s.leverage+'x';
+    const reasons=(s.reasons||'').split(',').slice(0,3).map(r=>'<span style="display:inline-block;background:rgba(0,200,255,.07);border-radius:3px;padding:1px 5px;margin:1px;font-size:.63rem">'+r.trim()+'</span>').join('');
+    const sqzTag=s.bbSqueeze?'<span style="font-size:.6rem;padding:1px 5px;border-radius:3px;background:rgba(255,171,0,.12);color:var(--yellow)">💥 SQUEEZE</span>':'';
+    const trapTag=s.mmTrap?'<span style="font-size:.6rem;padding:1px 5px;border-radius:3px;background:rgba(255,51,85,.1);color:var(--red)">🪤 TRAP</span>':'';
+    const alignTag=s.dailyAligned?'<span style="font-size:.6rem;padding:1px 5px;border-radius:3px;background:rgba(0,230,118,.1);color:var(--green)">✅ Daily</span>':'';
+    const sessionBadge=s.sessionQuality==='PRIME'?'<span style="font-size:.6rem;padding:1px 5px;border-radius:3px;background:rgba(0,200,255,.1);color:var(--accent)">⚡ PRIME SESSION</span>':'';
+
+    const card=document.createElement('div');
+    card.className='opp-card '+(isLong?'long-card':'short-card');
+    card.onclick=()=>loadCoinFromScan(s.coin);
+    card.title='Click to deep-analyse '+s.coin;
+    card.innerHTML=\`
+      <div class="opp-rank">#\${i+1}</div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+        <div style="font-family:var(--font-head);font-size:1.15rem;font-weight:800;color:#fff">\${s.coin}</div>
+        <div style="font-size:.78rem;font-weight:700;padding:2px 10px;border-radius:99px;background:\${isLong?'rgba(0,230,118,.12)':'rgba(255,51,85,.12)'};color:\${dirColor}">\${dirArrow} \${s.direction}</div>
+        <div style="margin-left:auto;font-family:var(--font-mono);font-size:.75rem;color:\${scoreBarColor};font-weight:700">\${s.score}/\${s.maxScore}</div>
+      </div>
+      <div class="opp-score-bar"><div class="opp-score-bar-fill" style="width:\${scorePct}%;background:\${scoreBarColor}"></div></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">\${sqzTag}\${trapTag}\${alignTag}\${sessionBadge}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+        <div>
+          <div style="font-size:.62rem;color:var(--text2)">Entry</div>
+          <div style="font-family:var(--font-mono);font-size:.88rem;color:var(--accent);font-weight:600">\${fmtPrice(s.entryPrice)}</div>
+        </div>
+        <div>
+          <div style="font-size:.62rem;color:var(--text2)">Stop Loss</div>
+          <div style="font-family:var(--font-mono);font-size:.88rem;color:var(--red);font-weight:600">\${fmtPrice(s.sl)}</div>
+        </div>
+        <div>
+          <div style="font-size:.62rem;color:var(--text2)">Leverage</div>
+          <div style="font-family:var(--font-mono);font-size:.88rem;color:var(--yellow);font-weight:700">\${levText}</div>
+        </div>
+        <div>
+          <div style="font-size:.62rem;color:var(--text2)">RRR</div>
+          <div style="font-family:var(--font-mono);font-size:.88rem;color:\${parseFloat(s.rrr)>=2?'var(--green)':parseFloat(s.rrr)>=1?'var(--yellow)':'var(--red)'};font-weight:600">1:\${s.rrr}</div>
+        </div>
+      </div>
+      <div class="opp-targets">
+        <div class="opp-target"><div class="opp-target-label">TP1</div><div class="opp-target-val c-green">\${fmtPrice(s.tp1)}</div></div>
+        <div class="opp-target"><div class="opp-target-label">TP2</div><div class="opp-target-val c-green">\${fmtPrice(s.tp2)}</div></div>
+        <div class="opp-target"><div class="opp-target-label">TP3</div><div class="opp-target-val c-green">\${fmtPrice(s.tp3)}</div></div>
+      </div>
+      <div class="opp-dca-row">
+        <span style="font-size:.62rem;color:var(--text2)">DCA:</span>
+        <span class="opp-dca-pill">\${fmtPrice(s.dca1)}</span>
+        <span style="color:var(--border2)">→</span>
+        <span class="opp-dca-pill">\${fmtPrice(s.dca2)}</span>
+        <span style="color:var(--border2)">→</span>
+        <span style="color:var(--red);font-size:.65rem">SL \${fmtPrice(s.sl)}</span>
+      </div>
+      <div style="margin-top:9px;border-top:1px solid var(--border);padding-top:9px">\${reasons}</div>
+      <div style="margin-top:8px;text-align:right">
+        <span style="font-size:.65rem;color:var(--accent);font-family:var(--font-mono)">Click to deep-analyse →</span>
+      </div>
+    \`;
+    grid.appendChild(card);
+  });
+
+  $('ms-results').style.display='block';
+}
+
+function loadCoinFromScan(coin){
+  $('coin-input').value=coin;
+  document.getElementById('scan-results').style.display='none';
+  document.getElementById('scan-error').style.display='none';
+  window.scrollTo({top:document.getElementById('coin-input').getBoundingClientRect().top+window.scrollY-80,behavior:'smooth'});
+  setTimeout(runScan,200);
+}
+
+// ════════════════════════════════════════════════════
+//  SINGLE-COIN DEEP SCANNER
+// ════════════════════════════════════════════════════
 async function runScan(){
   const coinRaw=$('coin-input').value.trim().toUpperCase(), tf=$('tf-select').value;
   if(!coinRaw){$('coin-input').focus();return;}
@@ -1986,7 +2397,7 @@ function renderResults(a,coin,tf){
   $('scan-loading').style.display='none';$('scan-results').style.display='block';
   const score=a.score??0, sc=scoreColor(score);
   const ring=$('res-score-ring');ring.textContent=score;ring.style.borderColor=sc;ring.style.color=sc;
-  $('res-coin').textContent=coin+'/USDT';$('res-tf-badge').textContent=tf.toUpperCase();
+  $('res-coin').textContent=coin.replace('USDT','')+'/USDT';$('res-tf-badge').textContent=tf.toUpperCase();
   const isLong=a.direction==='LONG';
   const dir=$('res-dir-badge');dir.textContent=isLong?'▲ LONG':'▼ SHORT';
   dir.style.background=isLong?'rgba(0,230,118,.12)':'rgba(255,51,85,.12)';
@@ -1994,22 +2405,70 @@ function renderResults(a,coin,tf){
   $('res-price').textContent='Current Price: '+fmt(a.currentPrice);
   const reasons=(a.reasons||'').split(',').map(r=>r.trim()).filter(Boolean);
   $('res-reasons').innerHTML=reasons.slice(0,8).map(r=>'<span style="display:inline-block;background:rgba(0,200,255,.07);border-radius:4px;padding:2px 7px;margin:2px 2px;font-size:.72rem">'+r+'</span>').join('');
-  $('res-entry').textContent=fmt(a.entryPrice);$('res-order-type').textContent=a.orderSuggestion||'';
-  $('res-sl').textContent=fmt(a.sl);$('res-sl-label').textContent=a.slLabel||'ATR';
+
+  // ── Futures Setup ──────────────────────────────────
+  const entryNum=parseFloat(a.entryPrice);
+  const slNum=parseFloat(a.sl);
+  const tp2Num=parseFloat(a.tp2);
+  const risk=Math.abs(entryNum-slNum);
+
+  // Leverage calc (mirrors future.js auto mode)
+  const slDistPct=slNum>0&&entryNum>0?risk/entryNum:0.02;
+  const rawLev=slDistPct>0?(0.02/slDistPct)/0.10:10;
+  const calcLev=Math.min(Math.ceil(rawLev),75);
+  $('res-leverage').textContent='Cross '+calcLev+'x';
+
+  $('res-margin-pct').textContent='2%';
+
+  // DCA Points
+  const dca1=isLong?entryNum-risk*0.35:entryNum+risk*0.35;
+  const dca2=isLong?entryNum-risk*0.70:entryNum+risk*0.70;
+  $('res-dca-entry').textContent=fmt(a.entryPrice);
+  $('res-dca1').textContent=fmt(dca1);
+  $('res-dca2').textContent=fmt(dca2);
+  $('res-dca-sl').textContent=fmt(a.sl);
+
+  $('res-entry').textContent=fmt(a.entryPrice);
+  $('res-order-type').textContent=a.orderSuggestion?.type||a.orderSuggestion||'';
+  $('res-sl').textContent=fmt(a.sl);
+  $('res-sl-label').textContent=a.slLabel||'ATR';
   $('res-tp1').textContent=fmt(a.tp1);$('res-tp1-label').textContent=a.tp1Label||'';
   $('res-tp2').textContent=fmt(a.tp2);$('res-tp2-label').textContent=a.tp2Label||'';
   $('res-tp3').textContent=fmt(a.tp3);$('res-tp3-label').textContent=a.tp3Label||'';
-  const entry=parseFloat(a.entryPrice),sl=parseFloat(a.sl),tp2=parseFloat(a.tp2);
-  if(entry&&sl&&tp2&&Math.abs(entry-sl)>0){const rrr=Math.abs(tp2-entry)/Math.abs(entry-sl);const rrEl=$('res-rrr');rrEl.textContent=rrr.toFixed(2)+':1';rrEl.style.color=rrr>=2?'var(--green)':rrr>=1?'var(--yellow)':'var(--red)';}
+  if(entryNum&&slNum&&tp2Num&&Math.abs(entryNum-slNum)>0){
+    const rrr=Math.abs(tp2Num-entryNum)/Math.abs(entryNum-slNum);
+    const rrEl=$('res-rrr');rrEl.textContent=rrr.toFixed(2)+':1';
+    rrEl.style.color=rrr>=2?'var(--green)':rrr>=1?'var(--yellow)':'var(--red)';
+  }
+
+  // ── Market Context ────────────────────────────────
   $('res-market').textContent=a.marketState||'—';$('res-trend').textContent=a.mainTrend||'—';
   $('res-1h').textContent=a.trend1H||'—';$('res-4h').textContent=a.trend4H||'—';
-  const rsi=parseFloat(a.rsi);$('res-rsi').textContent=isNaN(rsi)?'—':rsi.toFixed(1);$('res-rsi').style.color=rsi>70?'var(--red)':rsi<30?'var(--green)':'var(--text)';
+  const rsi=parseFloat(a.rsi);$('res-rsi').textContent=isNaN(rsi)?'—':rsi.toFixed(1);
+  $('res-rsi').style.color=rsi>70?'var(--red)':rsi<30?'var(--green)':'var(--text)';
   $('res-adx').textContent=a.adxData?(a.adxData.value?.toFixed(1)+' — '+a.adxData.status):'—';
+
+  // ── SMC ───────────────────────────────────────────
   $('res-sweep').textContent=a.liquiditySweep||'—';$('res-choch').textContent=a.choch||'—';
   $('res-ob-bull').textContent=a.marketSMC?.bullishOBDisplay||'—';$('res-ob-bear').textContent=a.marketSMC?.bearishOBDisplay||'—';
   $('res-wyckoff').textContent=a.wyckoff?(a.wyckoff.phase+' · '+a.wyckoff.signal):'—';
   $('res-pd').textContent=a.pdZone?(a.pdZone.zone+' · '+a.pdZone.position+'%'):'—';
-  $('res-vwap').textContent=fmt(a.vwap);$('res-supertrend').textContent=a.supertrend?(a.supertrend.signal+(a.supertrend.justFlipUp?' ⚡UP':a.supertrend.justFlipDown?' ⚡DOWN':'')):'—';
+
+  // ── VWAP Fix: extract numeric value from annotated string ──
+  let vwapDisplay='—';
+  if(a.vwap){
+    const vm=String(a.vwap).match(/\$([0-9.]+)/);
+    if(vm){
+      const vp=parseFloat(vm[1]);
+      const vSign=a.vwap.includes('🟢')?'▲ Above':'▼ Below';
+      vwapDisplay=vSign+' VWAP '+fmt(vp);
+    } else {
+      vwapDisplay=a.vwap;
+    }
+  }
+  $('res-vwap').textContent=vwapDisplay;
+
+  $('res-supertrend').textContent=a.supertrend?(a.supertrend.signal+(a.supertrend.justFlipUp?' ⚡UP':a.supertrend.justFlipDown?' ⚡DOWN':'')):'—';
   $('res-ichimoku').textContent=a.ichimoku?.signal||'—';$('res-stochrsi').textContent=a.stochRSI?(a.stochRSI.signal+' (K:'+(a.stochRSI.k?.toFixed(1)||'—')+')'):'—';
   $('res-rvol').textContent=a.rvol?(a.rvol.rvol?.toFixed(2)+'x · '+a.rvol.signal):'—';$('res-session').textContent=a.session?(a.session.session+' · '+a.session.quality):'—';
   $('res-ha').textContent=a.heikinAshi?(a.heikinAshi.consecutive+'× '+a.heikinAshi.signal+(a.heikinAshi.isStrong?' 💪':'')):'—';
@@ -2017,14 +2476,20 @@ function renderResults(a,coin,tf){
   $('res-fib').textContent=a.fibConf?.hasConfluence?(a.fibConf.count+' levels @ $'+a.fibConf.zone):'No confluence';
   $('res-eqhl').textContent=a.equalHL?.display||'—';$('res-mmtrap').textContent=a.mmTrap?(a.mmTrap.bullTrap?'🐂 Bull Trap!':a.mmTrap.bearTrap?'🐻 Bear Trap!':'None'):'—';
   $('res-cvd').textContent=a.cvd?(a.cvd.trend+(a.cvd.bullDiv?' · Accumulation':a.cvd.bearDiv?' · Distribution':'')):'—';
+
+  // ── Confirmation Gate ─────────────────────────────
   const confChecks=a.confChecks||{};
   const confLabels={htfAligned:'HTF Aligned',chochPrimary:'ChoCH',sweepPrimary:'Sweep',volumeConf:'Volume',wyckoffConf:'Wyckoff',ichimokuConf:'Ichimoku',supTrendConf:'Supertrend',fibZoneConf:'Fib Zone',bbExplosion:'BB Explode',mmTrapConf:'MM Trap',bosConf:'BOS',dailyGate:'Daily Gate',aiConf:'AI Model',bybitConf:'Bybit'};
-  $('res-conf-grid').innerHTML=Object.entries(confLabels).map(([k,l])=>'<div class="conf-check '+(confChecks[k]?'pass':'')+'">'+( confChecks[k]?'✅':'○')+' '+l+'</div>').join('');
+  $('res-conf-grid').innerHTML=Object.entries(confLabels).map(([k,l])=>'<div class="conf-check '+(confChecks[k]?'pass':'')+'">'+(confChecks[k]?'✅':'○')+' '+l+'</div>').join('');
   const gEl=$('res-conf-gate');gEl.textContent=(a.confGate?'✅ YES':'❌ NO')+' ('+(a.confScore||0)+'/14)';gEl.style.color=a.confGate?'var(--green)':'var(--red)';
   $('res-conf-score').textContent=(a.confScore||0)+'/14';
+
+  // ── Dynamic Regime ────────────────────────────────
   const dr=a.dynRegime;if(dr){$('res-regime').textContent=dr.regimeLabel||'—';$('res-w-trend').textContent=a.weights?.trend?.toFixed(2)||'—';$('res-w-osc').textContent=a.weights?.oscillator?.toFixed(2)||'—';$('res-w-vol').textContent=a.weights?.volume?.toFixed(2)||'—';$('res-w-pa').textContent=a.weights?.priceAction?.toFixed(2)||'—';}
+
   $('res-timestamp').textContent=new Date().toLocaleString();
 }
+
 document.addEventListener('DOMContentLoaded',()=>{
   $('coin-input').addEventListener('keydown',e=>{if(e.key==='Enter')runScan();});
   $('coin-input').addEventListener('input',e=>{e.target.value=e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,'');});
@@ -2047,6 +2512,34 @@ document.addEventListener('DOMContentLoaded',()=>{
             const analyzer = require('./lib/analyzer');
             const analysis = await analyzer.run14FactorAnalysis(coin, timeframe);
             const { currentCandles, ...safeAnalysis } = analysis;
+
+            // ── Futures enrichment ──────────────────────────────────────
+            // Auto leverage (mirrors future.js auto mode)
+            const entryNum  = parseFloat(safeAnalysis.entryPrice) || 0;
+            const slNum     = parseFloat(safeAnalysis.sl)         || 0;
+            const tp2Num    = parseFloat(safeAnalysis.tp2)        || 0;
+            const risk      = Math.abs(entryNum - slNum);
+            const slDistPct = entryNum > 0 ? risk / entryNum : 0.02;
+            const rawLev    = slDistPct > 0 ? (0.02 / slDistPct) / 0.10 : 10;
+            const calcLev   = Math.min(Math.ceil(rawLev), 75);
+            const isLong    = safeAnalysis.direction === 'LONG';
+
+            // DCA points at 35% and 70% of risk toward SL
+            const dca1 = isLong ? entryNum - risk * 0.35 : entryNum + risk * 0.35;
+            const dca2 = isLong ? entryNum - risk * 0.70 : entryNum + risk * 0.70;
+
+            // RRR vs TP2
+            const rrr = risk > 0 ? (Math.abs(tp2Num - entryNum) / risk) : 0;
+
+            // Attach futures data to response
+            safeAnalysis.futures = {
+                leverage:   calcLev,
+                marginPct:  2,
+                dca1:       dca1.toFixed(4),
+                dca2:       dca2.toFixed(4),
+                rrr:        rrr.toFixed(2),
+            };
+
             res.json({ok:true,analysis:safeAnalysis});
         } catch(e){
             console.error('[AI Scanner] Error:',e.message);

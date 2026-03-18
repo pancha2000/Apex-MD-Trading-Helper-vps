@@ -1179,7 +1179,7 @@ ${_appNav('trades', user.username)}
     // ── App Settings (API Key management) ────────────────────────
     app.get('/app/settings', async (req, res) => {
         const user = req.saasUser;
-        let apiKeys = [];
+        let apiKeys = [], waLinked = false, waJid = '', waLinkedAt = '';
         try {
             const fullUser = await db.getSaasUserById(user.userId);
             if (fullUser) {
@@ -1189,6 +1189,9 @@ ${_appNav('trades', user.username)}
                     exchange: k.exchange,
                     addedAt:  new Date(k.addedAt).toLocaleDateString(),
                 }));
+                waLinked   = Boolean(fullUser.whatsappJid);
+                waJid      = fullUser.whatsappJid || '';
+                waLinkedAt = fullUser.whatsappLinkedAt ? new Date(fullUser.whatsappLinkedAt).toLocaleString() : '';
             }
         } catch (_) {}
 
@@ -1208,6 +1211,7 @@ ${_appNav('trades', user.username)}
         const keyErrMsg   = req.query.keyerr === 'exists' ? '<p style="color:var(--red);font-size:.83rem;margin-bottom:10px">❌ A key with that label already exists.</p>'
                           : req.query.keyerr === 'invalid' ? '<p style="color:var(--red);font-size:.83rem;margin-bottom:10px">❌ Please fill in all fields.</p>'
                           : req.query.keyerr ? '<p style="color:var(--red);font-size:.83rem;margin-bottom:10px">❌ Error saving key.</p>' : '';
+        const unlinkedMsg = req.query.unlinked  ? '<p style="color:var(--green);font-size:.83rem;margin-bottom:10px">✅ WhatsApp unlinked successfully.</p>' : '';
 
         res.send(_html('API Keys', `
 ${_appNav('settings', user.username)}
@@ -1250,10 +1254,53 @@ ${_appNav('settings', user.username)}
     </form>
   </div>
 
+  <!-- ═══ WhatsApp Linking ═══ -->
+  <div class="section" style="border-color:${waLinked ? 'var(--green)' : 'var(--border)'}">
+    <h2>📱 WhatsApp Linking</h2>
+    <p style="font-size:.82rem;color:var(--text2);margin-bottom:16px">
+      Link your WhatsApp number to receive signals and trade updates directly in chat.
+    </p>
+    ${unlinkedMsg}
+
+    ${waLinked ? `
+    <div style="background:#0f2318;border:1px solid var(--green);border-radius:8px;padding:14px 16px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+      <div>
+        <div style="color:var(--green);font-weight:600;font-size:.9rem">✅ WhatsApp Connected</div>
+        <div style="color:var(--text2);font-size:.78rem;margin-top:3px">Number: <strong style="color:var(--text)">${waJid.replace('@s.whatsapp.net','')}</strong></div>
+        <div style="color:var(--text2);font-size:.78rem">Linked: ${waLinkedAt}</div>
+      </div>
+      <button class="btn btn-danger" style="font-size:.8rem" onclick="unlinkWa()">🔗 Unlink</button>
+    </div>` : `
+    <div style="background:#0d1117;border:1px solid var(--border);border-radius:8px;padding:14px 16px;margin-bottom:16px">
+      <div style="color:var(--yellow);font-weight:600;font-size:.88rem;margin-bottom:4px">⚠️ Not Linked</div>
+      <div style="color:var(--text2);font-size:.8rem">Generate a token below, then send it on WhatsApp.</div>
+    </div>`}
+
+    <div id="token-section">
+      <p style="font-size:.83rem;color:var(--text2);margin-bottom:12px">
+        <strong>How to link:</strong><br>
+        1. Click <em>Generate Token</em> below<br>
+        2. Open WhatsApp and message the bot: <code style="background:#21262d;padding:2px 6px;border-radius:4px">.link YOUR-TOKEN</code><br>
+        3. Token expires in <strong>15 minutes</strong> — one use only
+      </p>
+      <button class="btn btn-primary" onclick="generateToken()" id="gen-btn">⚡ Generate Linking Token</button>
+      <div id="token-display" style="display:none;margin-top:14px">
+        <p style="font-size:.8rem;color:var(--text2);margin-bottom:6px">Your token (valid 15 min):</p>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <code id="token-value" style="background:#0d1117;border:1px solid var(--accent);border-radius:8px;padding:10px 18px;font-size:1.1rem;font-weight:700;letter-spacing:.15em;color:var(--accent)"></code>
+          <button class="btn btn-ghost" onclick="copyToken()" style="font-size:.8rem">📋 Copy</button>
+        </div>
+        <p style="font-size:.75rem;color:var(--text2);margin-top:8px">Send this to the bot: <code style="background:#21262d;padding:2px 6px;border-radius:4px">.link <span id="token-inline"></span></code></p>
+        <div id="token-timer" style="font-size:.78rem;color:var(--yellow);margin-top:5px">⏳ Expires in 15:00</div>
+      </div>
+    </div>
+  </div>
+
   <div class="section">
     <h2>👤 Account Info</h2>
     <div class="stat-row"><span>Username</span><span class="stat-val">${user.username}</span></div>
     <div class="stat-row"><span>Role</span><span class="stat-val">${user.role}</span></div>
+    <div class="stat-row"><span>WhatsApp</span><span class="stat-val">${waLinked ? '<span class="pill active-status">linked</span>' : '<span class="pill suspended">not linked</span>'}</span></div>
     <div class="stat-row"><span>Account Status</span><span class="stat-val"><span class="pill active-status">active</span></span></div>
   </div>
 </div>
@@ -1266,6 +1313,45 @@ async function removeKey(keyId) {
     if (d.ok) location.href = '/app/settings?removed=1';
     else alert('Error: ' + d.error);
   } catch(e) { alert('Network error: ' + e.message); }
+}
+async function generateToken() {
+  const btn = document.getElementById('gen-btn');
+  btn.disabled = true; btn.textContent = '⏳ Generating...';
+  try {
+    const r = await fetch('/app/api/link/generate', { method: 'POST' });
+    const d = await r.json();
+    if (!d.ok) { alert('Error: ' + d.error); btn.disabled=false; btn.textContent='⚡ Generate Linking Token'; return; }
+    document.getElementById('token-value').textContent  = d.token;
+    document.getElementById('token-inline').textContent = d.token;
+    document.getElementById('token-display').style.display = 'block';
+    btn.textContent = '🔄 Regenerate Token';
+    btn.disabled = false;
+    // Countdown timer
+    let secs = 900;
+    const timerEl = document.getElementById('token-timer');
+    const iv = setInterval(() => {
+      secs--;
+      const m = String(Math.floor(secs/60)).padStart(2,'0');
+      const s = String(secs%60).padStart(2,'0');
+      timerEl.textContent = '⏳ Expires in ' + m + ':' + s;
+      if (secs <= 0) { clearInterval(iv); timerEl.textContent = '❌ Token expired — regenerate'; timerEl.style.color='var(--red)'; }
+    }, 1000);
+  } catch(e) { alert('Network error'); btn.disabled=false; btn.textContent='⚡ Generate Linking Token'; }
+}
+function copyToken() {
+  const t = document.getElementById('token-value').textContent;
+  navigator.clipboard.writeText(t).then(() => {
+    const btn = event.target; btn.textContent='✅ Copied!'; setTimeout(()=>btn.textContent='📋 Copy',2000);
+  });
+}
+async function unlinkWa() {
+  if (!confirm('Unlink your WhatsApp? You will stop receiving signals.')) return;
+  try {
+    const r = await fetch('/app/api/link/unlink', { method: 'POST' });
+    const d = await r.json();
+    if (d.ok) location.href = '/app/settings?unlinked=1';
+    else alert('Error: ' + d.error);
+  } catch(e) { alert('Network error'); }
 }
 </script>`));
     });
@@ -1300,6 +1386,27 @@ async function removeKey(keyId) {
             await db.removeUserApiKey(req.saasUser.userId, req.params.keyId);
             res.json({ ok: true });
         } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+    });
+
+    // ── App API: Generate WhatsApp link token ─────────────────────
+    app.post('/app/api/link/generate', saasAuth.requireUserAuth, async (req, res) => {
+        try {
+            const token = await db.createLinkToken(req.saasUser.userId);
+            res.json({ ok: true, token });
+        } catch (e) {
+            console.error('[APP] Link token error:', e.message);
+            res.status(500).json({ ok: false, error: e.message });
+        }
+    });
+
+    // ── App API: Unlink WhatsApp ──────────────────────────────────
+    app.post('/app/api/link/unlink', saasAuth.requireUserAuth, async (req, res) => {
+        try {
+            await db.unlinkWhatsapp(req.saasUser.userId);
+            res.json({ ok: true });
+        } catch (e) {
+            res.status(500).json({ ok: false, error: e.message });
+        }
     });
 
     // ── Root redirect ─────────────────────────────────────────────

@@ -1614,4 +1614,11 @@ document.addEventListener('DOMContentLoaded', function() { mkRun(); });
 });
 
 
+// ─── Catch old /app/analyzer URL (from cached nav) ──────────
+app.get('/app/analyzer', saasAuth.requireUserAuth, (req, res) => {
+    const coin = req.query.coin ? '?coin=' + req.query.coin : '';
+    res.redirect(302, '/app/scanner' + coin);
+});
+
+
 }; // end module.exports

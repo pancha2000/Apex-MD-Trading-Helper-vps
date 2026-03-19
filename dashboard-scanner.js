@@ -691,6 +691,7 @@ ${_appNav('scanner', user.username)}
 </div>
 
 <style>
+.scan-hero{background:linear-gradient(135deg,#031526,#060d17);border:1px solid var(--accent);border-radius:var(--radius-lg,10px);padding:30px 26px;margin-bottom:20px;display:flex;align-items:center;gap:26px;flex-wrap:wrap;box-shadow:0 0 30px rgba(0,200,255,.08);}
 .res-section{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px;margin-bottom:14px}
 .res-section-title{font-family:var(--font-head);font-size:.82rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.08em;margin-bottom:14px;display:flex;align-items:center;gap:8px}
 .res-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:10px}
@@ -913,7 +914,7 @@ function renderLive(a, coin, tf) {
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
     <div class="res-section" style="margin-bottom:0">
       <div class="res-section-title">🧠 Advanced Signals</div>
-      \${[['Heikin Ashi',a.heikinAshi?(a.heikinAshi.consecutive+'× '+a.heikinAshi.signal+(a.heikinAshi.isStrong?' 💪':'')):null],['BB Squeeze',a.bbSqueeze?(a.bbSqueeze.squeezing?'🔴 Squeezing':a.bbSqueeze.exploding?'💥 Exploding · '+a.bbSqueeze.explosionDir:'Normal'):null],['Fib Confluence',a.fibConf?.hasConfluence?(a.fibConf.count+' levels @ $'+a.fibConf.zone):'None'],['EQH/EQL',a.equalHL?.display],['MM Trap',a.mmTrap?(a.mmTrap.bullTrap?'🐂 Bull Trap':a.mmTrap.bearTrap?'🐻 Bear Trap':'None'):null],['CVD',a.cvd?(a.cvd.trend+(a.cvd.bullDiv?' · Accum.':a.cvd.bearDiv?' · Dist.':'')):null]].map(([l,v])=>'<div class="conf-row"><span>'+l+'</span><span style="font-family:var(--font-mono);font-size:.75rem;color:var(--text)">'+(v||'—')+'</span></div>').join('')}
+      \${[['Heikin Ashi',a.heikinAshi?(a.heikinAshi.consecutive+'× '+a.heikinAshi.signal+(a.heikinAshi.isStrong?' 💪':'')):null],['BB Squeeze',a.bbSqueeze?(a.bbSqueeze.isSqueezing?'🔴 Squeezing':a.bbSqueeze.exploding?'💥 Exploding · '+a.bbSqueeze.explosionDir:'Normal'):null],['Fib Confluence',a.fibConf?.hasConfluence?(a.fibConf.count+' levels @ $'+a.fibConf.zone):'None'],['EQH/EQL',a.equalHL?.display],['MM Trap',a.mmTrap?(a.mmTrap.bullTrap?'🐂 Bull Trap':a.mmTrap.bearTrap?'🐻 Bear Trap':'None'):null],['CVD',a.cvd?(a.cvd.trend+(a.cvd.bullDiv?' · Accum.':a.cvd.bearDiv?' · Dist.':'')):null]].map(([l,v])=>'<div class="conf-row"><span>'+l+'</span><span style="font-family:var(--font-mono);font-size:.75rem;color:var(--text)">'+(v||'—')+'</span></div>').join('')}
     </div>
     <div class="res-section" style="margin-bottom:0">
       <div class="res-section-title">⚡ v7 PRO Signals</div>

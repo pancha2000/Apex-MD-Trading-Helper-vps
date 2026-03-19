@@ -1322,4 +1322,243 @@ document.addEventListener('DOMContentLoaded', () => {
 `, ``));
 });
 
+// ══════════════════════════════════════════════════════════════
+//  MARKET SCANNER PAGE  GET /app/market
+//  Standalone full-page scanner — auto-runs on load
+//  Nav link: "🔍 Scan" → /app/market
+// ══════════════════════════════════════════════════════════════
+app.get('/app/market', saasAuth.requireUserAuth, (req, res) => {
+    const user = req.saasUser;
+    res.send(_html('Market Scanner', `
+${_appNav('market', user.username)}
+<div class="wrap">
+  <h1 class="page-title">🔍 Market Scanner <span>14-Factor · .scan Command Parity · Auto Quality Gate</span></h1>
+
+  <!-- Header panel -->
+  <div class="panel" style="margin-bottom:20px;border-color:rgba(0,200,255,.2)">
+    <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+      <div class="panel-title">🌐 Top Setups Right Now
+        <span id="mk-badge" style="font-size:.65rem;padding:2px 10px;border-radius:99px;background:rgba(0,200,255,.1);color:var(--accent);border:1px solid rgba(0,200,255,.2);margin-left:8px">SCANNING...</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <div style="font-size:.75rem;color:var(--text2)" id="mk-time"></div>
+        <button id="mk-btn" class="btn btn-primary" style="padding:8px 22px" onclick="mkScan()">⚡ Rescan Now</button>
+      </div>
+    </div>
+
+    <!-- Sentiment bar -->
+    <div id="mk-sentiment" style="padding:10px 20px 14px;border-bottom:1px solid var(--border);display:none">
+      <div style="display:flex;flex-wrap:wrap;gap:20px;align-items:center">
+        <div><span style="font-size:.7rem;color:var(--text2);text-transform:uppercase;letter-spacing:.06em">Market Sentiment</span><div style="font-size:.92rem;font-weight:700;margin-top:3px" id="mk-overall">—</div></div>
+        <div><span style="font-size:.7rem;color:var(--text2);text-transform:uppercase;letter-spacing:.06em">Fear & Greed</span><div style="font-size:.92rem;font-weight:700;color:var(--accent);margin-top:3px" id="mk-fng">—</div></div>
+        <div><span style="font-size:.7rem;color:var(--text2);text-transform:uppercase;letter-spacing:.06em">BTC Dominance</span><div style="font-size:.92rem;font-weight:700;margin-top:3px" id="mk-btcdom">—</div></div>
+        <div><span style="font-size:.7rem;color:var(--text2);text-transform:uppercase;letter-spacing:.06em">News</span><div style="font-size:.92rem;font-weight:700;margin-top:3px" id="mk-news">—</div></div>
+        <div style="margin-left:auto;font-size:.72rem;color:var(--text2)" id="mk-scanned"></div>
+      </div>
+    </div>
+
+    <!-- Loading -->
+    <div id="mk-loading" style="padding:50px 20px;text-align:center">
+      <div style="font-size:3rem;animation:spin 1.2s linear infinite;display:inline-block">🔍</div>
+      <div style="margin-top:14px;font-size:.95rem;color:var(--text)" id="mk-msg">Scanning market...</div>
+      <div style="margin-top:5px;font-size:.75rem;color:var(--text2)">14-Factor Analysis · Quality Gate · Sentiment Overlay</div>
+    </div>
+
+    <!-- Error -->
+    <div id="mk-error" style="display:none;color:var(--red);padding:20px;font-size:.88rem"></div>
+
+    <!-- Empty -->
+    <div id="mk-empty" style="display:none;padding:40px 20px;text-align:center;color:var(--text2)">
+      <div style="font-size:2.5rem;margin-bottom:12px">🔍</div>
+      <div style="font-size:.95rem;margin-bottom:6px">No high-quality setups right now</div>
+      <div style="font-size:.8rem">Score 20+ ලබාගත් Setups නෑ. Next 15m candle close වෙනකල් wait කරන්න.</div>
+      <button class="btn btn-ghost" style="margin-top:16px" onclick="mkScan()">↺ Try Again</button>
+    </div>
+
+    <!-- Results grid -->
+    <div id="mk-results" style="display:none;padding:16px 20px 20px">
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(400px,1fr));gap:16px" id="mk-grid"></div>
+    </div>
+  </div>
+
+  <!-- Quick access to deep analysis -->
+  <div style="text-align:center;font-size:.8rem;color:var(--text2)">
+    Card click කළාම ⚡ <a href="/app/scanner" style="color:var(--accent)">Scanner</a> page එකේ Deep Analysis කරනවා &middot; Auto-refresh: page reload
+  </div>
+</div>
+
+<style>
+.mk-card{border-radius:var(--radius);border:1px solid var(--border);padding:18px;background:var(--card);transition:.15s;cursor:pointer}
+.mk-card:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,.35);border-color:var(--border2)}
+.mk-long{border-left:4px solid var(--green)}.mk-short{border-left:4px solid var(--red)}
+.mk-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:6px}
+.mk-levels{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:7px;margin:12px 0}
+.mk-lv-entry{grid-column:span 2}
+.mk-lv{background:var(--bg2);border-radius:var(--radius-sm);padding:8px 10px}
+.mk-lv-label{font-size:.58rem;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px}
+.mk-lv-val{font-family:var(--font-mono);font-size:.88rem;font-weight:600}
+.mk-lv-sub{font-size:.56rem;color:var(--text2);margin-top:2px}
+.mk-reasons{display:flex;flex-wrap:wrap;gap:3px;margin-bottom:9px}
+.mk-reason{background:rgba(0,200,255,.06);border-radius:3px;padding:2px 6px;font-size:.6rem;color:var(--text2)}
+.mk-tags{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:9px}
+.mk-tag{font-size:.6rem;padding:2px 7px;border-radius:3px;background:rgba(255,255,255,.05);color:var(--text2)}
+.mk-tag-smc{background:rgba(0,200,255,.08);color:var(--accent)}
+.mk-tag-hot{background:rgba(0,230,118,.08);color:var(--green)}
+.mk-tag-warn{background:rgba(255,171,0,.1);color:var(--yellow)}
+.mk-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-top:10px;border-top:1px solid var(--border);margin-top:2px}
+.mk-badge-order{font-size:.6rem;padding:1px 7px;border-radius:3px;font-family:var(--font-mono)}
+.mk-limit{background:rgba(255,171,0,.12);color:var(--yellow)}
+.mk-market{background:rgba(0,200,255,.08);color:var(--accent)}
+</style>
+
+<script>
+function fmtP(n,d){d=d||4;if(n==null||isNaN(Number(n)))return'—';var p=parseFloat(n);if(isNaN(p))return'—';if(d===4){if(p>=10000)return'$'+p.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});if(p>=1)return'$'+p.toFixed(4);return'$'+p.toFixed(6);}return p.toFixed(d);}
+function sCol(s){return s>=70?'var(--green)':s>=45?'var(--yellow)':'var(--red)';}
+
+async function mkScan() {
+  var btn = document.getElementById('mk-btn');
+  btn.disabled = true; btn.textContent = '⏳ Scanning...';
+  document.getElementById('mk-badge').textContent = 'SCANNING';
+  document.getElementById('mk-badge').style.color = 'var(--yellow)';
+  document.getElementById('mk-sentiment').style.display = 'none';
+  document.getElementById('mk-results').style.display  = 'none';
+  document.getElementById('mk-empty').style.display    = 'none';
+  document.getElementById('mk-error').style.display    = 'none';
+  document.getElementById('mk-loading').style.display  = 'block';
+
+  var msgs = ['Fetching market data...','Running 14-Factor analysis...','Applying quality gates...','Calculating sentiment overlay...','Ranking top setups...'];
+  var mi = 0;
+  var mt = setInterval(function(){ document.getElementById('mk-msg').textContent = msgs[mi%msgs.length]; mi++; }, 3500);
+
+  try {
+    var r = await fetch('/app/api/market-scan');
+    var d = await r.json();
+    clearInterval(mt);
+    document.getElementById('mk-loading').style.display = 'none';
+
+    if (!r.ok || !d.ok) {
+      document.getElementById('mk-error').style.display = 'block';
+      document.getElementById('mk-error').textContent = '❌ ' + (d.error || 'Scan failed');
+      return;
+    }
+
+    // Sentiment bar
+    var sn = d.sentiment || {};
+    var nscore = parseInt(sn.newsScore || 0);
+    var nsCol = nscore > 0 ? 'var(--green)' : nscore < 0 ? 'var(--red)' : 'var(--text2)';
+    document.getElementById('mk-overall').textContent = sn.overall || '—';
+    document.getElementById('mk-fng').textContent = (sn.fngEmoji||'') + ' ' + (sn.fngValue||'—');
+    document.getElementById('mk-btcdom').textContent = (sn.btcDom||'—') + '%';
+    document.getElementById('mk-news').innerHTML = '<span style="color:'+nsCol+'">'+(nscore>=0?'+':'')+nscore+'</span>';
+    document.getElementById('mk-scanned').textContent = d.setups.length + ' setups from ' + d.scanned + ' coins';
+    document.getElementById('mk-time').textContent = 'Last scan: ' + new Date(d.ts).toLocaleTimeString();
+    document.getElementById('mk-sentiment').style.display = 'block';
+
+    if (!d.setups || !d.setups.length) {
+      document.getElementById('mk-empty').style.display = 'block';
+      document.getElementById('mk-badge').textContent = 'NO SETUPS';
+      document.getElementById('mk-badge').style.color = 'var(--text2)';
+      return;
+    }
+
+    // Build cards
+    var grid = document.getElementById('mk-grid');
+    grid.innerHTML = '';
+    d.setups.forEach(function(s, i) {
+      var isL = s.direction === 'LONG';
+      var dc  = isL ? 'var(--green)' : 'var(--red)';
+      var sc  = sCol(s.score);
+      var sPct = Math.min((s.score/(s.maxScore||100))*100,100).toFixed(1);
+      var rrC = parseFloat(s.rrr||0)>=2?'var(--green)':parseFloat(s.rrr||0)>=1?'var(--yellow)':'var(--red)';
+      var confTotal = s.confScore||s.coreConf||0;
+      var confMax   = s.confScore ? 21 : 4;
+      var confColor = s.confGate ? 'var(--green)' : confTotal>=2 ? 'var(--accent)' : 'var(--text2)';
+
+      // Signal tags
+      var tags = '';
+      if(s.liquiditySweep&&s.liquiditySweep!=='None') tags+='<span class="mk-tag mk-tag-smc">💧 '+s.liquiditySweep+'</span>';
+      if(s.choch&&s.choch!=='None')                   tags+='<span class="mk-tag mk-tag-smc">🔄 '+s.choch+'</span>';
+      if(s.choch5m&&s.choch5m!=='None')               tags+='<span class="mk-tag mk-tag-smc">⚡ 5m: '+s.choch5m+'</span>';
+      if(s.dailyTrend)                                tags+='<span class="mk-tag">'+(s.dailyAligned?'✅':'⚠️')+' Daily: '+s.dailyTrend+'</span>';
+      if(s.mmTrap&&(s.mmTrap.bullTrap||s.mmTrap.bearTrap)) tags+='<span class="mk-tag mk-tag-warn">🪤 '+(s.mmTrap.display||'MM Trap')+'</span>';
+      if(s.bbSqueeze&&s.bbSqueeze.exploding)          tags+='<span class="mk-tag mk-tag-hot">💥 '+(s.bbSqueeze.display||'BB Explosion')+'</span>';
+      if(s.bbSqueeze&&s.bbSqueeze.isSqueezing&&!s.bbSqueeze.exploding) tags+='<span class="mk-tag mk-tag-warn">⚡ BB Squeeze</span>';
+      if(s.tf3Align&&s.tf3Align.aligned)              tags+='<span class="mk-tag mk-tag-hot">✅ 3TF Aligned</span>';
+      if(s.tradeCategory)                             tags+='<span class="mk-tag">📅 '+s.tradeCategory+'</span>';
+
+      var orderBadge = s.orderType&&s.orderType.includes('LIMIT')
+        ? '<span class="mk-badge-order mk-limit">⏳ LIMIT</span>'
+        : '<span class="mk-badge-order mk-market">⚡ MARKET</span>';
+
+      var reasons = (s.reasons||'').split(',').map(function(r){
+        return '<span class="mk-reason">'+r.trim()+'</span>';
+      }).join('');
+
+      var card = document.createElement('div');
+      card.className = 'mk-card ' + (isL ? 'mk-long' : 'mk-short');
+      card.onclick = function() { window.location.href='/app/scanner?coin='+s.coin; };
+      card.innerHTML =
+        '<div class="mk-head">'
+        +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+        +'<span style="font-family:var(--font-mono);font-size:.68rem;color:var(--text2);background:var(--card2);padding:1px 6px;border-radius:3px">#'+(i+1)+'</span>'
+        +'<span style="font-family:var(--font-head);font-size:1.2rem;font-weight:800;color:#fff">'+s.coin+'</span>'
+        +'<span style="font-size:.75rem;font-weight:700;padding:2px 11px;border-radius:99px;background:'+(isL?'rgba(0,230,118,.12)':'rgba(255,51,85,.12)')+';color:'+dc+'">'+(isL?'▲ LONG':'▼ SHORT')+'</span>'
+        +(s.sentEmoji?'<span style="font-size:.85rem">'+s.sentEmoji+'</span>':'')
+        +orderBadge
+        +'</div>'
+        +'<div style="text-align:right">'
+        +'<div style="font-family:var(--font-mono);font-size:.9rem;font-weight:700;color:'+sc+'">'+s.score+'/'+(s.maxScore||100)+' ⭐</div>'
+        +'<div style="font-size:.62rem;color:var(--text2)">ADX '+(s.adx?parseFloat(s.adx).toFixed(1):'—')+' · RSI '+(s.rsi?parseFloat(s.rsi).toFixed(0):'—')+'</div>'
+        +'</div>'
+        +'</div>'
+
+        +'<div style="height:4px;background:var(--border);border-radius:99px;margin:8px 0 14px;overflow:hidden">'
+        +'<div style="height:100%;width:'+sPct+'%;background:'+sc+';border-radius:99px"></div>'
+        +'</div>'
+
+        +'<div class="mk-levels">'
+        +'<div class="mk-lv mk-lv-entry"><div class="mk-lv-label">📍 Entry</div><div class="mk-lv-val" style="color:var(--accent);font-size:1rem">'+fmtP(s.entryPrice)+'</div></div>'
+        +'<div class="mk-lv"><div class="mk-lv-label">🛡️ SL</div><div class="mk-lv-val" style="color:var(--red)">'+fmtP(s.sl)+'</div><div class="mk-lv-sub">'+(s.slLabel||'')+'</div></div>'
+        +'<div class="mk-lv"><div class="mk-lv-label">🎯 TP1 · 33%</div><div class="mk-lv-val" style="color:var(--green)">'+fmtP(s.tp1)+'</div><div class="mk-lv-sub">'+(s.tp1Label||'')+'</div></div>'
+        +'<div class="mk-lv"><div class="mk-lv-label">🎯 TP2 · 33%</div><div class="mk-lv-val" style="color:var(--green)">'+fmtP(s.tp2)+'</div><div class="mk-lv-sub">'+(s.tp2Label||'')+'</div></div>'
+        +'<div class="mk-lv"><div class="mk-lv-label">🎯 TP3 · Full</div><div class="mk-lv-val" style="color:var(--green)">'+fmtP(s.tp3)+'</div><div class="mk-lv-sub">'+(s.tp3Label||'')+'</div></div>'
+        +'<div class="mk-lv"><div class="mk-lv-label">⚖️ RRR</div><div class="mk-lv-val" style="color:'+rrC+'">1:'+(s.rrr||'—')+'</div></div>'
+        +'<div class="mk-lv"><div class="mk-lv-label">⚡ Leverage</div><div class="mk-lv-val" style="color:var(--yellow)">Cross '+(s.leverage||'—')+'x</div></div>'
+        +'<div class="mk-lv"><div class="mk-lv-label">🔒 Confirms</div><div class="mk-lv-val" style="color:'+confColor+'">'+confTotal+'/'+confMax+' '+(s.confGate?'✅':'')+'</div></div>'
+        +'</div>'
+
+        +'<div class="mk-reasons">'+reasons+'</div>'
+        +(tags?'<div class="mk-tags">'+tags+'</div>':'')
+
+        +'<div class="mk-foot">'
+        +'<div style="font-size:.68rem;color:var(--text2)">'+(s.session||'')+''+(s.sessionQuality?' · <span style="color:var(--accent)">'+s.sessionQuality+'</span>':'')+''+(s.marketState?' · '+s.marketState:'')+'</div>'
+        +'<span style="font-size:.68rem;color:var(--accent)">Click → Deep Analyse →</span>'
+        +'</div>';
+
+      grid.appendChild(card);
+    });
+
+    document.getElementById('mk-results').style.display = 'block';
+    document.getElementById('mk-badge').textContent = 'DONE · ' + d.setups.length + ' setups';
+    document.getElementById('mk-badge').style.color = 'var(--green)';
+
+  } catch(e) {
+    clearInterval(mt);
+    document.getElementById('mk-loading').style.display = 'none';
+    document.getElementById('mk-error').style.display   = 'block';
+    document.getElementById('mk-error').textContent = '❌ ' + e.message;
+  } finally {
+    btn.disabled = false; btn.textContent = '⚡ Rescan Now';
+  }
+}
+
+// Handle ?coin= param from scanner page links
+document.addEventListener('DOMContentLoaded', function() {
+  // Auto-run scan on page load
+  mkScan();
+});
+</script>`));
+});
+
+
 }; // end module.exports

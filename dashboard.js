@@ -1576,6 +1576,7 @@ app.post('/app/api/scan', saasAuth.requireUserAuth, async (req, res) => {
     try {
         let { coin='', timeframe='15m' } = req.body;
         coin = cleanCoin(coin);
+        console.log(`[SCAN-HIT] coin=${coin} tf=${timeframe} user=${req.saasUser?.username}`);
         if (!coin || coin === 'USDT') return res.status(400).json({ok:false,error:'Coin symbol required'});
         if (STABLES.has(coin)) return res.status(400).json({ok:false,error:coin.replace('USDT','') + ' is a stablecoin.'});
         if (!VALID_TF.includes(timeframe)) timeframe = '15m';

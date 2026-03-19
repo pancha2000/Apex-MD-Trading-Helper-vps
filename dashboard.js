@@ -473,6 +473,7 @@ function _appNav(active, username) {
   </div>
   <div class="nav-links">
     <a href="/app/"          class="nav-link ${active==='home'      ?'active':''}">Dashboard</a>
+    <a href="/app/market"   class="nav-link ${active==='market'   ?'active':''}">🔍 Scan</a>
     <a href="/app/scanner"   class="nav-link ${active==='scanner'   ?'active':''}">⚡ Scanner</a>
     <a href="/app/paper"     class="nav-link ${active==='paper'     ?'active':''}">📄 Paper</a>
     <a href="/app/watchlist" class="nav-link ${active==='watchlist' ?'active':''}">👁 Watch</a>

@@ -1088,4 +1088,268 @@ app.post('/app/api/margin', saasAuth.requireUserAuth, async (req, res) => {
     }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 
+// ══════════════════════════════════════════════════════════════
+//  STATS PAGE  GET /app/stats
+// ══════════════════════════════════════════════════════════════
+app.get('/app/stats', saasAuth.requireUserAuth, async (req, res) => {
+    const user = req.saasUser;
+    let history = [], paperUser = null;
+    try {
+        history = await db.getSaasUserTradeHistory(user.userId, 100);
+        const fullUser = await db.getSaasUserById(user.userId);
+        if (fullUser && fullUser.whatsappJid) {
+            paperUser = await db.getUser(fullUser.whatsappJid).catch(() => null);
+        }
+    } catch(_) {}
+
+    const closed  = history.filter(t => t.result === 'WIN' || t.result === 'LOSS');
+    const wins    = closed.filter(t => t.result === 'WIN').length;
+    const losses  = closed.filter(t => t.result === 'LOSS').length;
+    const wr      = closed.length > 0 ? (wins / closed.length * 100).toFixed(1) : 0;
+    const pnlSum  = closed.reduce((s, t) => s + (parseFloat(t.pnlPct) || 0), 0).toFixed(2);
+    const longs   = closed.filter(t => t.direction === 'LONG').length;
+    const shorts  = closed.filter(t => t.direction === 'SHORT').length;
+    const best    = closed.length ? [...closed].sort((a, b) => (b.pnlPct||0) - (a.pnlPct||0))[0] : null;
+
+    const pb      = paperUser ? paperUser.paperBalance : 0;
+    const ps      = paperUser ? (paperUser.paperStartBalance || 100) : 100;
+    const pProfit = (pb - ps).toFixed(2);
+    const pWins   = paperUser ? paperUser.paperWins   : 0;
+    const pLosses = paperUser ? paperUser.paperLosses : 0;
+    const pTotal  = pWins + pLosses;
+    const pWr     = pTotal > 0 ? (pWins / pTotal * 100).toFixed(1) : 0;
+
+    function wrBar(n, col) {
+        return '<div style="height:7px;background:var(--border);border-radius:99px;overflow:hidden;margin-top:5px">'
+             + '<div style="height:100%;width:' + Math.min(n, 100) + '%;background:' + col + ';border-radius:99px"></div></div>';
+    }
+    const wrCol  = wr >= 60  ? 'var(--green)' : wr >= 45  ? 'var(--yellow)' : 'var(--red)';
+    const pWrCol = pWr >= 60 ? 'var(--green)' : pWr >= 45 ? 'var(--yellow)' : 'var(--red)';
+
+    const histRows = history.slice(0, 50).map(t => {
+        const dir = t.direction === 'LONG'
+            ? '<span style="color:var(--green)">▲ LONG</span>'
+            : '<span style="color:var(--red)">▼ SHORT</span>';
+        const resStyle = t.result === 'WIN' ? 'color:var(--green);font-weight:700'
+                       : t.result === 'LOSS' ? 'color:var(--red);font-weight:700'
+                       : 'color:var(--text2)';
+        const pnlCol = (t.pnlPct || 0) >= 0 ? 'var(--green)' : 'var(--red)';
+        const pnlStr = t.pnlPct != null
+            ? '<span style="color:' + pnlCol + '">' + (t.pnlPct >= 0 ? '+' : '') + parseFloat(t.pnlPct).toFixed(2) + '%</span>'
+            : '—';
+        const dt = t.openTime ? new Date(t.openTime).toLocaleDateString() : '—';
+        return '<tr style="border-bottom:1px solid var(--border)">'
+             + '<td style="padding:9px 14px;font-family:var(--font-mono);font-weight:700">' + (t.coin||'').replace('USDT','') + '</td>'
+             + '<td style="padding:9px 8px;font-size:.8rem">' + dir + '</td>'
+             + '<td style="padding:9px 8px;font-family:var(--font-mono)">' + fmtPrice(t.entry) + '</td>'
+             + '<td style="padding:9px 8px;font-family:var(--font-mono);color:var(--green)">' + fmtPrice(t.tp2||t.tp) + '</td>'
+             + '<td style="padding:9px 8px;font-family:var(--font-mono);color:var(--red)">' + fmtPrice(t.sl) + '</td>'
+             + '<td style="padding:9px 8px"><span style="' + resStyle + '">' + (t.result||'—') + '</span></td>'
+             + '<td style="padding:9px 8px;font-family:var(--font-mono)">' + pnlStr + '</td>'
+             + '<td style="padding:9px 8px;color:var(--text2);font-size:.78rem">' + dt + '</td>'
+             + '</tr>';
+    }).join('');
+
+    const pnlColor = parseFloat(pnlSum) >= 0 ? 'var(--green)' : 'var(--red)';
+    const pProfitColor = parseFloat(pProfit) >= 0 ? 'var(--green)' : 'var(--red)';
+
+    res.send(_html('Stats & Journal', `
+${_appNav('stats', user.username)}
+<div class="wrap">
+  <h1 class="page-title">📊 Trade Journal <span>Performance Statistics</span></h1>
+
+  <div class="g-stats" style="margin-bottom:20px">
+    <div class="stat-card"><div class="stat-label">Total Closed</div><div class="stat-val c-cyan">${closed.length}</div></div>
+    <div class="stat-card">
+      <div class="stat-label">Win Rate</div>
+      <div class="stat-val" style="color:${wrCol}">${wr}%</div>
+      ${wrBar(wr, wrCol)}
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Wins / Losses</div>
+      <div class="stat-val"><span style="color:var(--green)">${wins}</span> / <span style="color:var(--red)">${losses}</span></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Net P&amp;L</div>
+      <div class="stat-val" style="color:${pnlColor}">${parseFloat(pnlSum) >= 0 ? '+' : ''}${pnlSum}%</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Long / Short</div>
+      <div class="stat-val"><span style="color:var(--green)">${longs}L</span> / <span style="color:var(--red)">${shorts}S</span></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Best Trade</div>
+      <div class="stat-val c-green" style="font-size:.9rem">${best ? best.coin.replace('USDT','') + '  +' + (best.pnlPct||0).toFixed(1) + '%' : '—'}</div>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-bottom:20px;border-color:rgba(0,200,255,.2)">
+    <div class="panel-head"><div class="panel-title">📄 Auto Paper Trading Performance</div></div>
+    <div class="panel-body">
+      <div class="g-stats" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))">
+        <div class="stat-card"><div class="stat-label">Virtual Balance</div><div class="stat-val c-cyan">$${pb.toFixed(2)}</div></div>
+        <div class="stat-card">
+          <div class="stat-label">Net Profit</div>
+          <div class="stat-val" style="color:${pProfitColor}">${parseFloat(pProfit) >= 0 ? '+' : ''}$${pProfit}</div>
+        </div>
+        <div class="stat-card"><div class="stat-label">Paper Trades</div><div class="stat-val">${pTotal}</div></div>
+        <div class="stat-card">
+          <div class="stat-label">Win Rate</div>
+          <div class="stat-val" style="color:${pWrCol}">${pWr}%</div>
+          ${wrBar(pWr, pWrCol)}
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">W / L</div>
+          <div class="stat-val"><span style="color:var(--green)">${pWins}</span> / <span style="color:var(--red)">${pLosses}</span></div>
+        </div>
+      </div>
+      ${!paperUser ? '<div style="color:var(--text2);font-size:.82rem;margin-top:10px">📌 WhatsApp link කරන්න Settings වලින් paper trade data ගන්නට.</div>' : ''}
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-title">📋 Trade History <span style="font-size:.72rem;color:var(--text2);font-weight:400">(Last 50)</span></div>
+    </div>
+    ${history.length === 0
+      ? '<div style="padding:40px;text-align:center;color:var(--text2)">Trades නොමැත. .future හෝ .spot command ලෙස signal ගෙන trade කරන්න.</div>'
+      : '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.82rem">'
+      + '<thead><tr style="background:var(--card2);color:var(--text2);font-size:.72rem;text-transform:uppercase;letter-spacing:.06em">'
+      + '<th style="padding:10px 14px;text-align:left">Coin</th>'
+      + '<th style="padding:10px 8px;text-align:left">Dir</th>'
+      + '<th style="padding:10px 8px;text-align:left">Entry</th>'
+      + '<th style="padding:10px 8px;text-align:left">TP2</th>'
+      + '<th style="padding:10px 8px;text-align:left">SL</th>'
+      + '<th style="padding:10px 8px;text-align:left">Result</th>'
+      + '<th style="padding:10px 8px;text-align:left">P&amp;L</th>'
+      + '<th style="padding:10px 8px;text-align:left">Date</th>'
+      + '</tr></thead>'
+      + '<tbody>' + histRows + '</tbody>'
+      + '</table></div>'
+    }
+  </div>
+</div>`));
+});
+
+// ══════════════════════════════════════════════════════════════
+//  AI CHAT PAGE  GET /app/ai
+// ══════════════════════════════════════════════════════════════
+app.get('/app/ai', saasAuth.requireUserAuth, (req, res) => {
+    const user = req.saasUser;
+    res.send(_html('AI Assistant', `
+${_appNav('ai', user.username)}
+<div class="wrap" style="max-width:860px">
+  <h1 class="page-title">🤖 AI Market Assistant <span>GROQ Llama 3 70B · Crypto Expert</span></h1>
+  <div class="panel" style="border-color:rgba(124,58,237,.25)">
+    <div class="panel-head" style="background:rgba(124,58,237,.06)">
+      <div class="panel-title" style="color:#a78bfa">🤖 Apex AI — Crypto Trading Expert</div>
+      <div style="font-size:.72rem;color:var(--text2)">Powered by GROQ Llama 3 70B · Sinhala + English</div>
+    </div>
+    <div id="chat-msgs" style="height:440px;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:12px">
+      <div class="ai-msg ai-bot">
+        <div class="ai-avatar">&#x26A1;</div>
+        <div class="ai-bubble">&#x1F44B; ආයුබෝවන්! මම Apex AI. Crypto trading, technical analysis, SMC, strategy — ඕනෑ දෙයක් අහන්න.<br><br><em>Examples: "BTC 15m trend?" · "SOL LONG setup?" · "RSI divergence explain"</em></div>
+      </div>
+    </div>
+    <div style="padding:14px 20px;border-top:1px solid var(--border);display:flex;gap:10px">
+      <input type="text" id="ai-input" class="inp" placeholder="Message Apex AI..." style="flex:1" maxlength="500">
+      <button class="btn btn-primary" id="ai-send" onclick="sendMsg()" style="min-width:80px">Send &#x2191;</button>
+    </div>
+    <div style="padding:0 20px 14px;display:flex;gap:6px;flex-wrap:wrap">
+      <button class="btn btn-ghost btn-sm" onclick="quickQ(this)">BTC market trend?</button>
+      <button class="btn btn-ghost btn-sm" onclick="quickQ(this)">SOL short setup?</button>
+      <button class="btn btn-ghost btn-sm" onclick="quickQ(this)">Best coins today?</button>
+      <button class="btn btn-ghost btn-sm" onclick="quickQ(this)">RSI divergence explain</button>
+      <button class="btn btn-ghost btn-sm" onclick="quickQ(this)">Fear and Greed meaning?</button>
+      <button class="btn btn-ghost btn-sm" onclick="quickQ(this)">SMC Order Block explain</button>
+    </div>
+  </div>
+</div>
+<style>
+.ai-msg{display:flex;gap:10px;align-items:flex-start}
+.ai-msg.ai-user{flex-direction:row-reverse}
+.ai-bubble{max-width:78%;padding:10px 14px;border-radius:12px;font-size:.85rem;line-height:1.6}
+.ai-msg.ai-bot .ai-bubble{background:var(--card2);border:1px solid var(--border);border-radius:4px 12px 12px 12px;color:var(--text)}
+.ai-msg.ai-user .ai-bubble{background:rgba(0,200,255,.1);border:1px solid rgba(0,200,255,.2);border-radius:12px 4px 12px 12px;color:var(--text)}
+.ai-avatar{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.9rem;flex-shrink:0;background:var(--card2);border:1px solid var(--border)}
+.ai-dot{width:6px;height:6px;border-radius:50%;background:var(--text2);animation:aibounce .9s infinite;display:inline-block;margin:0 2px}
+.ai-dot:nth-child(2){animation-delay:.15s}.ai-dot:nth-child(3){animation-delay:.3s}
+@keyframes aibounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-6px)}}
+</style>
+<script>
+var chatHistory = [
+  {role:'system', content:'You are Apex AI, a professional crypto futures trading assistant inside the Apex-MD trading bot. Specialise in futures, SMC (Smart Money Concepts), technical analysis, and risk management. Be concise and practical. Reply in both English and Sinhala naturally. Never give financial advice - give analysis only.'}
+];
+function appendMsg(role, html) {
+  var box = document.getElementById('chat-msgs');
+  var div = document.createElement('div');
+  div.className = 'ai-msg ' + (role === 'user' ? 'ai-user' : 'ai-bot');
+  div.innerHTML = '<div class="ai-avatar">' + (role === 'user' ? '&#x1F464;' : '&#x26A1;') + '</div><div class="ai-bubble">' + html + '</div>';
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+}
+function showTyping() {
+  var box = document.getElementById('chat-msgs');
+  var d = document.createElement('div');
+  d.className = 'ai-msg ai-bot'; d.id = 'ai-typing';
+  d.innerHTML = '<div class="ai-avatar">&#x26A1;</div><div class="ai-bubble"><span class="ai-dot"></span><span class="ai-dot"></span><span class="ai-dot"></span></div>';
+  box.appendChild(d); box.scrollTop = box.scrollHeight;
+}
+function removeTyping() { var t = document.getElementById('ai-typing'); if (t) t.remove(); }
+function fmtReply(t) {
+  return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/\n/g,'<br>')
+    .replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>')
+    .replace(/\*([^*\n]+)\*/g,'<strong>$1</strong>');
+}
+async function sendMsg() {
+  var inp = document.getElementById('ai-input');
+  var text = inp.value.trim(); if (!text) return;
+  inp.value = '';
+  document.getElementById('ai-send').disabled = true;
+  appendMsg('user', text.replace(/&/g,'&amp;').replace(/</g,'&lt;'));
+  chatHistory.push({role:'user', content:text});
+  showTyping();
+  try {
+    var r = await fetch('/app/api/ai-chat', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({messages: chatHistory.slice(-14)})
+    });
+    var d = await r.json(); removeTyping();
+    if (!d.ok) { appendMsg('bot', '&#10060; ' + (d.error || 'Error')); return; }
+    chatHistory.push({role:'assistant', content:d.reply});
+    appendMsg('bot', fmtReply(d.reply));
+  } catch(e) { removeTyping(); appendMsg('bot', 'Network error: ' + e.message); }
+  finally { document.getElementById('ai-send').disabled = false; }
+}
+function quickQ(btn) { document.getElementById('ai-input').value = btn.textContent; sendMsg(); }
+document.addEventListener('DOMContentLoaded', function() {
+  document.getElementById('ai-input').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') sendMsg();
+  });
+});
+</script>`));
+});
+
+// ── AI Chat API  POST /app/api/ai-chat ────────────────────────
+app.post('/app/api/ai-chat', saasAuth.requireUserAuth, async (req, res) => {
+    try {
+        if (!config.GROQ_API) {
+            return res.json({ok:false, error:'GROQ API key නැත. config.env හි GROQ_API add කරන්න.'});
+        }
+        const {messages = []} = req.body;
+        if (!messages.length) return res.status(400).json({ok:false, error:'No messages'});
+        const r = await axios.post(
+            'https://api.groq.com/openai/v1/chat/completions',
+            {model:'llama-3.3-70b-versatile', messages:messages.slice(-14), max_tokens:600, temperature:0.5},
+            {headers:{Authorization:'Bearer ' + config.GROQ_API}, timeout:20000}
+        );
+        res.json({ok:true, reply: r.data.choices[0].message.content || ''});
+    } catch(e) {
+        console.error('[AI Chat]', e.message);
+        res.status(500).json({ok:false, error: e.message});
+    }
+});
+
+
 }; // end module.exports

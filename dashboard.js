@@ -2050,8 +2050,8 @@ app.post('/app/api/scan', saasAuth.requireUserAuth, async (req, res) => {
             },
         });
     } catch(e) {
-        console.error('[Scanner API]', e.message);
-        res.status(500).json({ ok: false, error: e.message });
+        console.error('[Scanner API] ERROR:', e.message, e.stack?.split('\n')[1]||'');
+        res.status(500).json({ ok: false, error: e.message || 'Analysis failed — check server logs' });
     }
 });
 

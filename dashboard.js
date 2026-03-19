@@ -480,6 +480,8 @@ function _appNav(active, username) {
     <a href="/app/alerts"    class="nav-link ${active==='alerts'    ?'active':''}">🔔 Alerts</a>
     <a href="/app/news"      class="nav-link ${active==='news'      ?'active':''}">📰 Intel</a>
     <a href="/app/calc"      class="nav-link ${active==='calc'      ?'active':''}">🧮 Calc</a>
+    <a href="/app/stats"     class="nav-link ${active==='stats'     ?'active':''}">📊 Stats</a>
+    <a href="/app/ai"        class="nav-link ${active==='ai'        ?'active':''}">🤖 AI</a>
     <a href="/app/trades"    class="nav-link ${active==='trades'    ?'active':''}">Trades</a>
     <a href="/app/settings"  class="nav-link ${active==='settings'  ?'active':''}">⚙️</a>
     <span style="font-size:.78rem;color:var(--text2);padding:0 5px;font-family:var(--font-mono)">👤 ${username||''}</span>

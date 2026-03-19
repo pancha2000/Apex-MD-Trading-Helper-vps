@@ -1479,12 +1479,860 @@ async function setStatus(userId,status){
     });
 
     // ════════════════════════════════════════════════════════════════════
-    //  USER PORTAL (/app/*) — dashboard-app.js + dashboard-scanner.js
+    //  USER PORTAL (/app/*)
     // ════════════════════════════════════════════════════════════════════
     app.use('/app', saasAuth.requireUserAuth);
-    const _ctx = { saasAuth, db, config, axios, _html, _appNav, fmtPrice, fmtPct, scoreColor };
-    require('./dashboard-app')(_ctx, app);
-    require('./dashboard-scanner')({ saasAuth, db, config, axios, _html, _appNav, fmtPrice, scoreColor }, app);
+
+    // ─── App Home ──────────────────────────────────────────────────────
+    app.get('/app/', async (req, res) => {
+        const user = req.saasUser;
+        const forbidden = req.query.forbidden
+            ? `<div style="background:rgba(255,51,85,.08);border:1px solid rgba(255,51,85,.2);border-radius:var(--radius);padding:12px 16px;margin-bottom:20px;font-size:.84rem;color:var(--red)">🚫 Admin panel requires an <strong>admin</strong> role account.</div>` : '';
+        let activeTrades=[], closedCount=0, winRate='—';
+        try {
+            activeTrades = await db.getSaasUserActiveTrades(user.userId);
+            const closed = await db.getSaasUserTradeHistory(user.userId, 200);
+            closedCount = closed.length;
+            if (closed.length>0) {
+                const wins = closed.filter(t=>t.result==='WIN').length;
+                winRate = ((wins/closed.length)*100).toFixed(1)+'%';
+            }
+        } catch(_){}
+
+        const tradesHtml = activeTrades.length===0
+            ? `<tr><td colspan="7" style="text-align:center;color:var(--text2);padding:36px"><div style="font-size:1.8rem;margin-bottom:8px">🛑</div>No active trades on your account</td></tr>`
+            : activeTrades.map(t => {
+                const dir = t.direction==='LONG'?'<span class="pill pill-long">▲ LONG</span>':'<span class="pill pill-short">▼ SHORT</span>';
+                const st  = t.status==='pending'?'<span class="pill pill-pending">PENDING</span>':'<span class="pill pill-active">ACTIVE</span>';
+                const hrs = ((Date.now()-new Date(t.openTime))/3600000).toFixed(1);
+                return `<tr>
+                  <td><strong style="font-family:var(--font-mono)">${t.coin}</strong></td>
+                  <td>${dir}</td>
+                  <td style="font-family:var(--font-mono)">${fmtPrice(t.entry)}</td>
+                  <td style="font-family:var(--font-mono);color:var(--green)">${fmtPrice(t.tp2||t.tp)}</td>
+                  <td style="font-family:var(--font-mono);color:var(--red)">${fmtPrice(t.sl)}</td>
+                  <td style="font-family:var(--font-mono)">${t.leverage||1}x</td>
+                  <td>${st} <span style="color:var(--text2);font-size:.72rem;font-family:var(--font-mono)">${hrs}h</span></td>
+                </tr>`;
+            }).join('');
+
+        res.send(_html('My Dashboard', `
+${_appNav('home', user.username)}
+<div class="wrap">
+  ${forbidden}
+  <h1 class="page-title">👋 Welcome back, <span style="color:var(--accent)">${user.username}</span></h1>
+
+  <div class="g-stats">
+    <div class="stat-card"><div class="stat-label">Active Trades</div><div class="stat-val c-cyan">${activeTrades.length}</div><div class="stat-sub">Open positions</div></div>
+    <div class="stat-card"><div class="stat-label">Closed Trades</div><div class="stat-val">${closedCount}</div><div class="stat-sub">Completed</div></div>
+    <div class="stat-card"><div class="stat-label">Win Rate</div><div class="stat-val c-green">${winRate}</div><div class="stat-sub">Historical</div></div>
+    <div class="stat-card"><div class="stat-label">Account</div><div class="stat-val" style="font-size:1rem;padding-top:6px"><span class="pill pill-ok">active</span></div><div class="stat-sub">${user.role} account</div></div>
+  </div>
+
+  <div class="panel" style="margin-bottom:20px">
+    <div class="panel-head">
+      <div class="panel-title">⚡ My Active Trades</div>
+      <a href="/app/trades" class="btn btn-ghost btn-sm">Full History →</a>
+    </div>
+    <div class="panel-body" style="padding:0"><div class="tbl-wrap">
+      <table><thead><tr><th>Coin</th><th>Dir</th><th>Entry</th><th>TP</th><th>SL</th><th>Lev</th><th>Status</th></tr></thead>
+      <tbody>${tradesHtml}</tbody></table>
+    </div></div>
+  </div>
+
+  <div class="g-2">
+    <div class="panel" style="background:linear-gradient(135deg,rgba(0,200,255,.05),var(--card))">
+      <div class="panel-body">
+        <div style="font-size:1.5rem;margin-bottom:10px">🔬</div>
+        <div style="font-family:var(--font-head);font-size:1rem;font-weight:700;margin-bottom:6px">AI Scanner</div>
+        <div style="font-size:.82rem;color:var(--text2);margin-bottom:16px">Run 14-Factor SMC analysis on any coin</div>
+        <a href="/app/scanner" class="btn btn-primary">⚡ Open Scanner →</a>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-body">
+        <div style="font-size:1.5rem;margin-bottom:10px">🔑</div>
+        <div style="font-family:var(--font-head);font-size:1rem;font-weight:700;margin-bottom:6px">API Keys &amp; WhatsApp</div>
+        <div style="font-size:.82rem;color:var(--text2);margin-bottom:16px">Connect your exchange and link WhatsApp for signals</div>
+        <a href="/app/settings" class="btn btn-ghost">⚙️ Manage Settings →</a>
+      </div>
+    </div>
+  </div>
+</div>`));
+    });
+
+    // ─── App Trades ────────────────────────────────────────────────────
+    app.get('/app/trades', async (req, res) => {
+        const user = req.saasUser;
+        let activeHtml='', closedHtml='', totalPnl=0, wins=0, totalClosed=0;
+        try {
+            const active = await db.getSaasUserActiveTrades(user.userId);
+            activeHtml = active.length===0
+                ? `<tr><td colspan="8" style="text-align:center;color:var(--text2);padding:28px">No active trades</td></tr>`
+                : active.map(t => {
+                    const dir=t.direction==='LONG'?'<span class="pill pill-long">▲ LONG</span>':'<span class="pill pill-short">▼ SHORT</span>';
+                    const st=t.status==='pending'?'<span class="pill pill-pending">PENDING</span>':'<span class="pill pill-active">ACTIVE</span>';
+                    const hrs=((Date.now()-new Date(t.openTime))/3600000).toFixed(1);
+                    return `<tr>
+                      <td><strong style="font-family:var(--font-mono)">${t.coin}</strong></td>
+                      <td>${dir}</td>
+                      <td style="font-family:var(--font-mono)">${fmtPrice(t.entry)}</td>
+                      <td style="font-family:var(--font-mono);color:var(--text3)">${fmtPrice(t.tp1)}</td>
+                      <td style="font-family:var(--font-mono);color:var(--green)">${fmtPrice(t.tp2||t.tp)}</td>
+                      <td style="font-family:var(--font-mono);color:var(--red)">${fmtPrice(t.sl)}</td>
+                      <td style="font-family:var(--font-mono)">${t.leverage||1}x</td>
+                      <td>${st} <span style="color:var(--text2);font-size:.72rem">${hrs}h</span></td>
+                    </tr>`;
+                }).join('');
+            const closed = await db.getSaasUserTradeHistory(user.userId, 100);
+            totalClosed = closed.length;
+            if (closed.length) {
+                closed.forEach(t=>{ totalPnl+=t.pnlPct||0; if(t.result==='WIN') wins++; });
+                closedHtml = closed.map(t => {
+                    const dir=t.direction==='LONG'?'<span class="pill pill-long">▲ LONG</span>':'<span class="pill pill-short">▼ SHORT</span>';
+                    const result=t.result==='WIN'?'<span class="pill pill-win">WIN</span>':t.result==='LOSS'?'<span class="pill pill-loss">LOSS</span>':'<span class="pill pill-be">B/E</span>';
+                    const pnl=t.pnlPct?fmtPct(t.pnlPct):'—';
+                    const pnlColor=t.pnlPct>0?'var(--green)':t.pnlPct<0?'var(--red)':'var(--text2)';
+                    return `<tr>
+                      <td><strong style="font-family:var(--font-mono)">${t.coin}</strong></td>
+                      <td>${dir}</td>
+                      <td style="font-family:var(--font-mono)">${fmtPrice(t.entry)}</td>
+                      <td style="font-family:var(--font-mono);color:var(--green)">${fmtPrice(t.tp2||t.tp)}</td>
+                      <td style="font-family:var(--font-mono);color:var(--red)">${fmtPrice(t.sl)}</td>
+                      <td>${result}</td>
+                      <td style="font-family:var(--font-mono);font-weight:700;color:${pnlColor}">${pnl}</td>
+                      <td style="font-size:.8rem;color:var(--text2)">${t.closedAt?new Date(t.closedAt).toLocaleDateString():'—'}</td>
+                    </tr>`;
+                }).join('');
+            } else { closedHtml=`<tr><td colspan="8" style="text-align:center;color:var(--text2);padding:28px">No trade history yet</td></tr>`; }
+        } catch(_){}
+
+        const pnlColor = totalPnl>=0?'var(--green)':'var(--red)';
+        res.send(_html('My Trades', `
+${_appNav('trades', user.username)}
+<div class="wrap">
+  <h1 class="page-title">📋 My Trades</h1>
+  <div class="g-stats" style="margin-bottom:24px">
+    <div class="stat-card"><div class="stat-label">Closed Trades</div><div class="stat-val c-cyan">${totalClosed}</div></div>
+    <div class="stat-card"><div class="stat-label">Win Rate</div><div class="stat-val c-green">${totalClosed>0?((wins/totalClosed)*100).toFixed(1)+'%':'—'}</div></div>
+    <div class="stat-card"><div class="stat-label">Total PnL</div><div class="stat-val" style="color:${pnlColor}">${totalPnl>=0?'+':''}${totalPnl.toFixed(2)}%</div></div>
+  </div>
+  <div class="panel" style="margin-bottom:20px">
+    <div class="panel-head"><div class="panel-title">⚡ Active &amp; Pending</div></div>
+    <div class="panel-body" style="padding:0"><div class="tbl-wrap">
+      <table><thead><tr><th>Coin</th><th>Dir</th><th>Entry</th><th>TP1</th><th>TP2</th><th>SL</th><th>Lev</th><th>Status</th></tr></thead>
+      <tbody>${activeHtml}</tbody></table>
+    </div></div>
+  </div>
+  <div class="panel">
+    <div class="panel-head"><div class="panel-title">📜 Trade History <span style="font-size:.78rem;color:var(--text2);margin-left:6px">(Last 100)</span></div></div>
+    <div class="panel-body" style="padding:0"><div class="tbl-wrap">
+      <table><thead><tr><th>Coin</th><th>Dir</th><th>Entry</th><th>TP2</th><th>SL</th><th>Result</th><th>PnL %</th><th>Date</th></tr></thead>
+      <tbody>${closedHtml}</tbody></table>
+    </div></div>
+  </div>
+</div>`));
+    });
+
+    // ─── App Settings ──────────────────────────────────────────────────
+    app.get('/app/settings', async (req, res) => {
+        const user = req.saasUser;
+        let apiKeys=[], waLinked=false, waJid='', waLinkedAt='', tradingMode='signals_only';
+        try {
+            const fullUser = await db.getSaasUserById(user.userId);
+            if (fullUser) {
+                tradingMode = fullUser.tradingMode||'signals_only';
+                apiKeys = (fullUser.apiKeys||[]).map(k=>({_id:k._id.toString(),label:k.label,exchange:k.exchange,addedAt:new Date(k.addedAt).toLocaleDateString()}));
+                waLinked = Boolean(fullUser.whatsappJid);
+                waJid    = fullUser.whatsappJid||'';
+                waLinkedAt = fullUser.whatsappLinkedAt?new Date(fullUser.whatsappLinkedAt).toLocaleString():'';
+            }
+        } catch(_){}
+
+        const keysHtml = apiKeys.length===0
+            ? `<div style="text-align:center;padding:28px;color:var(--text2)"><div style="font-size:1.5rem;margin-bottom:8px">🔑</div>No API keys yet</div>`
+            : `<div class="tbl-wrap" style="margin-bottom:16px"><table><thead><tr><th>Label</th><th>Exchange</th><th>Added</th><th>Action</th></tr></thead><tbody>
+            ${apiKeys.map(k=>`<tr>
+              <td><strong>${k.label}</strong></td>
+              <td style="text-transform:capitalize;font-size:.82rem">${k.exchange}</td>
+              <td style="font-size:.82rem;color:var(--text2)">${k.addedAt}</td>
+              <td><button class="btn btn-danger btn-sm" onclick="removeKey('${k._id}')">Remove</button></td>
+            </tr>`).join('')}
+            </tbody></table></div>`;
+
+        const msgs = {
+            added:   req.query.added   ? '<div style="color:var(--green);font-size:.82rem;margin-bottom:10px">✅ API key added.</div>' : '',
+            removed: req.query.removed ? '<div style="color:var(--green);font-size:.82rem;margin-bottom:10px">✅ API key removed.</div>' : '',
+            keyerr:  req.query.keyerr==='exists'?'<div style="color:var(--red);font-size:.82rem;margin-bottom:10px">❌ Label already exists.</div>':req.query.keyerr==='invalid'?'<div style="color:var(--red);font-size:.82rem;margin-bottom:10px">❌ Fill in all fields.</div>':req.query.keyerr?'<div style="color:var(--red);font-size:.82rem;margin-bottom:10px">❌ Error saving key.</div>':'',
+            unlinked:req.query.unlinked?'<div style="color:var(--green);font-size:.82rem;margin-bottom:10px">✅ WhatsApp unlinked.</div>':'',
+        };
+        const isAuto = tradingMode==='auto_trade';
+
+        res.send(_html('Settings', `
+${_appNav('settings', user.username)}
+<div class="wrap">
+  <h1 class="page-title">⚙️ Account Settings</h1>
+
+  <div class="panel" style="margin-bottom:20px">
+    <div class="panel-head"><div class="panel-title">🗝️ Exchange API Keys</div></div>
+    <div class="panel-body">
+      <div style="font-size:.82rem;color:var(--text2);margin-bottom:16px">
+        Keys stored encrypted (AES-256-GCM).<br>
+        <strong style="color:var(--yellow)">⚠️ Never share your secret key with anyone.</strong>
+      </div>
+      ${msgs.added}${msgs.removed}${msgs.keyerr}
+      ${keysHtml}
+    </div>
+  </div>
+
+  <div class="panel" style="margin-bottom:20px">
+    <div class="panel-head"><div class="panel-title">➕ Add New API Key</div></div>
+    <div class="panel-body">
+      <form method="POST" action="/app/api/keys/add" style="max-width:480px">
+        <div class="field"><label class="field-label">Label</label><input class="inp" type="text" name="label" placeholder="e.g. Binance Main" required maxlength="40"></div>
+        <div class="field"><label class="field-label">Exchange</label>
+          <select class="inp" name="exchange">
+            <option value="binance">Binance</option>
+            <option value="bybit">Bybit</option>
+          </select>
+        </div>
+        <div class="field"><label class="field-label">API Key</label><input class="inp" type="text" name="apiKey" placeholder="Your API key" autocomplete="off" required></div>
+        <div class="field"><label class="field-label">Secret Key</label><input class="inp" type="password" name="secretKey" placeholder="Your secret key" autocomplete="off" required></div>
+        <button type="submit" class="btn btn-primary">🔒 Save Encrypted Key</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-bottom:20px;border-color:${waLinked?'rgba(0,230,118,.25)':'var(--border)'}">
+    <div class="panel-head"><div class="panel-title">📱 WhatsApp Linking</div></div>
+    <div class="panel-body">
+      <div style="font-size:.82rem;color:var(--text2);margin-bottom:16px">Link your WhatsApp to receive trade signals and alerts directly.</div>
+      ${msgs.unlinked}
+      ${waLinked?`
+      <div style="background:rgba(0,230,118,.06);border:1px solid rgba(0,230,118,.2);border-radius:var(--radius);padding:14px 16px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+        <div>
+          <div style="color:var(--green);font-weight:600;font-size:.9rem">✅ WhatsApp Connected</div>
+          <div style="color:var(--text2);font-size:.78rem;margin-top:3px">Number: <strong style="color:var(--text)">${waJid.replace('@s.whatsapp.net','')}</strong></div>
+          <div style="color:var(--text2);font-size:.78rem">Linked: ${waLinkedAt}</div>
+        </div>
+        <button class="btn btn-danger btn-sm" onclick="unlinkWa()">Unlink</button>
+      </div>`:`
+      <div style="background:rgba(255,171,0,.06);border:1px solid rgba(255,171,0,.2);border-radius:var(--radius);padding:12px 15px;margin-bottom:16px;font-size:.82rem;color:var(--yellow)">⚠️ Not linked — generate a token below</div>`}
+      <div style="font-size:.82rem;color:var(--text2);margin-bottom:12px">
+        <strong>How to link:</strong><br>
+        1. Click Generate Token → 2. Send <code style="background:var(--card2);padding:2px 6px;border-radius:4px">.link YOUR-TOKEN</code> to the bot → 3. Done!
+      </div>
+      <button class="btn btn-primary" onclick="generateToken()" id="gen-btn">⚡ Generate Linking Token</button>
+      <div id="token-display" style="display:none;margin-top:16px">
+        <div style="font-size:.8rem;color:var(--text2);margin-bottom:8px">Your token (valid 15 min):</div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <code id="token-value" style="background:var(--bg2);border:1px solid var(--accent);border-radius:8px;padding:12px 20px;font-size:1.2rem;font-weight:700;letter-spacing:.15em;color:var(--accent);font-family:var(--font-mono)"></code>
+          <button class="btn btn-ghost btn-sm" onclick="copyToken()">📋 Copy</button>
+        </div>
+        <div id="token-timer" style="font-size:.78rem;color:var(--yellow);margin-top:5px">⏳ Expires in 15:00</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-bottom:20px;border-color:${isAuto?'rgba(0,200,255,.25)':'var(--border)'}">
+    <div class="panel-head"><div class="panel-title">🤖 Trading Mode</div></div>
+    <div class="panel-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px">
+        <div onclick="setMode('signals_only')" style="cursor:pointer;border:2px solid ${!isAuto?'var(--green)':'var(--border)'};border-radius:var(--radius);padding:18px;background:${!isAuto?'rgba(0,230,118,.04)':'var(--bg2)'};transition:.2s">
+          <div style="font-size:1.4rem;margin-bottom:8px">📡</div>
+          <div style="font-weight:700;font-size:.9rem;color:${!isAuto?'var(--green)':'var(--text)'}">Signals Only</div>
+          <div style="font-size:.77rem;color:var(--text2);margin-top:5px;line-height:1.5">Alerts on WhatsApp &amp; website. No auto execution.</div>
+          ${!isAuto?'<div style="margin-top:8px;font-size:.72rem;font-weight:700;color:var(--green)">✅ ACTIVE</div>':''}
+        </div>
+        <div onclick="setMode('auto_trade')" style="cursor:pointer;border:2px solid ${isAuto?'var(--accent)':'var(--border)'};border-radius:var(--radius);padding:18px;background:${isAuto?'rgba(0,200,255,.04)':'var(--bg2)'};transition:.2s">
+          <div style="font-size:1.4rem;margin-bottom:8px">🤖</div>
+          <div style="font-weight:700;font-size:.9rem;color:${isAuto?'var(--accent)':'var(--text)'}">Auto Trade</div>
+          <div style="font-size:.77rem;color:var(--text2);margin-top:5px;line-height:1.5">Bot executes trades automatically on Binance.</div>
+          ${isAuto?'<div style="margin-top:8px;font-size:.72rem;font-weight:700;color:var(--accent)">✅ ACTIVE</div>':''}
+        </div>
+      </div>
+      <div id="mode-msg" style="margin-top:10px;font-size:.83rem"></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><div class="panel-title">👤 Account Info</div></div>
+    <div class="panel-body">
+      <div class="stat-row"><span>Username</span><span class="stat-row-val">${user.username}</span></div>
+      <div class="stat-row"><span>Role</span><span class="stat-row-val">${user.role}</span></div>
+      <div class="stat-row"><span>Trading Mode</span><span class="stat-row-val">${isAuto?'<span class="pill pill-active">🤖 Auto Trade</span>':'<span class="pill pill-ok">📡 Signals Only</span>'}</span></div>
+      <div class="stat-row"><span>WhatsApp</span><span class="stat-row-val">${waLinked?'<span class="pill pill-ok">linked</span>':'<span class="pill pill-susp">not linked</span>'}</span></div>
+    </div>
+  </div>
+</div>
+
+<script>
+async function removeKey(keyId){if(!confirm('Remove this API key?'))return;try{const r=await fetch('/app/api/keys/'+keyId,{method:'DELETE'});const d=await r.json();if(d.ok)location.href='/app/settings?removed=1';else alert('Error: '+d.error);}catch(e){alert('Network error');}}
+async function generateToken(){const btn=document.getElementById('gen-btn');btn.disabled=true;btn.textContent='⏳ Generating...';try{const r=await fetch('/app/api/link/generate',{method:'POST'});const d=await r.json();if(!d.ok){alert('Error: '+d.error);btn.disabled=false;btn.textContent='⚡ Generate Linking Token';return;}document.getElementById('token-value').textContent=d.token;document.getElementById('token-display').style.display='block';btn.textContent='🔄 Regenerate Token';btn.disabled=false;let secs=900;const iv=setInterval(()=>{secs--;const m=String(Math.floor(secs/60)).padStart(2,'0'),s=String(secs%60).padStart(2,'0');document.getElementById('token-timer').textContent='⏳ Expires in '+m+':'+s;if(secs<=0){clearInterval(iv);document.getElementById('token-timer').textContent='❌ Token expired — regenerate';document.getElementById('token-timer').style.color='var(--red)';}},1000);}catch(e){alert('Network error');btn.disabled=false;btn.textContent='⚡ Generate Linking Token';}}
+function copyToken(){const t=document.getElementById('token-value').textContent;navigator.clipboard.writeText(t).then(()=>{const btn=event.target;btn.textContent='✅ Copied!';setTimeout(()=>btn.textContent='📋 Copy',2000);});}
+async function unlinkWa(){if(!confirm('Unlink WhatsApp? You will stop receiving signals.'))return;try{const r=await fetch('/app/api/link/unlink',{method:'POST'});const d=await r.json();if(d.ok)location.href='/app/settings?unlinked=1';else alert('Error: '+d.error);}catch(e){alert('Network error');}}
+async function setMode(mode){const msg=document.getElementById('mode-msg');msg.textContent='⏳ Saving...';msg.style.color='var(--text2)';try{const r=await fetch('/app/api/trading-mode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode})});const d=await r.json();if(d.ok){msg.textContent=mode==='auto_trade'?'✅ Auto Trade enabled':'✅ Signals Only enabled';msg.style.color='var(--green)';setTimeout(()=>location.reload(),900);}else{msg.textContent='❌ '+d.error;msg.style.color='var(--red)';}}catch(e){msg.textContent='❌ Network error';msg.style.color='var(--red)';}}
+</script>`));
+    });
+
+    // ─── App API Endpoints (unchanged) ─────────────────────────────────
+    app.post('/app/api/keys/add', saasAuth.requireUserAuth, async (req, res) => {
+        try {
+            const user=req.saasUser;
+            const { label='', exchange='binance', apiKey='', secretKey='' } = req.body;
+            if (!label.trim()||!apiKey.trim()||!secretKey.trim()) return res.redirect('/app/settings?keyerr=invalid');
+            const fullUser = await db.getSaasUserById(user.userId);
+            if (fullUser&&fullUser.apiKeys.some(k=>k.label===label.trim())) return res.redirect('/app/settings?keyerr=exists');
+            const entry={ label:label.trim(), exchange:exchange==='bybit'?'bybit':'binance', encApiKey:saasAuth.encryptApiKey(apiKey.trim()), encSecretKey:saasAuth.encryptApiKey(secretKey.trim()) };
+            await db.addUserApiKey(user.userId, entry);
+            res.redirect('/app/settings?added=1');
+        } catch(e){ console.error('[APP] Add key error:',e.message); res.redirect('/app/settings?keyerr=server'); }
+    });
+
+    app.delete('/app/api/keys/:keyId', saasAuth.requireUserAuth, async (req, res) => {
+        try { await db.removeUserApiKey(req.saasUser.userId, req.params.keyId); res.json({ok:true}); }
+        catch(e){ res.status(500).json({ok:false,error:e.message}); }
+    });
+
+    app.post('/app/api/link/generate', saasAuth.requireUserAuth, async (req, res) => {
+        try { const token=await db.createLinkToken(req.saasUser.userId); res.json({ok:true,token}); }
+        catch(e){ res.status(500).json({ok:false,error:e.message}); }
+    });
+
+    app.post('/app/api/link/unlink', saasAuth.requireUserAuth, async (req, res) => {
+        try { await db.unlinkWhatsapp(req.saasUser.userId); res.json({ok:true}); }
+        catch(e){ res.status(500).json({ok:false,error:e.message}); }
+    });
+
+    app.post('/app/api/trading-mode', saasAuth.requireUserAuth, async (req, res) => {
+        try {
+            const { mode } = req.body;
+            if (!['signals_only','auto_trade'].includes(mode)) return res.status(400).json({ok:false,error:'Invalid mode'});
+            await db.setTradingMode(req.saasUser.userId, mode);
+            console.log(`[Portal] ${req.saasUser.username} set tradingMode → ${mode}`);
+            res.json({ok:true,mode});
+        } catch(e){ res.status(500).json({ok:false,error:e.message}); }
+    });
+
+
+    // ════════════════════════════════════════════════════════════════════
+    //  SCANNER  GET /app/scanner + POST /app/api/scan + /app/api/backtest
+    // ════════════════════════════════════════════════════════════════════
+
+    const _withTimeout = (p, ms, fb) => Promise.race([p, new Promise(r => setTimeout(() => r(fb), ms))]);
+    const _STABLES = new Set(['USDCUSDT','BUSDUSDT','DAIUSDT','TUSDUSDT','EURUSDT','GBPUSDT','USDPUSDT']);
+    const _VALID_TF = ['1m','3m','5m','15m','30m','1h','2h','4h','6h','12h','1d','3d','1w'];
+
+    function _cleanCoin(raw) {
+        let c = (raw||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
+        if (!c.endsWith('USDT')) c += 'USDT';
+        return c;
+    }
+    function _calcFutures(a) {
+        const entry=parseFloat(a.entryPrice)||0, sl=parseFloat(a.sl)||0, tp2=parseFloat(a.tp2)||0;
+        const risk=Math.abs(entry-sl), slPct=entry>0?risk/entry:0.02;
+        const lev=Math.min(Math.ceil(slPct>0?(0.02/slPct)/0.10:10),75);
+        const isL=a.direction==='LONG';
+        const rrr=risk>0?(Math.abs(tp2-entry)/risk).toFixed(2):'—';
+        return { leverage:lev, marginPct:2, rrr,
+            dca1:(isL?entry-risk*0.35:entry+risk*0.35).toFixed(4),
+            dca2:(isL?entry-risk*0.70:entry+risk*0.70).toFixed(4) };
+    }
+
+    // ── Scanner Page ──────────────────────────────────────────────────
+    app.get('/app/scanner', saasAuth.requireUserAuth, (req, res) => {
+        const user = req.saasUser;
+        res.send(_html('AI Scanner', `
+${_appNav('scanner', user.username)}
+<div class="wrap">
+  <h1 class="page-title">⚡ AI Scanner <span>70-Factor Analysis</span></h1>
+  <div class="panel" style="max-width:680px;margin-bottom:22px">
+    <div class="panel-body">
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+        <div style="flex:1;min-width:140px">
+          <label class="field-label">Coin</label>
+          <input type="text" id="coin-inp" class="inp" placeholder="BTC, ETH, SOL..."
+            style="font-family:var(--font-mono);font-size:1.05rem;font-weight:700;text-transform:uppercase"
+            maxlength="12" autocomplete="off">
+        </div>
+        <div style="min-width:130px">
+          <label class="field-label">Timeframe</label>
+          <select id="tf-sel" class="inp">
+            <option value="5m">5 Minutes</option>
+            <option value="15m" selected>15 Minutes</option>
+            <option value="1h">1 Hour</option>
+            <option value="4h">4 Hours</option>
+            <option value="1d">1 Day</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" style="padding:11px 28px" id="scan-btn">⚡ Analyse</button>
+        <button class="btn btn-ghost" style="padding:11px 22px" id="bt-btn">📊 Backtest</button>
+      </div>
+    </div>
+  </div>
+  <div id="scan-loading" style="display:none;padding:50px;text-align:center">
+    <div style="font-size:2.5rem;display:inline-block" id="spin-icon">⚙️</div>
+    <div style="margin-top:14px;font-size:.95rem;color:var(--text)" id="scan-msg">Analysing...</div>
+  </div>
+  <div id="scan-error" style="display:none;background:rgba(255,51,85,.08);border:1px solid rgba(255,51,85,.25);border-radius:var(--radius);padding:14px 18px;margin-bottom:16px;color:var(--red);font-size:.88rem"></div>
+  <div id="scan-result" style="display:none"></div>
+</div>
+<style>
+.rcard{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;margin-bottom:12px}
+.rcard-title{font-family:var(--font-head);font-size:.8rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px}
+.rgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
+.ritem{background:var(--bg2);border-radius:6px;padding:9px 11px}
+.ritem-label{font-size:.6rem;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px}
+.ritem-val{font-family:var(--font-mono);font-size:.88rem;font-weight:600}
+.rrow{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);font-size:.83rem}
+.rrow:last-child{border-bottom:none}
+.conf-item{background:var(--bg2);border-radius:5px;padding:6px 8px;font-size:.7rem}
+.conf-label{color:var(--text2);margin-bottom:2px}
+.conf-val{font-family:var(--font-mono);font-size:.68rem;color:var(--text)}
+</style>
+<script>
+var scanBtn = document.getElementById('scan-btn');
+var btBtn = document.getElementById('bt-btn');
+var coinInp = document.getElementById('coin-inp');
+var tfSel = document.getElementById('tf-sel');
+
+coinInp.addEventListener('input', function(){ this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g,''); });
+coinInp.addEventListener('keydown', function(e){ if(e.key==='Enter') doScan(); });
+
+scanBtn.addEventListener('click', function(){ doScan(); });
+btBtn.addEventListener('click', function(){ doBacktest(); });
+
+function show(id){ document.getElementById(id).style.display=''; }
+function hide(id){ document.getElementById(id).style.display='none'; }
+function setText(id,t){ document.getElementById(id).textContent=t; }
+function setHtml(id,h){ document.getElementById(id).innerHTML=h; }
+function fmtP(n){
+  if(!n||isNaN(parseFloat(n)))return'—';
+  var p=parseFloat(n);
+  if(p>=10000)return'$'+p.toFixed(2);
+  if(p>=1)return'$'+p.toFixed(4);
+  return'$'+p.toFixed(6);
+}
+function sCol(s){ return s>=70?'var(--green)':s>=45?'var(--yellow)':'var(--red)'; }
+
+function doScan(){
+  var coin=coinInp.value.trim();
+  if(!coin){ coinInp.focus(); return; }
+  hide('scan-result'); hide('scan-error');
+  show('scan-loading');
+  scanBtn.disabled=true; btBtn.disabled=true;
+  var msgs=['Running analysis...','Calculating indicators...','Fetching market data...','AI processing...','Almost done...'];
+  var mi=0;
+  var mt=setInterval(function(){ setText('scan-msg',msgs[Math.min(++mi,msgs.length-1)]); },4000);
+  var spinFrames=['⚙️','🔄','⚡','🔍'];
+  var si=0;
+  var st=setInterval(function(){ setText('spin-icon',spinFrames[si++%spinFrames.length]); },600);
+  fetch('/app/api/scan',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({coin:coin,timeframe:tfSel.value})
+  }).then(function(r){ return r.json(); }).then(function(d){
+    clearInterval(mt); clearInterval(st);
+    hide('scan-loading');
+    if(!d.ok){ show('scan-error'); setText('scan-error','❌ '+(d.error||'Analysis failed')); return; }
+    renderScan(d.analysis, coin);
+  }).catch(function(e){
+    clearInterval(mt); clearInterval(st);
+    hide('scan-loading');
+    show('scan-error'); setText('scan-error','❌ Network error: '+e.message);
+  }).finally(function(){ scanBtn.disabled=false; btBtn.disabled=false; });
+}
+
+function renderScan(a, coin){
+  var isL=a.direction==='LONG';
+  var dc=isL?'var(--green)':'var(--red)';
+  var da=isL?'▲ LONG':'▼ SHORT';
+  var sc=sCol(a.score||0);
+  var f=a.futures||{};
+  var s=a.sentiment||{};
+  var ec=a.entryConf||{};
+  var ai=a.ai||{};
+  var entry=parseFloat(a.entryPrice)||0;
+  var sl=parseFloat(a.sl)||0;
+  var risk=Math.abs(entry-sl);
+  var dca1=(isL?entry-risk*0.35:entry+risk*0.35).toFixed(4);
+  var dca2=(isL?entry-risk*0.70:entry+risk*0.70).toFixed(4);
+  var reasons=(a.reasons||'').split(',').map(function(r){return r.trim();}).filter(Boolean);
+
+  var html='';
+
+  // Hero
+  html+='<div class="rcard" style="background:linear-gradient(135deg,#031526,#060d17);border-color:'+sc+';margin-bottom:16px">';
+  html+='<div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">';
+  html+='<div style="width:80px;height:80px;border-radius:50%;border:3px solid '+sc+';display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-size:1.6rem;font-weight:800;color:'+sc+';flex-shrink:0">'+(a.score||0)+'</div>';
+  html+='<div style="flex:1"><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">';
+  html+='<span style="font-family:var(--font-head);font-size:1.4rem;font-weight:800;color:#fff">'+coin.replace('USDT','')+'/USDT</span>';
+  html+='<span style="padding:4px 14px;border-radius:99px;font-size:.85rem;font-weight:700;background:'+(isL?'rgba(0,230,118,.12)':'rgba(255,51,85,.12)')+';color:'+dc+'">'+da+'</span>';
+  html+='<span style="font-family:var(--font-mono);font-size:.82rem;color:var(--text2)">'+fmtP(a.currentPrice)+'</span>';
+  html+='</div>';
+  html+='<div style="font-size:.72rem;color:var(--text2);line-height:1.8">';
+  reasons.slice(0,8).forEach(function(r){
+    html+='<span style="display:inline-block;background:rgba(0,200,255,.07);border-radius:4px;padding:1px 6px;margin:1px">'+r+'</span>';
+  });
+  html+='</div>';
+  html+='<div style="margin-top:8px;display:flex;gap:12px;flex-wrap:wrap">';
+  html+='<span style="font-size:.75rem;color:var(--text2)">ADX: <b style="color:var(--text)">'+(a.adxData?parseFloat(a.adxData.value||0).toFixed(1)+' · '+a.adxData.status:'—')+'</b></span>';
+  html+='<span style="font-size:.75rem;color:var(--text2)">Market: <b style="color:var(--text)">'+(a.marketState||'—')+'</b></span>';
+  html+='<span style="font-size:.75rem;color:var(--text2)">Trend: <b style="color:var(--text)">'+(a.mainTrend||'—')+'</b></span>';
+  html+='<span style="font-size:.75rem;color:var(--text2)">AI: <b style="color:var(--accent)">'+(ai.confidence||'—')+'</b></span>';
+  html+='</div></div></div></div>';
+
+  // Futures Setup
+  html+='<div class="rcard" style="border-color:rgba(255,171,0,.2)">';
+  html+='<div class="rcard-title">⚡ Futures Trade Setup</div>';
+  html+='<div class="rgrid" style="margin-bottom:12px">';
+  html+='<div class="ritem"><div class="ritem-label">Leverage</div><div class="ritem-val" style="color:var(--yellow);font-size:1.1rem">Cross '+(f.leverage||'—')+'x</div></div>';
+  html+='<div class="ritem"><div class="ritem-label">Margin</div><div class="ritem-val" style="color:var(--yellow)">2% wallet</div></div>';
+  html+='<div class="ritem"><div class="ritem-label">Entry</div><div class="ritem-val" style="color:var(--accent)">'+fmtP(a.entryPrice)+'</div></div>';
+  html+='<div class="ritem"><div class="ritem-label">Stop Loss</div><div class="ritem-val" style="color:var(--red)">'+fmtP(a.sl)+'</div></div>';
+  html+='<div class="ritem"><div class="ritem-label">RRR</div><div class="ritem-val" style="color:'+(parseFloat(f.rrr)>=2?'var(--green)':parseFloat(f.rrr)>=1?'var(--yellow)':'var(--red)')+'">1:'+(f.rrr||a.rrr||'—')+'</div></div>';
+  html+='</div>';
+  html+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px">';
+  html+='<div class="ritem"><div class="ritem-label">TP1 — 33%</div><div class="ritem-val" style="color:var(--green)">'+fmtP(a.tp1)+'</div></div>';
+  html+='<div class="ritem"><div class="ritem-label">TP2 — 33%</div><div class="ritem-val" style="color:var(--green)">'+fmtP(a.tp2)+'</div></div>';
+  html+='<div class="ritem"><div class="ritem-label">TP3 — 34%</div><div class="ritem-val" style="color:var(--green)">'+fmtP(a.tp3)+'</div></div>';
+  html+='</div>';
+  html+='<div style="background:rgba(0,200,255,.04);border:1px solid rgba(0,200,255,.1);border-radius:var(--radius);padding:10px 12px">';
+  html+='<div style="font-size:.65rem;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px">DCA Plan</div>';
+  html+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:6px">';
+  html+='<div><div style="font-size:.6rem;color:var(--text2)">Entry</div><div style="font-family:var(--font-mono);font-size:.82rem;color:var(--text)">'+fmtP(a.entryPrice)+'</div></div>';
+  html+='<div><div style="font-size:.6rem;color:var(--text2)">DCA 1 (35% to SL)</div><div style="font-family:var(--font-mono);font-size:.82rem;color:var(--yellow)">'+fmtP(dca1)+'</div></div>';
+  html+='<div><div style="font-size:.6rem;color:var(--text2)">DCA 2 (70% to SL)</div><div style="font-family:var(--font-mono);font-size:.82rem;color:var(--red)">'+fmtP(dca2)+'</div></div>';
+  html+='<div><div style="font-size:.6rem;color:var(--text2)">Hard SL</div><div style="font-family:var(--font-mono);font-size:.82rem;font-weight:700;color:var(--red)">'+fmtP(a.sl)+'</div></div>';
+  html+='</div></div></div>';
+
+  // Market Context + Sentiment
+  html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">';
+  html+='<div class="rcard" style="margin-bottom:0"><div class="rcard-title">📊 Key Indicators</div>';
+  [['RSI',a.rsi?parseFloat(a.rsi).toFixed(1):'—'],
+   ['VWAP',a.vwap?String(a.vwap).replace(/🟢|🔴/g,'').trim():'—'],
+   ['4H Trend',a.trend4H||'—'],['1H Trend',a.trend1H||'—'],
+   ['Wyckoff',a.wyckoff?(a.wyckoff.phase||'—'):'—'],
+   ['HTF Aligned',a.dailyAligned?'✅ Yes':'⚠️ No']
+  ].forEach(function(row){
+    html+='<div class="rrow"><span style="color:var(--text2)">'+row[0]+'</span><span style="font-family:var(--font-mono);font-size:.8rem">'+row[1]+'</span></div>';
+  });
+  html+='</div>';
+  html+='<div class="rcard" style="margin-bottom:0"><div class="rcard-title">🌊 Market Data</div>';
+  [['F&G Index',(s.fngEmoji||'⚪')+' '+(s.fngValue||'—')+' ('+( s.fngLabel||'—')+')'],
+   ['BTC Dominance',(s.btcDom||'—')+'%'],
+   ['News Score',(s.newsScore>=0?'+':'')+( s.newsScore||0)],
+   ['Funding Rate',a.fundingRate||'N/A'],
+   ['Buy Wall',a.whaleWalls?fmtP(a.whaleWalls.supportWall):'—'],
+   ['Sell Wall',a.whaleWalls?fmtP(a.whaleWalls.resistWall):'—']
+  ].forEach(function(row){
+    html+='<div class="rrow"><span style="color:var(--text2)">'+row[0]+'</span><span style="font-family:var(--font-mono);font-size:.8rem">'+row[1]+'</span></div>';
+  });
+  html+='</div></div>';
+
+  // AI Analysis
+  html+='<div class="rcard" style="border-color:rgba(124,58,237,.2);background:rgba(124,58,237,.03);margin-bottom:12px">';
+  html+='<div class="rcard-title">🤖 AI Analysis · '+(ai.confidence||'—')+' Confidence</div>';
+  html+='<div style="font-size:.85rem;color:var(--text);line-height:1.7">'+(ai.trend||'—')+'</div>';
+  if(ai.smc_summary) html+='<div style="font-size:.8rem;color:var(--text2);margin-top:6px">'+ ai.smc_summary+'</div>';
+  html+='</div>';
+
+  // 11-Factor Confirmation
+  var factors=ec.factors||{};
+  var factorList=[['Stablecoin',factors.usdtDom],['OI Change',factors.oiChange],
+    ['CVD',factors.cvd],['L/S Ratio',factors.lsRatio],
+    ['Funding',factors.fundingM],['Order Book',factors.orderBook],
+    ['Whales',factors.whaleActivity],['BTC Corr',factors.btcCorr],
+    ['HTF Levels',factors.htfLevels],['Put/Call',factors.pcr],
+    ['Netflow',factors.netflow],['Social',factors.social]];
+  html+='<div class="rcard" style="border-color:rgba(0,200,255,.15);margin-bottom:12px">';
+  html+='<div class="rcard-title" style="display:flex;justify-content:space-between">🔬 11-Factor Confirmation <span style="color:'+(ec.strength==='STRONG'?'var(--green)':ec.strength==='MODERATE'?'var(--accent)':ec.strength==='CONFLICT'?'var(--red)':'var(--text2)')+'">'+( ec.verdict||'—')+'</span></div>';
+  html+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:4px;margin-bottom:10px">';
+  factorList.forEach(function(item){
+    var lbl=item[0], f=item[1]||{};
+    var sig=f.signal||'N/A';
+    var bg=sig==='BULL'||sig==='POSITIVE'?'rgba(0,230,118,.07)':sig==='BEAR'||sig==='NEGATIVE'?'rgba(255,51,85,.07)':'rgba(0,0,0,.15)';
+    html+='<div class="conf-item" style="background:'+bg+'"><div class="conf-label">'+(f.emoji||'⚪')+' '+lbl+'</div><div class="conf-val">'+( (f.display||'N/A').slice(0,45))+'</div></div>';
+  });
+  html+='</div>';
+  html+='<div style="display:flex;justify-content:space-between;padding-top:8px;border-top:1px solid var(--border);font-size:.78rem">';
+  html+='<span style="color:var(--text2)">'+(ec.verdictDetail||'')+'</span>';
+  html+='<span style="font-family:var(--font-mono);color:'+(ec.strength==='STRONG'?'var(--green)':ec.strength==='MODERATE'?'var(--accent)':'var(--text2)')+'">Score: '+(ec.totalScore>=0?'+':'')+parseFloat(ec.totalScore||0).toFixed(1)+' ('+( ec.strength||'WEAK')+')</span>';
+  html+='</div></div>';
+
+  // 14-Factor Gate
+  var checks=a.confChecks||{};
+  var gateItems=[['HTF Aligned','htfAligned'],['ChoCH','chochPrimary'],['Sweep','sweepPrimary'],
+    ['Volume','volumeConf'],['Wyckoff','wyckoffConf'],['Ichimoku','ichimokuConf'],
+    ['Supertrend','supTrendConf'],['Fib Zone','fibZoneConf'],['BB Explode','bbExplosion'],
+    ['MM Trap','mmTrapConf'],['BOS','bosConf'],['Daily Gate','dailyGate'],
+    ['AI Model','aiConf'],['Bybit','bybitConf']];
+  html+='<div class="rcard"><div class="rcard-title" style="display:flex;justify-content:space-between">✅ 14-Factor Gate <span style="color:'+(a.confGate?'var(--green)':'var(--text2)')+'">'+( a.confGate?'PASSED':''+( a.confScore||0)+'/14')+'</span></div>';
+  html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:3px">';
+  gateItems.forEach(function(item){
+    var pass=checks[item[1]];
+    html+='<div style="font-size:.72rem;padding:3px 0;color:'+(pass?'var(--green)':'var(--text2)')+'"><span>'+(pass?'✅':'○')+'</span> '+item[0]+'</div>';
+  });
+  html+='</div></div>';
+
+  html+='<div style="text-align:center;font-size:.7rem;color:var(--text2);margin-top:8px">⏱️ Analysis at '+new Date().toLocaleString()+' · Binance Futures · v7 PRO</div>';
+
+  setHtml('scan-result', html);
+  show('scan-result');
+}
+
+function doBacktest(){
+  var coin=coinInp.value.trim();
+  if(!coin){ coinInp.focus(); return; }
+  hide('scan-result'); hide('scan-error');
+  show('scan-loading');
+  scanBtn.disabled=true; btBtn.disabled=true;
+  setText('scan-msg','Running backtest...');
+  var spinFrames=['📊','🔄','📈','⚡'];
+  var si=0;
+  var st=setInterval(function(){ setText('spin-icon',spinFrames[si++%spinFrames.length]); },700);
+  fetch('/app/api/backtest',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({coin:coin,timeframe:tfSel.value})
+  }).then(function(r){ return r.json(); }).then(function(d){
+    clearInterval(st);
+    hide('scan-loading');
+    if(!d.ok){ show('scan-error'); setText('scan-error','❌ '+(d.error||'Backtest failed')); return; }
+    renderBacktest(d.result, coin);
+  }).catch(function(e){
+    clearInterval(st);
+    hide('scan-loading');
+    show('scan-error'); setText('scan-error','❌ '+e.message);
+  }).finally(function(){ scanBtn.disabled=false; btBtn.disabled=false; });
+}
+
+function renderBacktest(r, coin){
+  var wr=parseFloat(r.winRate), pf=parseFloat(r.pf)||0, net=parseFloat(r.netR);
+  var pfc=pf>=2?'var(--green)':pf>=1.5?'var(--accent)':pf>=1?'var(--yellow)':'var(--red)';
+  var wrc=wr>=60?'var(--green)':wr>=50?'var(--yellow)':'var(--red)';
+  var grade=pf>=2?'Excellent 🏆':pf>=1.5?'Good ✅':pf>=1?'Marginal ⚠️':'Poor ❌';
+  var verdict=pf>=2?'Highly tradeable. Strong edge.':pf>=1.5?'Solid edge. Trade with normal 2% risk.':pf>=1?'Slight edge. Use stricter filters.':'Avoid this pair.';
+  var tpD=r.tpBreakdown||{}, tot=r.total||1;
+
+  var html='';
+  html+='<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px">';
+  html+='<div><div style="font-family:var(--font-head);font-size:1.2rem;font-weight:800;color:#fff">'+coin.replace('USDT','')+' Backtest</div>';
+  html+='<div style="font-size:.75rem;color:var(--text2)">'+(r.candleCount||1000)+' candles · TP1/TP2/TP3 sim</div></div>';
+  html+='<div style="padding:4px 14px;border-radius:99px;font-size:.8rem;font-weight:700;font-family:var(--font-mono);color:'+pfc+';border:1px solid '+pfc+'">'+grade+'</div></div>';
+
+  html+='<div class="rcard"><div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap">';
+  html+='<div style="text-align:center;min-width:120px"><div style="font-size:.62rem;color:var(--text2);text-transform:uppercase;margin-bottom:4px">Win Rate</div>';
+  html+='<div style="font-family:var(--font-mono);font-size:3.2rem;font-weight:800;color:'+wrc+'">'+wr.toFixed(1)+'%</div>';
+  html+='<div style="font-size:.75rem;color:var(--text2)">'+r.wins+' W / '+r.losses+' L</div></div>';
+  html+='<div style="flex:1"><div style="height:10px;background:rgba(255,51,85,.15);border-radius:99px;overflow:hidden;margin-bottom:12px">';
+  html+='<div style="height:100%;width:'+Math.min(wr,100)+'%;background:linear-gradient(90deg,var(--green2),var(--green));border-radius:99px"></div></div>';
+  html+='<div class="rgrid">';
+  [['Total',r.total,'var(--text)'],['TP Hits',r.wins,'var(--green)'],['SL Hits',r.losses,'var(--red)'],
+   ['Long/Short',(r.longT||0)+'L/'+(r.shortT||0)+'S','var(--text)']].forEach(function(item){
+    html+='<div class="ritem"><div class="ritem-label">'+item[0]+'</div><div class="ritem-val" style="color:'+item[2]+'">'+item[1]+'</div></div>';
+  });
+  html+='</div></div></div></div>';
+
+  html+='<div class="rgrid" style="margin-bottom:12px">';
+  [['Profit Factor',r.pf==='∞'?'∞ 🏆':parseFloat(r.pf).toFixed(2),pfc],
+   ['Net P&L',(net>=0?'+':'')+net.toFixed(2)+'R',net>=0?'var(--green)':'var(--red)'],
+   ['Max Drawdown',r.maxDD+'R','var(--red)'],['Max Consec L',r.maxCL,'var(--red)']
+  ].forEach(function(item){
+    html+='<div class="ritem"><div class="ritem-label">'+item[0]+'</div><div class="ritem-val" style="color:'+item[2]+';font-size:1.2rem">'+item[1]+'</div></div>';
+  });
+  html+='</div>';
+
+  html+='<div class="rcard"><div class="rcard-title">🎯 TP Breakdown</div>';
+  [['TP1 Hits (1.5R)',tpD.tp1||0,'var(--accent)'],
+   ['TP2 Hits (3R)',tpD.tp2||0,'var(--green2)'],
+   ['TP3 Hits (5R)',tpD.tp3||0,'var(--green)'],
+   ['SL Hits',r.losses,'var(--red)']].forEach(function(item){
+    var pct=(item[1]/tot*100);
+    html+='<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;margin-bottom:3px">';
+    html+='<span style="font-size:.72rem;color:var(--text2)">'+item[0]+'</span>';
+    html+='<span style="font-family:var(--font-mono);font-size:.72rem">'+item[1]+' ('+pct.toFixed(1)+'%)</span></div>';
+    html+='<div style="height:6px;background:var(--border);border-radius:99px;overflow:hidden">';
+    html+='<div style="height:100%;width:'+pct+'%;background:'+item[2]+';border-radius:99px"></div></div></div>';
+  });
+  html+='</div>';
+
+  html+='<div class="rcard"><div class="rcard-title">📋 Verdict</div>';
+  html+='<div style="font-size:.85rem;color:var(--text);line-height:1.6">'+verdict+'</div>';
+  html+='<div style="margin-top:8px;font-size:.75rem;color:'+pfc+';font-weight:600">Grade: '+grade+'</div></div>';
+  html+='<div style="text-align:center;font-size:.7rem;color:var(--text2);margin-top:8px">⚠️ Past results ≠ future performance</div>';
+
+  setHtml('scan-result', html);
+  show('scan-result');
+}
+</script>`));
+    });
+
+    // ── Market Scan API ───────────────────────────────────────────────
+    app.get('/app/api/market-scan', saasAuth.requireUserAuth, async (req, res) => {
+        try {
+            const binance  = require('./lib/binance');
+            const analyzer = require('./lib/analyzer');
+            const allCoins = binance.isReady() ? binance.getWatchedCoins()
+                : ['BTCUSDT','ETHUSDT','SOLUSDT','BNBUSDT','XRPUSDT','ADAUSDT','AVAXUSDT','DOTUSDT','LINKUSDT','MATICUSDT','ATOMUSDT','NEARUSDT','LTCUSDT','DOGEUSDT','UNIUSDT','INJUSDT','APTUSDT','ARBUSDT','OPUSDT','SUIUSDT'];
+            const coins = allCoins.filter(c => !_STABLES.has(c));
+            const results = [];
+            for (let i = 0; i < Math.min(coins.length, 25); i++) {
+                try {
+                    const a = await analyzer.run14FactorAnalysis(coins[i], '15m');
+                    if (a.score < 18) continue;
+                    const f = _calcFutures(a);
+                    results.push({ coin:coins[i].replace('USDT',''), direction:a.direction, score:a.score, maxScore:a.maxScore||100, price:a.priceStr, entryPrice:a.entryPrice, sl:a.sl, tp1:a.tp1, tp2:a.tp2, tp3:a.tp3, leverage:f.leverage, rrr:f.rrr, reasons:a.reasons });
+                } catch(_){}
+            }
+            results.sort((a,b)=>b.score-a.score);
+            res.json({ ok:true, setups:results.slice(0,5), scanned:Math.min(coins.length,25) });
+        } catch(e) { res.status(500).json({ ok:false, error:e.message }); }
+    });
+
+    // ── Scan API ──────────────────────────────────────────────────────
+    app.post('/app/api/scan', saasAuth.requireUserAuth, async (req, res) => {
+        try {
+            let { coin='', timeframe='15m' } = req.body;
+            coin = _cleanCoin(coin);
+            if (!coin || coin === 'USDT') return res.status(400).json({ok:false,error:'Coin symbol required'});
+            if (_STABLES.has(coin)) return res.status(400).json({ok:false,error:'Stablecoin — no signals'});
+            if (!_VALID_TF.includes(timeframe)) timeframe = '15m';
+            console.log(`[SCAN] ${req.saasUser.username} → ${coin} ${timeframe}`);
+
+            const analyzer      = require('./lib/analyzer');
+            const binance       = require('./lib/binance');
+            const confirmations = require('./lib/confirmations_lib');
+
+            const a = await analyzer.run14FactorAnalysis(coin, timeframe);
+            const { currentCandles: _cc, ...analysis } = a;
+
+            const fallbackSent = { fngValue:50, fngLabel:'Neutral', fngEmoji:'⚪', btcDominance:'—', newsSentimentScore:0, newsHeadlines:[], overallSentiment:'⚪ NEUTRAL', tradingBias:'Neutral', totalBias:'0' };
+            const [liqData, whaleWalls, fundingRate, sentiment] = await Promise.all([
+                _withTimeout(binance.getLiquidationData(coin),  12000, {sentiment:'N/A'}),
+                _withTimeout(binance.getLiquidityWalls(coin),   12000, {supportWall:'N/A',resistWall:'N/A',supportVol:'N/A',resistVol:'N/A'}),
+                _withTimeout(binance.getFundingRate(coin),        8000, 'N/A'),
+                _withTimeout(binance.getMarketSentiment(coin),  12000, fallbackSent),
+            ]);
+
+            const confFallback = { totalScore:0, confirmationStrength:'WEAK', verdict:'⚪ NEUTRAL', verdictDetail:'Timeout',
+                factors:{ usdtDom:{signal:'N/A',emoji:'⚪',display:'N/A'}, oiChange:{signal:'N/A',emoji:'⚪',display:'N/A'}, cvd:{signal:'N/A',emoji:'⚪',display:'N/A'}, lsRatio:{signal:'N/A',emoji:'⚪',display:'N/A'}, fundingMomentum:{signal:'N/A',emoji:'⚪',display:'N/A'}, orderBook:{signal:'N/A',emoji:'⚪',display:'N/A'}, whaleActivity:{signal:'N/A',emoji:'⚪',display:'N/A'}, btcCorr:{signal:'N/A',emoji:'⚪',display:'N/A'}, htfLevels:{signal:'N/A',emoji:'⚪',display:'N/A'}, pcr:{signal:'N/A',emoji:'⚪',display:'N/A'}, netflow:{signal:'N/A',emoji:'⚪',display:'N/A'}, social:{signal:'N/A',emoji:'⚪',display:'N/A'} }
+            };
+            const rawConf = await _withTimeout(confirmations.runAllConfirmations(coin, a.direction, config.LUNAR_API||null, a), 20000, confFallback);
+            const entryConf = rawConf.factors ? rawConf : { ...rawConf, factors:{ usdtDom:rawConf.usdtDom||{}, oiChange:rawConf.oiChange||{}, cvd:rawConf.cvd||{}, lsRatio:rawConf.lsRatio||{}, fundingM:rawConf.fundingMomentum||{}, orderBook:rawConf.orderBook||{}, whaleActivity:rawConf.whaleActivity||{}, btcCorr:rawConf.btcCorr||{}, htfLevels:rawConf.htfLevels||{}, pcr:rawConf.pcr||{}, netflow:rawConf.netflow||{}, social:rawConf.social||{} }};
+
+            let aiResult = null;
+            if (config.GROQ_API) {
+                try {
+                    const gr = await _withTimeout(axios.post('https://api.groq.com/openai/v1/chat/completions', { model:'llama-3.3-70b-versatile', messages:[{role:'user',content:`Analyse ${coin} trade. Score:${a.score}. Dir:${a.direction}. Confluences:${a.reasons}. F&G:${sentiment.fngValue}. Return ONLY JSON: {"confidence":"65%","trend":"short text","smc_summary":"short text","sentiment_note":"short"}`}], max_tokens:200, temperature:0.3 }, { headers:{ Authorization:`Bearer ${config.GROQ_API}` }, timeout:25000 }), 26000, null);
+                    if (gr?.data?.choices?.[0]?.message?.content) {
+                        let raw = gr.data.choices[0].message.content.replace(/```json|```/g,'').trim();
+                        aiResult = JSON.parse(raw.slice(raw.indexOf('{'), raw.lastIndexOf('}')+1));
+                    }
+                } catch(_) {}
+            }
+
+            const fut = _calcFutures(a);
+            const entry=parseFloat(a.entryPrice)||0, sl=parseFloat(a.sl)||0, tp2v=parseFloat(a.tp2)||0;
+            const rrrStr = Math.abs(entry-sl)>0 ? (Math.abs(tp2v-entry)/Math.abs(entry-sl)).toFixed(2) : '0';
+
+            res.json({ ok:true, analysis:{
+                ...analysis, futures:fut,
+                fundingRate, whaleWalls, liqData,
+                sentiment:{ fngValue:sentiment.fngValue, fngLabel:sentiment.fngLabel, fngEmoji:sentiment.fngEmoji, btcDom:sentiment.btcDominance, newsScore:sentiment.newsSentimentScore, overall:sentiment.overallSentiment, tradingBias:sentiment.tradingBias, totalBias:sentiment.totalBias },
+                entryConf, rrr:rrrStr,
+                ai: aiResult || { confidence:`${Math.min(95, Math.round(40+a.score*0.5))}%`, trend:(a.mainTrend||'—')+' | '+(a.marketState||'—'), smc_summary:'Technical analysis only', sentiment_note:sentiment.tradingBias||'Neutral' },
+            }});
+        } catch(e) {
+            console.error('[SCAN ERROR]', e.message);
+            res.status(500).json({ ok:false, error:e.message });
+        }
+    });
+
+    // ── Backtest API ──────────────────────────────────────────────────
+    app.post('/app/api/backtest', saasAuth.requireUserAuth, async (req, res) => {
+        try {
+            let { coin='', timeframe='15m' } = req.body;
+            coin = _cleanCoin(coin);
+            if (!coin || coin==='USDT') return res.status(400).json({ok:false,error:'Coin required'});
+            if (_STABLES.has(coin)) return res.status(400).json({ok:false,error:'Stablecoin'});
+            if (!_VALID_TF.includes(timeframe)) timeframe='15m';
+            console.log(`[BACKTEST] ${req.saasUser.username} → ${coin} ${timeframe}`);
+
+            const binanceLib = require('./lib/binance');
+            const indLib     = require('./lib/indicators');
+            const smcLib     = require('./lib/smartmoney');
+
+            const candles = await binanceLib.getKlineData(coin, timeframe, 1000);
+            if (!candles||candles.length<200) return res.status(400).json({ok:false,error:'Insufficient candle data'});
+
+            let wins=0,losses=0,equity=0,longT=0,shortT=0,tp1Count=0,tp2Count=0,tp3Count=0,maxEq=0,maxDD=0,conL=0,maxCL=0;
+            const trades=[];
+            let i=150;
+            while(i<candles.length-30){
+                const slice=candles.slice(Math.max(0,i-80),i);
+                if(slice.length<50){i++;continue;}
+                const cp=parseFloat(slice[slice.length-1][4]);
+                const atr=parseFloat(indLib.calculateATR(slice.slice(-30),14));
+                const adxR=indLib.calculateADX(slice.slice(-30));
+                const adxV=adxR?.value??adxR??0;
+                const rsi=indLib.calculateRSI(slice.slice(-30),14);
+                const macd=indLib.calculateMACD(slice.slice(-30));
+                const mSMC=smcLib.analyzeSMC(slice.slice(-30));
+                const ema50=parseFloat(indLib.calculateEMA(slice,50));
+                if(atr===0||adxV<18){i++;continue;}
+                let ls=0,ss=0;
+                if(cp>ema50)ls++;else ss++;
+                if(rsi<45)ls++;if(rsi>55)ss++;
+                if(macd.includes('Bullish'))ls++;if(macd.includes('Bearish'))ss++;
+                if(mSMC.bullishOB)ls++;if(mSMC.bearishOB)ss++;
+                if((mSMC.sweep||'').includes('Bullish'))ls+=2;if((mSMC.sweep||'').includes('Bearish'))ss+=2;
+                if((mSMC.choch||'').includes('Bullish'))ls+=2;if((mSMC.choch||'').includes('Bearish'))ss+=2;
+                const score=Math.max(ls,ss);
+                if(score<6){i++;continue;}
+                const isLong=ls>=ss;
+                const entry=cp,sl2=isLong?cp-atr*2:cp+atr*2;
+                const tp1=isLong?cp+atr*1.5:cp-atr*1.5;
+                const tp2=isLong?cp+atr*3:cp-atr*3;
+                const tp3=isLong?cp+atr*5:cp-atr*5;
+                let tp1h=false,tp2h=false,tp3h=false,pnlR=0,hit=false;
+                for(let j=i;j<Math.min(i+150,candles.length);j++){
+                    const hi=parseFloat(candles[j][2]),lo=parseFloat(candles[j][3]);
+                    if(isLong){
+                        if(lo<=sl2){losses++;pnlR-=(tp1h?0.67:1.0);hit=true;break;}
+                        if(!tp1h&&hi>=tp1){tp1h=true;pnlR+=0.33*1.5;}
+                        if(tp1h&&!tp2h&&hi>=tp2){tp2h=true;pnlR+=0.33*3;}
+                        if(tp2h&&!tp3h&&hi>=tp3){tp3h=true;pnlR+=0.34*5;wins++;hit=true;break;}
+                    }else{
+                        if(hi>=sl2){losses++;pnlR-=(tp1h?0.67:1.0);hit=true;break;}
+                        if(!tp1h&&lo<=tp1){tp1h=true;pnlR+=0.33*1.5;}
+                        if(tp1h&&!tp2h&&lo<=tp2){tp2h=true;pnlR+=0.33*3;}
+                        if(tp2h&&!tp3h&&lo<=tp3){tp3h=true;pnlR+=0.34*5;wins++;hit=true;break;}
+                    }
+                }
+                if(!hit){if(tp2h)wins++;else if(tp1h){}else{}}
+                equity+=pnlR;
+                if(equity>maxEq)maxEq=equity;
+                const dd=maxEq-equity;if(dd>maxDD)maxDD=dd;
+                if(tp1h)tp1Count++;if(tp2h)tp2Count++;if(tp3h)tp3Count++;
+                if(isLong)longT++;else shortT++;
+                const result=pnlR>0?'WIN':'LOSS';
+                if(result==='LOSS'){conL++;if(conL>maxCL)maxCL=conL;}else conL=0;
+                trades.push({dir:isLong?'L':'S',pnlR,result});
+                i+=15;
+            }
+            const total=wins+losses;
+            const winRate=total>0?(wins/total*100).toFixed(1):'0.0';
+            const gW=trades.filter(t=>t.pnlR>0).reduce((s,t)=>s+t.pnlR,0);
+            const gL=Math.abs(trades.filter(t=>t.pnlR<0).reduce((s,t)=>s+t.pnlR,0));
+            const pf=gL>0?(gW/gL).toFixed(2):'∞';
+            const sorted=[...trades].sort((a,b)=>b.pnlR-a.pnlR);
+            res.json({ok:true,result:{wins,losses,longT,shortT,total,winRate,pf,gW:gW.toFixed(2),gL:gL.toFixed(2),netR:equity.toFixed(2),maxDD:maxDD.toFixed(2),maxCL,candleCount:candles.length,tpBreakdown:{tp1:tp1Count,tp2:tp2Count,tp3:tp3Count},best:sorted[0]||null,worst:sorted[sorted.length-1]||null}});
+        } catch(e) {
+            console.error('[BACKTEST ERROR]', e.message);
+            res.status(500).json({ok:false,error:e.message});
+        }
+    });
 
     // ─── Root & Compat ─────────────────────────────────────────────────
     app.get('/', (req, res) => res.redirect('/auth/login'));

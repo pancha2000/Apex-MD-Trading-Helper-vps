@@ -473,7 +473,8 @@ function _appNav(active, username) {
   </div>
   <div class="nav-links">
     <a href="/app/"          class="nav-link ${active==='home'      ?'active':''}">Dashboard</a>
-    <a href="/app/analyzer" class="nav-link ${active==='analyzer'   ?'active':''}">⚡ Analyzer</a>
+    <a href="/app/market"   class="nav-link ${active==='market'   ?'active':''}">🔍 Scan</a>
+    <a href="/app/scanner"   class="nav-link ${active==='scanner'   ?'active':''}">⚡ Scanner</a>
     <a href="/app/paper"     class="nav-link ${active==='paper'     ?'active':''}">📄 Paper</a>
     <a href="/app/watchlist" class="nav-link ${active==='watchlist' ?'active':''}">👁 Watch</a>
     <a href="/app/alerts"    class="nav-link ${active==='alerts'    ?'active':''}">🔔 Alerts</a>
@@ -1546,7 +1547,7 @@ ${_appNav('home', user.username)}
         <div style="font-size:1.5rem;margin-bottom:10px">🔬</div>
         <div style="font-family:var(--font-head);font-size:1rem;font-weight:700;margin-bottom:6px">AI Scanner</div>
         <div style="font-size:.82rem;color:var(--text2);margin-bottom:16px">Run 14-Factor SMC analysis on any coin</div>
-        <a href="/app/analyzer" class="btn btn-primary">⚡ Open Scanner →</a>
+        <a href="/app/scanner" class="btn btn-primary">⚡ Open Scanner →</a>
       </div>
     </div>
     <div class="panel">

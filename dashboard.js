@@ -1840,6 +1840,171 @@ async function setMode(mode){const msg=document.getElementById('mode-msg');msg.t
     }
 
     // ── Scanner Page ──────────────────────────────────────────────────
+    app.get('/app/api/market-scan', saasAuth.requireUserAuth, async (req, res) => {
+        try {
+            const binance  = require('./lib/binance');
+            const analyzer = require('./lib/analyzer');
+            const allCoins = binance.isReady() ? binance.getWatchedCoins()
+                : ['BTCUSDT','ETHUSDT','SOLUSDT','BNBUSDT','XRPUSDT','ADAUSDT','AVAXUSDT','DOTUSDT','LINKUSDT','MATICUSDT','ATOMUSDT','NEARUSDT','LTCUSDT','DOGEUSDT','UNIUSDT','INJUSDT','APTUSDT','ARBUSDT','OPUSDT','SUIUSDT'];
+            const coins = allCoins.filter(c => !_STABLES.has(c));
+            const results = [];
+            for (let i = 0; i < Math.min(coins.length, 25); i++) {
+                try {
+                    const a = await analyzer.run14FactorAnalysis(coins[i], '15m');
+                    if (a.score < 18) continue;
+                    const f = _calcFutures(a);
+                    results.push({ coin:coins[i].replace('USDT',''), direction:a.direction, score:a.score, maxScore:a.maxScore||100, price:a.priceStr, entryPrice:a.entryPrice, sl:a.sl, tp1:a.tp1, tp2:a.tp2, tp3:a.tp3, leverage:f.leverage, rrr:f.rrr, reasons:a.reasons });
+                } catch(_){}
+            }
+            results.sort((a,b)=>b.score-a.score);
+            res.json({ ok:true, setups:results.slice(0,5), scanned:Math.min(coins.length,25) });
+        } catch(e) { res.status(500).json({ ok:false, error:e.message }); }
+    });
+
+    // ── Scan API ──────────────────────────────────────────────────────
+    app.post('/app/api/scan', saasAuth.requireUserAuth, async (req, res) => {
+        try {
+            let { coin='', timeframe='15m' } = req.body;
+            coin = _cleanCoin(coin);
+            if (!coin || coin === 'USDT') return res.status(400).json({ok:false,error:'Coin symbol required'});
+            if (_STABLES.has(coin)) return res.status(400).json({ok:false,error:'Stablecoin — no signals'});
+            if (!_VALID_TF.includes(timeframe)) timeframe = '15m';
+            console.log(`[SCAN] ${req.saasUser.username} → ${coin} ${timeframe}`);
+
+            const analyzer      = require('./lib/analyzer');
+            const binance       = require('./lib/binance');
+            const confirmations = require('./lib/confirmations_lib');
+
+            const a = await analyzer.run14FactorAnalysis(coin, timeframe);
+            const { currentCandles: _cc, ...analysis } = a;
+
+            const fallbackSent = { fngValue:50, fngLabel:'Neutral', fngEmoji:'⚪', btcDominance:'—', newsSentimentScore:0, newsHeadlines:[], overallSentiment:'⚪ NEUTRAL', tradingBias:'Neutral', totalBias:'0' };
+            const [liqData, whaleWalls, fundingRate, sentiment] = await Promise.all([
+                _withTimeout(binance.getLiquidationData(coin),  12000, {sentiment:'N/A'}),
+                _withTimeout(binance.getLiquidityWalls(coin),   12000, {supportWall:'N/A',resistWall:'N/A',supportVol:'N/A',resistVol:'N/A'}),
+                _withTimeout(binance.getFundingRate(coin),        8000, 'N/A'),
+                _withTimeout(binance.getMarketSentiment(coin),  12000, fallbackSent),
+            ]);
+
+            const confFallback = { totalScore:0, confirmationStrength:'WEAK', verdict:'⚪ NEUTRAL', verdictDetail:'Timeout',
+                factors:{ usdtDom:{signal:'N/A',emoji:'⚪',display:'N/A'}, oiChange:{signal:'N/A',emoji:'⚪',display:'N/A'}, cvd:{signal:'N/A',emoji:'⚪',display:'N/A'}, lsRatio:{signal:'N/A',emoji:'⚪',display:'N/A'}, fundingMomentum:{signal:'N/A',emoji:'⚪',display:'N/A'}, orderBook:{signal:'N/A',emoji:'⚪',display:'N/A'}, whaleActivity:{signal:'N/A',emoji:'⚪',display:'N/A'}, btcCorr:{signal:'N/A',emoji:'⚪',display:'N/A'}, htfLevels:{signal:'N/A',emoji:'⚪',display:'N/A'}, pcr:{signal:'N/A',emoji:'⚪',display:'N/A'}, netflow:{signal:'N/A',emoji:'⚪',display:'N/A'}, social:{signal:'N/A',emoji:'⚪',display:'N/A'} }
+            };
+            const rawConf = await _withTimeout(confirmations.runAllConfirmations(coin, a.direction, config.LUNAR_API||null, a), 20000, confFallback);
+            const entryConf = rawConf.factors ? rawConf : { ...rawConf, factors:{ usdtDom:rawConf.usdtDom||{}, oiChange:rawConf.oiChange||{}, cvd:rawConf.cvd||{}, lsRatio:rawConf.lsRatio||{}, fundingM:rawConf.fundingMomentum||{}, orderBook:rawConf.orderBook||{}, whaleActivity:rawConf.whaleActivity||{}, btcCorr:rawConf.btcCorr||{}, htfLevels:rawConf.htfLevels||{}, pcr:rawConf.pcr||{}, netflow:rawConf.netflow||{}, social:rawConf.social||{} }};
+
+            let aiResult = null;
+            if (config.GROQ_API) {
+                try {
+                    const gr = await _withTimeout(axios.post('https://api.groq.com/openai/v1/chat/completions', { model:'llama-3.3-70b-versatile', messages:[{role:'user',content:`Analyse ${coin} trade. Score:${a.score}. Dir:${a.direction}. Confluences:${a.reasons}. F&G:${sentiment.fngValue}. Return ONLY JSON: {"confidence":"65%","trend":"short text","smc_summary":"short text","sentiment_note":"short"}`}], max_tokens:200, temperature:0.3 }, { headers:{ Authorization:`Bearer ${config.GROQ_API}` }, timeout:25000 }), 26000, null);
+                    if (gr?.data?.choices?.[0]?.message?.content) {
+                        let raw = gr.data.choices[0].message.content.replace(/```json|```/g,'').trim();
+                        aiResult = JSON.parse(raw.slice(raw.indexOf('{'), raw.lastIndexOf('}')+1));
+                    }
+                } catch(_) {}
+            }
+
+            const fut = _calcFutures(a);
+            const entry=parseFloat(a.entryPrice)||0, sl=parseFloat(a.sl)||0, tp2v=parseFloat(a.tp2)||0;
+            const rrrStr = Math.abs(entry-sl)>0 ? (Math.abs(tp2v-entry)/Math.abs(entry-sl)).toFixed(2) : '0';
+
+            res.json({ ok:true, analysis:{
+                ...analysis, futures:fut,
+                fundingRate, whaleWalls, liqData,
+                sentiment:{ fngValue:sentiment.fngValue, fngLabel:sentiment.fngLabel, fngEmoji:sentiment.fngEmoji, btcDom:sentiment.btcDominance, newsScore:sentiment.newsSentimentScore, overall:sentiment.overallSentiment, tradingBias:sentiment.tradingBias, totalBias:sentiment.totalBias },
+                entryConf, rrr:rrrStr,
+                ai: aiResult || { confidence:`${Math.min(95, Math.round(40+a.score*0.5))}%`, trend:(a.mainTrend||'—')+' | '+(a.marketState||'—'), smc_summary:'Technical analysis only', sentiment_note:sentiment.tradingBias||'Neutral' },
+            }});
+        } catch(e) {
+            console.error('[SCAN ERROR]', e.message);
+            res.status(500).json({ ok:false, error:e.message });
+        }
+    });
+
+    // ── Backtest API ──────────────────────────────────────────────────
+    app.post('/app/api/backtest', saasAuth.requireUserAuth, async (req, res) => {
+        try {
+            let { coin='', timeframe='15m' } = req.body;
+            coin = _cleanCoin(coin);
+            if (!coin || coin==='USDT') return res.status(400).json({ok:false,error:'Coin required'});
+            if (_STABLES.has(coin)) return res.status(400).json({ok:false,error:'Stablecoin'});
+            if (!_VALID_TF.includes(timeframe)) timeframe='15m';
+            console.log(`[BACKTEST] ${req.saasUser.username} → ${coin} ${timeframe}`);
+
+            const binanceLib = require('./lib/binance');
+            const indLib     = require('./lib/indicators');
+            const smcLib     = require('./lib/smartmoney');
+
+            const candles = await binanceLib.getKlineData(coin, timeframe, 1000);
+            if (!candles||candles.length<200) return res.status(400).json({ok:false,error:'Insufficient candle data'});
+
+            let wins=0,losses=0,equity=0,longT=0,shortT=0,tp1Count=0,tp2Count=0,tp3Count=0,maxEq=0,maxDD=0,conL=0,maxCL=0;
+            const trades=[];
+            let i=150;
+            while(i<candles.length-30){
+                const slice=candles.slice(Math.max(0,i-80),i);
+                if(slice.length<50){i++;continue;}
+                const cp=parseFloat(slice[slice.length-1][4]);
+                const atr=parseFloat(indLib.calculateATR(slice.slice(-30),14));
+                const adxR=indLib.calculateADX(slice.slice(-30));
+                const adxV=adxR?.value??adxR??0;
+                const rsi=indLib.calculateRSI(slice.slice(-30),14);
+                const macd=indLib.calculateMACD(slice.slice(-30));
+                const mSMC=smcLib.analyzeSMC(slice.slice(-30));
+                const ema50=parseFloat(indLib.calculateEMA(slice,50));
+                if(atr===0||adxV<18){i++;continue;}
+                let ls=0,ss=0;
+                if(cp>ema50)ls++;else ss++;
+                if(rsi<45)ls++;if(rsi>55)ss++;
+                if(macd.includes('Bullish'))ls++;if(macd.includes('Bearish'))ss++;
+                if(mSMC.bullishOB)ls++;if(mSMC.bearishOB)ss++;
+                if((mSMC.sweep||'').includes('Bullish'))ls+=2;if((mSMC.sweep||'').includes('Bearish'))ss+=2;
+                if((mSMC.choch||'').includes('Bullish'))ls+=2;if((mSMC.choch||'').includes('Bearish'))ss+=2;
+                const score=Math.max(ls,ss);
+                if(score<6){i++;continue;}
+                const isLong=ls>=ss;
+                const entry=cp,sl2=isLong?cp-atr*2:cp+atr*2;
+                const tp1=isLong?cp+atr*1.5:cp-atr*1.5;
+                const tp2=isLong?cp+atr*3:cp-atr*3;
+                const tp3=isLong?cp+atr*5:cp-atr*5;
+                let tp1h=false,tp2h=false,tp3h=false,pnlR=0,hit=false;
+                for(let j=i;j<Math.min(i+150,candles.length);j++){
+                    const hi=parseFloat(candles[j][2]),lo=parseFloat(candles[j][3]);
+                    if(isLong){
+                        if(lo<=sl2){losses++;pnlR-=(tp1h?0.67:1.0);hit=true;break;}
+                        if(!tp1h&&hi>=tp1){tp1h=true;pnlR+=0.33*1.5;}
+                        if(tp1h&&!tp2h&&hi>=tp2){tp2h=true;pnlR+=0.33*3;}
+                        if(tp2h&&!tp3h&&hi>=tp3){tp3h=true;pnlR+=0.34*5;wins++;hit=true;break;}
+                    }else{
+                        if(hi>=sl2){losses++;pnlR-=(tp1h?0.67:1.0);hit=true;break;}
+                        if(!tp1h&&lo<=tp1){tp1h=true;pnlR+=0.33*1.5;}
+                        if(tp1h&&!tp2h&&lo<=tp2){tp2h=true;pnlR+=0.33*3;}
+                        if(tp2h&&!tp3h&&lo<=tp3){tp3h=true;pnlR+=0.34*5;wins++;hit=true;break;}
+                    }
+                }
+                if(!hit){if(tp2h)wins++;else if(tp1h){}else{}}
+                equity+=pnlR;
+                if(equity>maxEq)maxEq=equity;
+                const dd=maxEq-equity;if(dd>maxDD)maxDD=dd;
+                if(tp1h)tp1Count++;if(tp2h)tp2Count++;if(tp3h)tp3Count++;
+                if(isLong)longT++;else shortT++;
+                const result=pnlR>0?'WIN':'LOSS';
+                if(result==='LOSS'){conL++;if(conL>maxCL)maxCL=conL;}else conL=0;
+                trades.push({dir:isLong?'L':'S',pnlR,result});
+                i+=15;
+            }
+            const total=wins+losses;
+            const winRate=total>0?(wins/total*100).toFixed(1):'0.0';
+            const gW=trades.filter(t=>t.pnlR>0).reduce((s,t)=>s+t.pnlR,0);
+            const gL=Math.abs(trades.filter(t=>t.pnlR<0).reduce((s,t)=>s+t.pnlR,0));
+            const pf=gL>0?(gW/gL).toFixed(2):'∞';
+            const sorted=[...trades].sort((a,b)=>b.pnlR-a.pnlR);
+            res.json({ok:true,result:{wins,losses,longT,shortT,total,winRate,pf,gW:gW.toFixed(2),gL:gL.toFixed(2),netR:equity.toFixed(2),maxDD:maxDD.toFixed(2),maxCL,candleCount:candles.length,tpBreakdown:{tp1:tp1Count,tp2:tp2Count,tp3:tp3Count},best:sorted[0]||null,worst:sorted[sorted.length-1]||null}});
+        } catch(e) {
+            console.error('[BACKTEST ERROR]', e.message);
+            res.status(500).json({ok:false,error:e.message});
+        }
+    });
+
 
     // ════════════════════════════════════════════════════════════════════
     //  SCAN BACKTEST API  POST /app/api/scanbacktest

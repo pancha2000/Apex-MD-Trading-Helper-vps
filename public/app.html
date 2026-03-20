@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>APEX-MD · Dashboard</title>
+<link rel="stylesheet" href="/css/style.css"/>
+</head>
+<body>
+
+<div id="toast-container"></div>
+<div class="sidebar-overlay" onclick="closeSidebar()"></div>
+
+<div class="layout">
+
+<!-- ═══════════════════════════════ SIDEBAR ═══════════════════════════════ -->
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <div class="sidebar-brand-icon">📈</div>
+    <div class="sidebar-brand-text">
+      <div class="sidebar-brand-name">APEX-MD</div>
+      <div class="sidebar-brand-ver">v7 PRO · TRADING BOT</div>
+    </div>
+  </div>
+
+  <nav class="sidebar-nav">
+
+    <div class="nav-section">OVERVIEW</div>
+    <div class="nav-item" data-section="dashboard" onclick="navigateTo('dashboard')">
+      <span class="nav-icon">🏠</span> Dashboard
+    </div>
+
+    <div class="nav-section">TRADING</div>
+    <div class="nav-item" data-section="analysis" onclick="navigateTo('analysis')">
+      <span class="nav-icon">📊</span> Market Analysis
+    </div>
+    <div class="nav-item" data-section="paper" onclick="navigateTo('paper')">
+      <span class="nav-icon">🤖</span> Paper Trading
+    </div>
+    <div class="nav-item" data-section="trades" onclick="navigateTo('trades')">
+      <span class="nav-icon">📋</span> Real Trades
+    </div>
+
+    <div class="nav-section">TOOLS</div>
+    <div class="nav-item" data-section="scanner" onclick="navigateTo('scanner')">
+      <span class="nav-icon">🔍</span> Scanner
+    </div>
+    <div class="nav-item" data-section="watchlist" onclick="navigateTo('watchlist')">
+      <span class="nav-icon">👀</span> Watchlist
+    </div>
+    <div class="nav-item" data-section="alerts" onclick="navigateTo('alerts')">
+      <span class="nav-icon">🔔</span> Price Alerts
+    </div>
+    <div class="nav-item" data-section="tools" onclick="navigateTo('tools')">
+      <span class="nav-icon">🧮</span> Calculator
+    </div>
+
+    <div class="nav-section">ADMIN</div>
+    <div class="nav-item" data-section="settings" onclick="navigateTo('settings')">
+      <span class="nav-icon">⚙️</span> Settings
+    </div>
+    <div class="nav-item" id="nav-system" data-section="system" onclick="navigateTo('system')">
+      <span class="nav-icon">💻</span> System
+      <span class="nav-badge gold">ADMIN</span>
+    </div>
+
+    <div class="nav-section">ACCOUNT</div>
+    <div class="nav-item" data-section="account" onclick="navigateTo('account')">
+      <span class="nav-icon">👤</span> My Account
+    </div>
+
+  </nav>
+
+  <div class="sidebar-footer">
+    <div class="user-card" onclick="navigateTo('account')">
+      <div class="user-avatar" id="sb-avatar">U</div>
+      <div class="user-info">
+        <div class="user-name" id="sb-user-name">Loading...</div>
+        <div class="user-role" id="sb-user-role">user</div>
+      </div>
+    </div>
+  </div>
+</aside>
+
+<!-- ═══════════════════════════════ MAIN ══════════════════════════════════ -->
+<main class="main">
+
+  <!-- Topbar -->
+  <header class="topbar">
+    <button class="menu-toggle" onclick="toggleSidebar()">☰</button>
+    <div class="topbar-title" id="topbarTitle">Dashboard</div>
+
+    <div class="topbar-btc">
+      <span>₿</span>
+      <span class="price" id="tb-btc-price">—</span>
+      <span class="change" id="tb-btc-change">—</span>
+    </div>
+
+    <button class="topbar-logout" onclick="logout()">LOGOUT</button>
+  </header>
+
+  <div class="page-content">
+
+  <!-- ═══════════════════ DASHBOARD ═══════════════════ -->
+  <div class="section active" id="sec-dashboard">
+    <div class="page-header">
+      <h2>🏠 Dashboard</h2>
+      <p>Live market overview and portfolio summary</p>
+    </div>
+
+    <!-- Market Stats -->
+    <div class="grid grid-4" style="margin-bottom:16px">
+      <div class="stat-card">
+        <div class="stat-icon">₿</div>
+        <div class="stat-label">BTC Price</div>
+        <div class="stat-value text-mono" id="db-btc-price">—</div>
+        <div class="stat-sub" id="db-btc-change">—</div>
+      </div>
+      <div class="stat-card gold">
+        <div class="stat-icon">😱</div>
+        <div class="stat-label">Fear &amp; Greed</div>
+        <div class="stat-value sm text-mono" id="db-fng">—</div>
+        <div class="stat-sub">Market sentiment</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">📈</div>
+        <div class="stat-label">24h High / Low</div>
+        <div class="stat-value sm text-mono text-green" id="db-btc-high">—</div>
+        <div class="stat-sub text-mono text-red" id="db-btc-low">—</div>
+      </div>
+      <div class="stat-card green">
+        <div class="stat-icon">🏆</div>
+        <div class="stat-label">Win Rate</div>
+        <div class="stat-value text-mono" id="db-win-rate">—</div>
+        <div class="stat-sub"><span id="db-closed">0</span> closed trades</div>
+      </div>
+    </div>
+
+    <!-- Paper Position Summary -->
+    <div class="grid grid-3" style="margin-bottom:20px">
+      <div class="stat-card">
+        <div class="stat-icon">🤖</div>
+        <div class="stat-label">Open Positions</div>
+        <div class="stat-value text-mono" id="db-open-count">—</div>
+        <div class="stat-sub">Paper trades active</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">💰</div>
+        <div class="stat-label">Unrealized P&amp;L</div>
+        <div class="stat-value text-mono" id="db-total-pnl">—</div>
+        <div class="stat-sub">All open positions</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">💼</div>
+        <div class="stat-label">Virtual Balance</div>
+        <div class="stat-value text-mono" id="db-balance">—</div>
+        <div class="stat-sub">Paper account</div>
+      </div>
+    </div>
+
+    <!-- Live Prices Grid -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">LIVE MARKET PRICES</span>
+        <button class="btn btn-outline btn-sm" onclick="loadDashboardPrices()">↻ Refresh</button>
+      </div>
+      <div class="grid grid-3" id="db-prices-grid">
+        <div class="loading-state"><div class="loader"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════ ANALYSIS ═══════════════════ -->
+  <div class="section" id="sec-analysis">
+    <div class="page-header">
+      <h2>📊 Market Analysis</h2>
+      <p>Price overview for manual signal analysis</p>
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header">
+        <span class="card-title">MAJOR PAIRS — LIVE PRICES</span>
+        <button class="btn btn-outline btn-sm" onclick="loadAnalysis()">↻ Refresh</button>
+      </div>
+      <div class="grid grid-2" id="an-prices">
+        <div class="loading-state"><div class="loader"></div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title lg">🤖 Quick Paper Trade Entry</span>
+      </div>
+      <p class="text-muted" style="font-size:12px;margin-bottom:16px;font-family:'Space Mono',monospace">
+        Enter signal parameters manually to open a paper trade directly from analysis.
+      </p>
+      <div class="form-grid form-grid-3" style="margin-bottom:12px">
+        <div class="field"><label>Coin *</label><input id="an-coin" type="text" placeholder="BTC"/></div>
+        <div class="field"><label>Direction *</label>
+          <select id="an-dir">
+            <option value="LONG">🟢 LONG</option>
+            <option value="SHORT">🔴 SHORT</option>
+          </select>
+        </div>
+        <div class="field"><label>Timeframe</label>
+          <select id="an-tf"><option value="15m">15m</option><option value="1h">1h</option><option value="4h">4h</option><option value="1d">1d</option></select>
+        </div>
+      </div>
+      <div class="form-grid form-grid-3" style="margin-bottom:16px">
+        <div class="field"><label>Entry Price *</label><input id="an-entry" type="number" step="0.0001" placeholder="e.g. 65000"/></div>
+        <div class="field"><label>Stop Loss *</label><input id="an-sl" type="number" step="0.0001" placeholder="e.g. 63000"/></div>
+        <div class="field"><label>Take Profit *</label><input id="an-tp" type="number" step="0.0001" placeholder="e.g. 69000"/></div>
+        <div class="field"><label>TP1</label><input id="an-tp1" type="number" step="0.0001" placeholder="Optional"/></div>
+        <div class="field"><label>Leverage</label><input id="an-lev" type="number" min="1" max="125" placeholder="Auto"/></div>
+        <div class="field"><label>Score (0-100)</label><input id="an-score" type="number" min="0" max="100" placeholder="0"/></div>
+      </div>
+      <button class="btn btn-success" onclick="openFromAnalysis()">🤖 Open Paper Trade</button>
+    </div>
+  </div>
+
+  <!-- ═══════════════════ PAPER TRADING ═══════════════════ -->
+  <div class="section" id="sec-paper">
+    <div class="page-header">
+      <h2>🤖 Paper Trading</h2>
+      <p>Virtual trading with real market prices</p>
+    </div>
+
+    <!-- Account stats -->
+    <div class="grid grid-4" style="margin-bottom:16px">
+      <div class="stat-card green">
+        <div class="stat-icon">💰</div>
+        <div class="stat-label">Virtual Balance</div>
+        <div class="stat-value sm text-mono" id="pt-balance">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">💼</div>
+        <div class="stat-label">Capital / Margin</div>
+        <div class="stat-value sm text-mono" id="pt-margin">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">📊</div>
+        <div class="stat-label">Unrealized P&amp;L</div>
+        <div class="stat-value sm text-mono" id="pt-unrealized">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">🔵</div>
+        <div class="stat-label">Open Positions</div>
+        <div class="stat-value text-mono" id="pt-open-count">0/5</div>
+      </div>
+    </div>
+
+    <!-- Open Positions Table -->
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header">
+        <span class="card-title lg">Open Positions</span>
+        <button class="btn btn-outline btn-sm" onclick="loadPaperTrades()">↻ Refresh</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>COIN</th><th>DIR</th><th>STATUS</th><th>ENTRY</th><th>LIVE</th>
+              <th>P&amp;L ($)</th><th>P&amp;L (%)</th><th>SL</th><th>LEV · MARGIN</th><th>ACTION</th>
+            </tr>
+          </thead>
+          <tbody id="pt-positions-body">
+            <tr><td colspan="10" class="loading-state"><div class="loader"></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Open New Trade Form -->
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header">
+        <span class="card-title lg">➕ Open New Paper Trade</span>
+      </div>
+      <form id="pt-open-form" onsubmit="return false">
+        <div class="form-grid form-grid-3" style="margin-bottom:12px">
+          <div class="field"><label>Coin *</label><input id="pt-coin" type="text" placeholder="BTC or BTCUSDT"/></div>
+          <div class="field"><label>Direction *</label>
+            <select id="pt-dir">
+              <option value="LONG">🟢 LONG</option>
+              <option value="SHORT">🔴 SHORT</option>
+            </select>
+          </div>
+          <div class="field"><label>Timeframe</label>
+            <select id="pt-tf">
+              <option value="15m">15m</option><option value="1h">1h</option><option value="4h">4h</option><option value="1d">1d</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-grid form-grid-3" style="margin-bottom:16px">
+          <div class="field"><label>Entry Price *</label><input id="pt-entry" type="number" step="0.0001" placeholder="0.0000"/></div>
+          <div class="field"><label>Stop Loss *</label><input id="pt-sl" type="number" step="0.0001" placeholder="0.0000"/></div>
+          <div class="field"><label>Take Profit (TP2) *</label><input id="pt-tp" type="number" step="0.0001" placeholder="0.0000"/></div>
+          <div class="field"><label>TP1 (Optional)</label><input id="pt-tp1" type="number" step="0.0001" placeholder="0.0000"/></div>
+          <div class="field"><label>Leverage (Optional)</label><input id="pt-lev" type="number" min="1" max="125" placeholder="Auto-calc"/></div>
+        </div>
+        <button class="btn btn-success" type="button" onclick="openPaperTrade()">🤖 Open Paper Trade</button>
+      </form>
+    </div>
+
+    <!-- Trade History -->
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header">
+        <span class="card-title lg">📜 Closed Trade History</span>
+        <button class="btn btn-outline btn-sm" onclick="loadPaperHistory()">Load History</button>
+      </div>
+      <!-- Summary stats -->
+      <div class="grid grid-4" style="margin-bottom:14px">
+        <div style="text-align:center;padding:10px;background:rgba(0,230,118,0.06);border-radius:8px;border:1px solid rgba(0,230,118,0.12)">
+          <div class="text-muted" style="font-size:10px;font-family:'Space Mono',monospace;letter-spacing:2px">WINS</div>
+          <div class="text-green text-mono fw-700" style="font-size:22px" id="ph-wins">—</div>
+        </div>
+        <div style="text-align:center;padding:10px;background:rgba(255,61,90,0.06);border-radius:8px;border:1px solid rgba(255,61,90,0.12)">
+          <div class="text-muted" style="font-size:10px;font-family:'Space Mono',monospace;letter-spacing:2px">LOSSES</div>
+          <div class="text-red text-mono fw-700" style="font-size:22px" id="ph-losses">—</div>
+        </div>
+        <div style="text-align:center;padding:10px;background:rgba(0,212,255,0.06);border-radius:8px;border:1px solid rgba(0,212,255,0.12)">
+          <div class="text-muted" style="font-size:10px;font-family:'Space Mono',monospace;letter-spacing:2px">WIN RATE</div>
+          <div class="text-blue text-mono fw-700" style="font-size:22px" id="ph-winrate">—</div>
+        </div>
+        <div style="text-align:center;padding:10px;background:rgba(240,180,41,0.06);border-radius:8px;border:1px solid rgba(240,180,41,0.12)">
+          <div class="text-muted" style="font-size:10px;font-family:'Space Mono',monospace;letter-spacing:2px">TOTAL P&L</div>
+          <div class="text-mono fw-700" style="font-size:22px" id="ph-total-pnl">—</div>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>COIN</th><th>DIR</th><th>RESULT</th><th>ENTRY</th><th>TP</th><th>SL</th><th>P&amp;L</th><th>TIME</th></tr></thead>
+          <tbody id="ph-body"><tr><td colspan="8"><div class="empty-state"><div class="empty-icon">📜</div><p>Click "Load History" to view</p></div></td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Reset Account -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title lg">🔄 Reset Paper Account</span>
+      </div>
+      <p class="text-muted" style="font-size:12px;margin-bottom:14px;font-family:'Space Mono',monospace">Close all open trades and reset balance to a new amount.</p>
+      <div style="display:flex;gap:10px;align-items:flex-end">
+        <div class="field" style="flex:1">
+          <label>Reset Amount (USD) *</label>
+          <input id="pt-reset-amt" type="number" min="1" value="500" placeholder="500"/>
+        </div>
+        <button class="btn btn-danger" onclick="resetPaperAccount()">🔄 Reset Account</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════ REAL TRADES ═══════════════════ -->
+  <div class="section" id="sec-trades">
+    <div class="page-header">
+      <h2>📋 Real Trade Tracking</h2>
+      <p>Track your actual trades and log results</p>
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header">
+        <span class="card-title lg">Active Tracked Trades</span>
+        <button class="btn btn-outline btn-sm" onclick="loadRealTrades()">↻ Refresh</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>COIN</th><th>DIR</th><th>STATUS</th><th>ENTRY</th><th>TP</th><th>SL</th><th>RRR</th><th>ACTIONS</th></tr></thead>
+          <tbody id="rt-body"><tr><td colspan="8" class="loading-state"><div class="loader"></div></td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><span class="card-title lg">➕ Track a New Trade</span></div>
+      <form id="rt-add-form" onsubmit="return false">
+        <div class="form-grid form-grid-3" style="margin-bottom:12px">
+          <div class="field"><label>Coin *</label><input id="rt-coin" type="text" placeholder="BTC"/></div>
+          <div class="field"><label>Direction *</label>
+            <select id="rt-dir">
+              <option value="LONG">🟢 LONG</option>
+              <option value="SHORT">🔴 SHORT</option>
+            </select>
+          </div>
+          <div class="field"><label>Type</label>
+            <select id="rt-type"><option value="future">Futures</option><option value="spot">Spot</option></select>
+          </div>
+        </div>
+        <div class="form-grid form-grid-3" style="margin-bottom:16px">
+          <div class="field"><label>Entry *</label><input id="rt-entry" type="number" step="0.0001" placeholder="0.00"/></div>
+          <div class="field"><label>Stop Loss *</label><input id="rt-sl" type="number" step="0.0001" placeholder="0.00"/></div>
+          <div class="field"><label>Take Profit *</label><input id="rt-tp" type="number" step="0.0001" placeholder="0.00"/></div>
+        </div>
+        <button class="btn btn-primary" type="button" onclick="addRealTrade()">📋 Track Trade</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ═══════════════════ SCANNER ═══════════════════ -->
+  <div class="section" id="sec-scanner">
+    <div class="page-header">
+      <h2>🔍 Scanner</h2>
+      <p>Market scanning is handled by the WhatsApp bot engine</p>
+    </div>
+    <div class="card">
+      <div class="alert-strip alert-info">
+        ℹ️ The scanner runs inside the bot engine and sends signals via WhatsApp. Control auto-scan in <strong>Settings → Auto Scanner</strong>.
+      </div>
+      <div class="section-divider"><span>Scanner Status</span></div>
+      <p class="text-muted" style="font-size:13px;margin-bottom:16px">Use the Settings page to toggle Auto Scanner ON/OFF. The bot scans 30 coins every 15-minute candle close using WebSocket event-driven logic.</p>
+      <div class="grid grid-3">
+        <div class="stat-card"><div class="stat-label">Scan Mode</div><div class="stat-value sm">Event-Driven WS</div></div>
+        <div class="stat-card"><div class="stat-label">Coins Watched</div><div class="stat-value sm text-mono">30</div></div>
+        <div class="stat-card"><div class="stat-label">Cooldown</div><div class="stat-value sm text-mono">4h per coin</div></div>
+      </div>
+      <div class="section-divider"><span>Quick Guide</span></div>
+      <div style="font-family:'Space Mono',monospace;font-size:11px;color:var(--text2);line-height:2">
+        <div>📊 <strong class="text-blue">.future BTC 15m</strong> → Full 70-factor AI signal</div>
+        <div>📊 <strong class="text-blue">.spot ETH 4h</strong> → Spot market signal</div>
+        <div>🔍 <strong class="text-blue">.scan</strong> → Manual top-5 coin scan (instant)</div>
+        <div>⚙️ <strong class="text-blue">.set 1 on</strong> → Auto scanner ON</div>
+        <div>⚙️ <strong class="text-blue">.set 1 off</strong> → Auto scanner OFF</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════ WATCHLIST ═══════════════════ -->
+  <div class="section" id="sec-watchlist">
+    <div class="page-header">
+      <h2>👀 Watchlist</h2>
+      <p>Track your favourite coins with live prices</p>
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header">
+        <span class="card-title lg">➕ Add Coins</span>
+      </div>
+      <div style="display:flex;gap:10px;align-items:flex-end">
+        <div class="field" style="flex:1">
+          <label>Coin Symbols (comma separated)</label>
+          <input id="wl-add-input" type="text" placeholder="BTC, ETH, SOL, BNB"/>
+        </div>
+        <button class="btn btn-primary" onclick="addToWatchlist()">➕ Add</button>
+        <button class="btn btn-outline" onclick="loadWatchlist()">↻ Refresh</button>
+      </div>
+    </div>
+
+    <div class="grid grid-3" id="wl-grid">
+      <div class="loading-state"><div class="loader"></div></div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════ ALERTS ═══════════════════ -->
+  <div class="section" id="sec-alerts">
+    <div class="page-header">
+      <h2>🔔 Price Alerts</h2>
+      <p>Set price level alerts for any coin</p>
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header"><span class="card-title lg">➕ New Alert</span></div>
+      <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+        <div class="field" style="flex:1;min-width:120px">
+          <label>Coin</label>
+          <input id="al-coin" type="text" placeholder="BTC"/>
+        </div>
+        <div class="field" style="flex:2;min-width:140px">
+          <label>Target Price (USD)</label>
+          <input id="al-price" type="number" step="0.0001" placeholder="100000"/>
+        </div>
+        <button class="btn btn-primary" onclick="addAlert()">🔔 Set Alert</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title lg">Active Alerts</span>
+        <button class="btn btn-outline btn-sm" onclick="loadAlerts()">↻ Refresh</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>COIN</th><th>TARGET</th><th>DIRECTION</th><th>STATUS</th><th>ACTION</th></tr></thead>
+          <tbody id="al-body"><tr><td colspan="5" class="loading-state"><div class="loader"></div></td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════ TOOLS / CALCULATOR ═══════════════════ -->
+  <div class="section" id="sec-tools">
+    <div class="page-header">
+      <h2>🧮 Position Calculator</h2>
+      <p>Risk-based position sizing for any setup</p>
+    </div>
+
+    <div class="grid grid-2">
+      <div class="card">
+        <div class="card-header"><span class="card-title lg">Input Parameters</span></div>
+        <div class="form-grid" style="margin-bottom:16px">
+          <div class="field"><label>Account Capital ($)</label><input id="calc-capital" type="number" value="1000" placeholder="1000"/></div>
+          <div class="field"><label>Entry Price ($)</label><input id="calc-entry" type="number" step="0.0001" placeholder="65000"/></div>
+          <div class="field"><label>Stop Loss ($)</label><input id="calc-sl" type="number" step="0.0001" placeholder="63000"/></div>
+          <div class="field"><label>Risk % per Trade</label><input id="calc-risk" type="number" value="2" min="0.1" max="10" step="0.1"/></div>
+          <div class="field"><label>Leverage</label><input id="calc-lev" type="number" value="10" min="1" max="125"/></div>
+        </div>
+        <button class="btn btn-primary btn-lg" onclick="calcPosition()">📊 Calculate</button>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><span class="card-title lg">Results</span></div>
+        <div class="grid grid-2" style="margin-bottom:16px">
+          <div style="padding:14px;background:var(--panel2);border:1px solid var(--border);border-radius:8px">
+            <div class="stat-label">QUANTITY</div>
+            <div class="stat-value sm text-mono text-blue" id="calc-qty">—</div>
+          </div>
+          <div style="padding:14px;background:var(--panel2);border:1px solid var(--border);border-radius:8px">
+            <div class="stat-label">MARGIN USED</div>
+            <div class="stat-value sm text-mono" id="calc-margin">—</div>
+          </div>
+          <div style="padding:14px;background:var(--panel2);border:1px solid var(--border);border-radius:8px">
+            <div class="stat-label">RISK AMOUNT</div>
+            <div class="stat-value sm text-mono text-red" id="calc-risk-amt">—</div>
+          </div>
+          <div style="padding:14px;background:var(--panel2);border:1px solid var(--border);border-radius:8px">
+            <div class="stat-label">SL DISTANCE %</div>
+            <div class="stat-value sm text-mono" id="calc-sl-pct">—</div>
+          </div>
+        </div>
+
+        <div class="card-title" style="margin-bottom:10px">TP TARGET TABLE</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>RRR</th><th>TP PRICE</th><th>PROFIT ($)</th><th>ROI %</th></tr></thead>
+            <tbody id="calc-rrr-body">
+              <tr><td colspan="4" class="text-muted" style="text-align:center;padding:20px;font-size:12px">Enter values and click Calculate</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════ SETTINGS ═══════════════════ -->
+  <div class="section" id="sec-settings">
+    <div class="page-header">
+      <h2>⚙️ Bot Settings</h2>
+      <p>Configure trading engine parameters</p>
+    </div>
+
+    <div class="grid grid-2">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title lg">Bot Feature Toggles</span>
+          <button class="btn btn-outline btn-sm" onclick="loadSettings()">↻ Reload</button>
+        </div>
+        <div id="settings-toggles">
+          <div class="loading-state"><div class="loader"></div></div>
+        </div>
+
+        <div class="section-divider"><span>Numeric Parameters</span></div>
+        <div class="flex-between" style="margin-bottom:12px">
+          <div>
+            <div class="toggle-name">Min RRR</div>
+            <div class="toggle-desc">Minimum risk:reward ratio to signal</div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input id="st-minRRR" type="number" step="0.1" min="0.5" max="10" style="width:70px;background:rgba(0,0,0,0.4);border:1px solid var(--border);border-radius:6px;padding:6px 8px;color:var(--text);font-family:'Space Mono',monospace;font-size:12px;outline:none" value="1.5"/>
+            <button class="btn btn-primary btn-sm" onclick="updateRRR()">Set</button>
+          </div>
+        </div>
+        <div class="flex-between">
+          <div>
+            <div class="toggle-name">Paper Min Score</div>
+            <div class="toggle-desc">Min score to auto-open paper trades</div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input id="st-paperMinScore" type="number" step="1" min="0" max="100" style="width:70px;background:rgba(0,0,0,0.4);border:1px solid var(--border);border-radius:6px;padding:6px 8px;color:var(--text);font-family:'Space Mono',monospace;font-size:12px;outline:none" value="5"/>
+            <button class="btn btn-primary btn-sm" onclick="updatePaperScore()">Set</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" id="cfg-card">
+        <div class="card-header">
+          <span class="card-title lg">Module Toggles <span class="badge badge-gold">ADMIN</span></span>
+        </div>
+        <div id="cfg-modules">
+          <div class="alert-strip alert-info">Admin access required to view module config</div>
+        </div>
+
+        <div class="section-divider"><span>Trading Parameters</span></div>
+        <div id="cfg-trading">
+          <div class="text-muted" style="font-size:12px;font-family:'Space Mono',monospace">Load settings to view</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════ SYSTEM (admin only) ═══════════════════ -->
+  <div class="section" id="sec-system">
+    <div class="page-header">
+      <h2>💻 System Administration</h2>
+      <p>Server info, user management, and platform overview</p>
+    </div>
+
+    <!-- Summary -->
+    <div id="sys-summary" style="margin-bottom:16px">
+      <div class="loading-state"><div class="loader"></div></div>
+    </div>
+
+    <!-- Server Info -->
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header">
+        <span class="card-title lg">🖥️ Server Information</span>
+        <button class="btn btn-outline btn-sm" onclick="loadSystemInfo()">↻ Refresh</button>
+      </div>
+      <div id="sys-info"><div class="loading-state"><div class="loader"></div></div></div>
+    </div>
+
+    <!-- User Management -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title lg">👥 User Management</span>
+        <button class="btn btn-outline btn-sm" onclick="loadUserManagement()">↻ Refresh</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th></th><th>USER</th><th>EMAIL</th><th>ROLE</th><th>STATUS</th><th>LAST LOGIN</th><th>ACTIONS</th>
+            </tr>
+          </thead>
+          <tbody id="users-body">
+            <tr><td colspan="7" class="loading-state"><div class="loader"></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════ ACCOUNT ═══════════════════ -->
+  <div class="section" id="sec-account">
+    <div class="page-header">
+      <h2>👤 My Account</h2>
+      <p>Profile, capital settings, and security</p>
+    </div>
+
+    <div class="grid grid-2">
+      <div>
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-header"><span class="card-title lg">Profile Info</span></div>
+          <div class="grid grid-2" style="margin-bottom:8px">
+            <div><div class="text-muted" style="font-size:11px;font-family:'Space Mono',monospace;margin-bottom:3px">USERNAME</div><div class="text-mono" id="acc-username">—</div></div>
+            <div><div class="text-muted" style="font-size:11px;font-family:'Space Mono',monospace;margin-bottom:3px">EMAIL</div><div class="text-mono" id="acc-email">—</div></div>
+            <div><div class="text-muted" style="font-size:11px;font-family:'Space Mono',monospace;margin-bottom:3px">ROLE</div><div id="acc-role">—</div></div>
+            <div><div class="text-muted" style="font-size:11px;font-family:'Space Mono',monospace;margin-bottom:3px">LOGIN COUNT</div><div class="text-mono" id="acc-login-count">—</div></div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-header"><span class="card-title lg">💰 Trading Capital</span></div>
+          <div class="grid grid-3" style="margin-bottom:16px">
+            <div style="text-align:center"><div class="text-muted" style="font-size:10px;font-family:'Space Mono',monospace;letter-spacing:2px">BALANCE</div><div class="text-mono fw-700 text-green" style="font-size:18px" id="acc-balance">—</div></div>
+            <div style="text-align:center"><div class="text-muted" style="font-size:10px;font-family:'Space Mono',monospace;letter-spacing:2px">NET P/L</div><div class="text-mono fw-700" style="font-size:18px" id="acc-net">—</div></div>
+            <div style="text-align:center"><div class="text-muted" style="font-size:10px;font-family:'Space Mono',monospace;letter-spacing:2px">TRADES</div><div class="text-mono fw-700" style="font-size:18px" id="acc-trades">—</div></div>
+          </div>
+          <div class="grid grid-2" style="margin-bottom:16px">
+            <div style="text-align:center"><div class="text-muted" style="font-size:10px;margin-bottom:3px">WINS</div><div class="text-green text-mono fw-700" id="acc-wins">—</div></div>
+            <div style="text-align:center"><div class="text-muted" style="font-size:10px;margin-bottom:3px">LOSSES</div><div class="text-red text-mono fw-700" id="acc-losses">—</div></div>
+          </div>
+          <div style="display:flex;gap:10px;align-items:flex-end">
+            <div class="field" style="flex:1">
+              <label>Set Capital / Margin ($)</label>
+              <input id="acc-margin" type="number" min="1" placeholder="1000"/>
+            </div>
+            <button class="btn btn-primary" onclick="setMargin()">💰 Set Capital</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><span class="card-title lg">🔐 Change Password</span></div>
+        <div class="form-grid" style="margin-bottom:16px">
+          <div class="field"><label>Current Password</label><input id="acc-pw-current" type="password" placeholder="••••••••"/></div>
+          <div class="field"><label>New Password</label><input id="acc-pw-new" type="password" placeholder="••••••••"/></div>
+          <div class="field"><label>Confirm New Password</label><input id="acc-pw-confirm" type="password" placeholder="••••••••"/></div>
+        </div>
+        <button class="btn btn-primary" onclick="changePassword()">🔐 Change Password</button>
+
+        <div class="section-divider"><span>Danger Zone</span></div>
+        <button class="btn btn-danger" onclick="if(confirm('Logout from all sessions?')) logout()">🚪 Logout</button>
+      </div>
+    </div>
+  </div>
+
+  </div><!-- end page-content -->
+</main>
+</div><!-- end layout -->
+
+<script src="/js/api.js"></script>
+<script src="/js/main.js"></script>
+<script>
+// Extra helper for the Analysis section quick trade
+function openFromAnalysis() {
+  document.getElementById('pt-coin').value  = document.getElementById('an-coin').value;
+  document.getElementById('pt-dir').value   = document.getElementById('an-dir').value;
+  document.getElementById('pt-entry').value = document.getElementById('an-entry').value;
+  document.getElementById('pt-sl').value    = document.getElementById('an-sl').value;
+  document.getElementById('pt-tp').value    = document.getElementById('an-tp').value;
+  document.getElementById('pt-tp1').value   = document.getElementById('an-tp1').value;
+  document.getElementById('pt-lev').value   = document.getElementById('an-lev').value;
+  document.getElementById('pt-tf').value    = document.getElementById('an-tf').value;
+  navigateTo('paper');
+  setTimeout(() => openPaperTrade(), 100);
+}
+
+// Init user avatar
+document.addEventListener('DOMContentLoaded', () => {
+  const u = JSON.parse(localStorage.getItem('apex_user') || '{}');
+  const letter = (u.displayName || u.username || 'U')[0].toUpperCase();
+  document.getElementById('sb-avatar').textContent = letter;
+});
+</script>
+</body>
+</html>

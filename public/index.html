@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>APEX-MD · Login</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet"/>
+<style>
+  :root{
+    --bg:#040b14;--panel:#07111f;--border:#0e2236;--accent:#00d4ff;
+    --accent2:#f0b429;--green:#00e676;--red:#ff3d5a;--text:#c8dde8;
+    --text2:#5a8099;--glow:0 0 20px rgba(0,212,255,0.25);
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{min-height:100vh;background:var(--bg);font-family:'Rajdhani',sans-serif;
+    display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
+  
+  /* animated grid background */
+  body::before{content:'';position:fixed;inset:0;
+    background-image:linear-gradient(rgba(0,212,255,0.04) 1px,transparent 1px),
+      linear-gradient(90deg,rgba(0,212,255,0.04) 1px,transparent 1px);
+    background-size:40px 40px;pointer-events:none}
+  
+  /* floating orbs */
+  .orb{position:fixed;border-radius:50%;filter:blur(80px);pointer-events:none;animation:drift 8s ease-in-out infinite}
+  .orb1{width:400px;height:400px;background:rgba(0,212,255,0.06);top:-100px;right:-100px;animation-delay:-2s}
+  .orb2{width:300px;height:300px;background:rgba(240,180,41,0.05);bottom:-80px;left:-80px;animation-delay:-5s}
+  @keyframes drift{0%,100%{transform:translate(0,0)}50%{transform:translate(20px,20px)}}
+  
+  .login-wrap{width:100%;max-width:420px;padding:24px;z-index:10}
+  
+  .brand{text-align:center;margin-bottom:40px}
+  .brand-logo{display:inline-flex;align-items:center;gap:10px;margin-bottom:8px}
+  .brand-icon{width:44px;height:44px;background:linear-gradient(135deg,var(--accent),var(--accent2));
+    border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:22px;
+    box-shadow:0 0 30px rgba(0,212,255,0.3)}
+  .brand-name{font-family:'Share Tech Mono',monospace;font-size:24px;color:#fff;letter-spacing:2px}
+  .brand-sub{font-size:12px;color:var(--text2);letter-spacing:3px;text-transform:uppercase;
+    font-family:'Space Mono',monospace}
+  
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:32px;
+    box-shadow:0 8px 40px rgba(0,0,0,0.6),var(--glow)}
+  
+  .tabs{display:flex;gap:4px;background:rgba(0,0,0,0.3);border-radius:8px;padding:4px;margin-bottom:28px}
+  .tab-btn{flex:1;padding:8px;border:none;border-radius:6px;background:transparent;
+    color:var(--text2);font-family:'Rajdhani',sans-serif;font-size:14px;font-weight:600;
+    letter-spacing:1px;cursor:pointer;transition:.2s}
+  .tab-btn.active{background:var(--accent);color:#000}
+  
+  .form-section{display:none}
+  .form-section.active{display:block}
+  
+  .field{margin-bottom:18px}
+  .field label{display:block;font-size:11px;font-weight:700;letter-spacing:2px;
+    color:var(--text2);text-transform:uppercase;margin-bottom:7px;font-family:'Space Mono',monospace}
+  .field input{width:100%;background:rgba(0,0,0,0.4);border:1px solid var(--border);
+    border-radius:8px;padding:12px 14px;color:var(--text);font-family:'Rajdhani',sans-serif;
+    font-size:15px;transition:.2s;outline:none}
+  .field input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(0,212,255,0.12)}
+  .field input::placeholder{color:var(--text2)}
+  
+  .btn-primary{width:100%;padding:14px;background:linear-gradient(135deg,var(--accent),#0099bb);
+    border:none;border-radius:8px;color:#000;font-family:'Rajdhani',sans-serif;font-size:15px;
+    font-weight:700;letter-spacing:2px;text-transform:uppercase;cursor:pointer;transition:.2s;
+    margin-top:8px}
+  .btn-primary:hover{opacity:0.85;transform:translateY(-1px)}
+  .btn-primary:active{transform:translateY(0)}
+  
+  .error-msg{background:rgba(255,61,90,0.15);border:1px solid rgba(255,61,90,0.3);
+    border-radius:8px;padding:10px 14px;color:var(--red);font-size:13px;margin-bottom:16px;display:none}
+  .success-msg{background:rgba(0,230,118,0.1);border:1px solid rgba(0,230,118,0.25);
+    border-radius:8px;padding:10px 14px;color:var(--green);font-size:13px;margin-bottom:16px;display:none}
+  
+  .note{font-size:11px;color:var(--text2);text-align:center;margin-top:20px;font-family:'Space Mono',monospace}
+  .note span{color:var(--accent)}
+  
+  .loading{display:inline-block;width:16px;height:16px;border:2px solid rgba(0,0,0,0.3);
+    border-top:2px solid #000;border-radius:50%;animation:spin .6s linear infinite;margin-right:6px;vertical-align:middle}
+  @keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="orb orb1"></div>
+<div class="orb orb2"></div>
+
+<div class="login-wrap">
+  <div class="brand">
+    <div class="brand-logo">
+      <div class="brand-icon">📈</div>
+      <div class="brand-name">APEX-MD</div>
+    </div>
+    <div class="brand-sub">Trading Command Center</div>
+  </div>
+
+  <div class="card">
+    <div class="tabs">
+      <button class="tab-btn active" onclick="switchTab('login')">LOGIN</button>
+      <button class="tab-btn" onclick="switchTab('register')">REGISTER</button>
+    </div>
+
+    <div class="error-msg" id="errorMsg"></div>
+    <div class="success-msg" id="successMsg"></div>
+
+    <!-- LOGIN FORM -->
+    <div class="form-section active" id="loginSection">
+      <div class="field">
+        <label>Username or Email</label>
+        <input type="text" id="loginUser" placeholder="username / email" autocomplete="username"/>
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" id="loginPass" placeholder="••••••••" autocomplete="current-password"/>
+      </div>
+      <button class="btn-primary" onclick="doLogin()" id="loginBtn">LOGIN</button>
+    </div>
+
+    <!-- REGISTER FORM -->
+    <div class="form-section" id="registerSection">
+      <div class="field">
+        <label>Username</label>
+        <input type="text" id="regUser" placeholder="your_username" autocomplete="username"/>
+      </div>
+      <div class="field">
+        <label>Email</label>
+        <input type="email" id="regEmail" placeholder="you@email.com" autocomplete="email"/>
+      </div>
+      <div class="field">
+        <label>Display Name</label>
+        <input type="text" id="regDisplay" placeholder="Your Name"/>
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" id="regPass" placeholder="••••••••" autocomplete="new-password"/>
+      </div>
+      <button class="btn-primary" onclick="doRegister()" id="regBtn">CREATE ACCOUNT</button>
+    </div>
+
+    <div class="note">First account registered becomes <span>Admin</span></div>
+  </div>
+</div>
+
+<script>
+function switchTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach((b,i) => b.classList.toggle('active', (i===0&&tab==='login')||(i===1&&tab==='register')));
+  document.getElementById('loginSection').classList.toggle('active', tab==='login');
+  document.getElementById('registerSection').classList.toggle('active', tab==='register');
+  hideMessages();
+}
+function showError(msg) {
+  const el = document.getElementById('errorMsg');
+  el.textContent = msg; el.style.display = 'block';
+  document.getElementById('successMsg').style.display = 'none';
+}
+function showSuccess(msg) {
+  const el = document.getElementById('successMsg');
+  el.textContent = msg; el.style.display = 'block';
+  document.getElementById('errorMsg').style.display = 'none';
+}
+function hideMessages() {
+  document.getElementById('errorMsg').style.display = 'none';
+  document.getElementById('successMsg').style.display = 'none';
+}
+function setLoading(btnId, loading) {
+  const btn = document.getElementById(btnId);
+  btn.disabled = loading;
+  btn.innerHTML = loading ? '<span class="loading"></span>PROCESSING...' : (btnId==='loginBtn'?'LOGIN':'CREATE ACCOUNT');
+}
+
+async function doLogin() {
+  hideMessages();
+  const username = document.getElementById('loginUser').value.trim();
+  const password = document.getElementById('loginPass').value;
+  if (!username || !password) return showError('Username and password required');
+  setLoading('loginBtn', true);
+  try {
+    const r = await fetch('/api/auth/login', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ username, password })
+    });
+    const data = await r.json();
+    if (!r.ok) return showError(data.error || 'Login failed');
+    localStorage.setItem('apex_token', data.token);
+    localStorage.setItem('apex_user', JSON.stringify(data.user));
+    window.location.href = '/app.html';
+  } catch(e) { showError('Connection error'); }
+  finally { setLoading('loginBtn', false); }
+}
+
+async function doRegister() {
+  hideMessages();
+  const username    = document.getElementById('regUser').value.trim();
+  const email       = document.getElementById('regEmail').value.trim();
+  const displayName = document.getElementById('regDisplay').value.trim();
+  const password    = document.getElementById('regPass').value;
+  if (!username || !email || !password) return showError('All fields required');
+  if (password.length < 6) return showError('Password must be at least 6 characters');
+  setLoading('regBtn', true);
+  try {
+    const r = await fetch('/api/auth/register', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ username, email, password, displayName })
+    });
+    const data = await r.json();
+    if (!r.ok) return showError(data.error || 'Registration failed');
+    localStorage.setItem('apex_token', data.token);
+    localStorage.setItem('apex_user', JSON.stringify(data.user));
+    window.location.href = '/app.html';
+  } catch(e) { showError('Connection error'); }
+  finally { setLoading('regBtn', false); }
+}
+
+// Check if already logged in
+if (localStorage.getItem('apex_token')) window.location.href = '/app.html';
+
+// Enter key support
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    const loginActive = document.getElementById('loginSection').classList.contains('active');
+    loginActive ? doLogin() : doRegister();
+  }
+});
+</script>
+</body>
+</html>

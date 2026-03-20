@@ -774,7 +774,7 @@ document.addEventListener('DOMContentLoaded', loadIntel);
 
 app.get('/app/api/market-intel', saasAuth.requireUserAuth, async (req, res) => {
     try {
-        const binance = require('./lib/binance');
+        const binance = require('../lib/binance');
         const fallback = {fngValue:50,fngLabel:'Neutral',fngEmoji:'⚪',btcDominance:'—',newsSentimentScore:0,newsHeadlines:[],overallSentiment:'⚪ NEUTRAL',tradingBias:'Neutral'};
         const sent = await withTimeout(binance.getMarketSentiment(), 12000, fallback);
         // Extreme funding rates

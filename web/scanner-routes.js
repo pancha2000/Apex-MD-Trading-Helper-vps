@@ -54,8 +54,8 @@ function vwapDisplay(vwapRaw) {
 // ══════════════════════════════════════════════════════════════
 app.get('/app/api/market-scan', saasAuth.requireUserAuth, async (req, res) => {
     try {
-        const binance  = require('./lib/binance');
-        const analyzer = require('./lib/analyzer');
+        const binance  = require('../lib/binance');
+        const analyzer = require('../lib/analyzer');
 
         const allCoins = binance.isReady()
             ? binance.getWatchedCoins()
@@ -192,9 +192,9 @@ app.post('/app/api/scan', saasAuth.requireUserAuth, async (req, res) => {
         if (!VALID_TF.includes(timeframe)) timeframe = '15m';
         console.log(`[Scanner] ${req.saasUser.username} → ${coin} ${timeframe}`);
 
-        const analyzer      = require('./lib/analyzer');
-        const binance       = require('./lib/binance');
-        const confirmations = require('./lib/confirmations_lib');
+        const analyzer      = require('../lib/analyzer');
+        const binance       = require('../lib/binance');
+        const confirmations = require('../lib/confirmations_lib');
 
         // ── Core analysis ─────────────────────────────────────────────
         const a = await analyzer.run14FactorAnalysis(coin, timeframe);
@@ -346,9 +346,9 @@ app.post('/app/api/backtest', saasAuth.requireUserAuth, async (req, res) => {
         if (!VALID_TF.includes(timeframe)) timeframe = '15m';
         console.log(`[Backtest] ${req.saasUser.username} → ${coin} ${timeframe}`);
 
-        const binance    = require('./lib/binance');
-        const indicators = require('./lib/indicators');
-        const smc        = require('./lib/smartmoney');
+        const binance    = require('../lib/binance');
+        const indicators = require('../lib/indicators');
+        const smc        = require('../lib/smartmoney');
         const { calculateRSI,calculateEMA,calculateATR,checkDivergence,checkCandlePattern,calculateMACD,calculateVWAP,checkVolumeBreakout,calculateADX,checkHarmonicPattern,checkICTSilverBullet,calculateStochRSI,calculateBollingerBands,detectMTFOrderBlocks,detectMTFOBs,checkMTFRSIConfluence,detectVolumeNodes,getEMARibbon,calculateSupertrend,calculateRVOL,checkMTFMACD,detectWyckoffPhase,detectBreakerBlocks,detectEqualHighsLows,checkPremiumDiscount,calculateWilliamsR,calculateIchimoku,getHeikinAshiTrend,approximateCVD,calculatePivotPoints,getPivotSignal,checkFibConfluence,detectBBSqueezeExplosion,detectVolatilityExpansion,detectMarketMakerTrap } = indicators;
 
         let candles, candles1H;
@@ -548,7 +548,7 @@ app.post('/app/api/scanbacktest', saasAuth.requireUserAuth, async (req, res) => 
         limit = Math.min(parseInt(limit)||15, 20);
         console.log(`[ScanBacktest] ${req.saasUser.username} → ${timeframe} top-${limit}`);
 
-        const binance = require('./lib/binance');
+        const binance = require('../lib/binance');
         const allCoins = binance.isReady()
             ? binance.getWatchedCoins().slice(0, limit)
             : await binance.getTopTrendingCoins(limit).catch(() => [
@@ -562,9 +562,9 @@ app.post('/app/api/scanbacktest', saasAuth.requireUserAuth, async (req, res) => 
         for (const coin of coins) {
             try {
                 // Mini backtest per coin (faster: 500 candles, no 1H cross)
-                const binanceLib = require('./lib/binance');
-                const indLib     = require('./lib/indicators');
-                const smcLib     = require('./lib/smartmoney');
+                const binanceLib = require('../lib/binance');
+                const indLib     = require('../lib/indicators');
+                const smcLib     = require('../lib/smartmoney');
                 const candles    = await binanceLib.getKlineData(coin, timeframe, 500).catch(() => null);
                 if (!candles || candles.length < 200) { results.push({coin:coin.replace('USDT',''),error:'insufficient data'}); continue; }
 
@@ -1764,8 +1764,8 @@ app.post('/app/api/grid', saasAuth.requireUserAuth, async (req, res) => {
         if (STABLES.has(coin)) return res.status(400).json({ok:false, error:'Stablecoin'});
         if (!VALID_TF.includes(timeframe)) timeframe = '15m';
 
-        const binance    = require('./lib/binance');
-        const indicators = require('./lib/indicators');
+        const binance    = require('../lib/binance');
+        const indicators = require('../lib/indicators');
 
         const candles = await binance.getKlineData(coin, timeframe, 100);
         if (!candles || candles.length < 50)
@@ -2066,9 +2066,9 @@ app.post('/app/api/spot', saasAuth.requireUserAuth, async (req, res) => {
         if (STABLES.has(coin)) return res.status(400).json({ok:false,error:'Stablecoin'});
         if (!VALID_TF.includes(timeframe)) timeframe='1d';
 
-        const analyzer      = require('./lib/analyzer');
-        const binance       = require('./lib/binance');
-        const confirmations = require('./lib/confirmations_lib');
+        const analyzer      = require('../lib/analyzer');
+        const binance       = require('../lib/binance');
+        const confirmations = require('../lib/confirmations_lib');
 
         const aData = await analyzer.run14FactorAnalysis(coin, timeframe);
 

@@ -201,6 +201,17 @@ a:hover { color: #33d6ff; }
   .nav-badge { margin-left: 6px; }
 }
 
+/* ── Nav overlay (dim background when menu open) ─────────── */
+#nav-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  top: 60px;
+  background: rgba(0,0,0,.55);
+  z-index: 9999;
+}
+#nav-overlay.open { display: block; }
+
 /* ── Layout ───────────────────────────────────────────────── */
 .wrap { max-width: 1340px; margin: 0 auto; padding: 28px 20px; }
 .page-title {

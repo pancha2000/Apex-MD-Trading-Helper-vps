@@ -27,6 +27,8 @@ function renderUserNav(active) {
         <a href="${l.href}" onclick="_navClose()" class="nav-link${active === l.key ? ' active' : ''}">
             ${l.label}
         </a>`).join('');
+
+    // ── Nav bar (without the dropdown links) ──────────────
     document.getElementById('nav-root').innerHTML = `
     <nav class="nav">
         <div class="nav-logo">
@@ -36,30 +38,52 @@ function renderUserNav(active) {
         <button class="nav-hamburger" id="nav-hbg" onclick="_navToggle()" aria-label="Menu">
             <span></span><span></span><span></span>
         </button>
-        <div class="nav-links" id="nav-links">
-            ${linkHtml}
-            ${user.username ? `<span style="font-size:.78rem;color:var(--text2);padding:0 5px;font-family:var(--font-mono)">👤 ${user.username}</span>` : ''}
-            <a href="/auth/logout" class="nav-btn">Logout →</a>
-        </div>
     </nav>`;
+
+    // ── Move nav-links to <body> so it escapes nav stacking context ──
+    // This is the key fix: nav has z-index:200 stacking context,
+    // so any child can never appear above other z-index elements.
+    // Moving to body makes z-index:10000 actually work.
+    let existing = document.getElementById('nav-links');
+    if (existing) existing.remove();
+
+    const drawer = document.createElement('div');
+    drawer.id = 'nav-links';
+    drawer.className = 'nav-links';
+    drawer.innerHTML = `
+        ${linkHtml}
+        ${user.username ? `<span style="font-size:.78rem;color:var(--text2);padding:0 5px;font-family:var(--font-mono)">👤 ${user.username}</span>` : ''}
+        <a href="/auth/logout" class="nav-btn">Logout →</a>
+    `;
+    document.body.appendChild(drawer);
+
+    // ── Dim overlay ───────────────────────────────────────
+    let ov = document.getElementById('nav-overlay');
+    if (!ov) {
+        ov = document.createElement('div');
+        ov.id = 'nav-overlay';
+        ov.onclick = _navClose;
+        document.body.appendChild(ov);
+    }
 }
 
 /* ── Nav Toggle ───────────────────────────────────────────── */
 function _navToggle() {
-    let ov = document.getElementById("nav-overlay");
-    if (!ov) { ov = document.createElement("div"); ov.id = "nav-overlay"; ov.style.cssText = "position:fixed;inset:0;top:60px;background:rgba(0,0,0,.6);z-index:9998;display:none"; ov.onclick = _navClose; document.body.appendChild(ov); }
     const l = document.getElementById('nav-links');
     const h = document.getElementById('nav-hbg');
-    l.classList.toggle('open');
-    const ov2 = document.getElementById("nav-overlay"); if(ov2) ov2.style.display = l.classList.contains("open") ? "block" : "none";
-    h.classList.toggle('open');
+    const ov = document.getElementById('nav-overlay');
+    if (!l) return;
+    const isOpen = l.classList.toggle('open');
+    if (h) h.classList.toggle('open', isOpen);
+    if (ov) ov.classList.toggle('open', isOpen);
 }
 function _navClose() {
-    const l = document.getElementById('nav-links');
-    const h = document.getElementById('nav-hbg');
-    if (l) l.classList.remove('open');
-    const ov3 = document.getElementById("nav-overlay"); if(ov3) ov3.style.display = "none";
-    if (h) h.classList.remove('open');
+    const l  = document.getElementById('nav-links');
+    const h  = document.getElementById('nav-hbg');
+    const ov = document.getElementById('nav-overlay');
+    if (l)  l.classList.remove('open');
+    if (h)  h.classList.remove('open');
+    if (ov) ov.classList.remove('open');
 }
 document.addEventListener('click', function(e) {
     const l = document.getElementById('nav-links');

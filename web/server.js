@@ -196,6 +196,25 @@ a:hover{color:#33d6ff;}
 .nav-logo{font-family:var(--font-head);font-weight:800;font-size:1.05rem;color:#fff;display:flex;align-items:center;gap:10px;white-space:nowrap;}
 .nav-logo-badge{font-size:.62rem;font-weight:700;background:linear-gradient(135deg,var(--accent),#7c3aed);color:#fff;padding:2px 8px;border-radius:4px;letter-spacing:.06em;font-family:var(--font-mono);}
 .nav-links{display:flex;gap:2px;margin-left:auto;align-items:center;flex-wrap:wrap;}
+.nav-hamburger{display:none;flex-direction:column;justify-content:center;gap:5px;width:38px;height:38px;padding:6px;cursor:pointer;margin-left:auto;border-radius:var(--radius-sm);border:1px solid var(--border);background:transparent;flex-shrink:0;}
+.nav-hamburger span{display:block;height:2px;width:100%;background:var(--text2);border-radius:2px;transition:all .25s;}
+.nav-hamburger.open span:nth-child(1){transform:translateY(7px) rotate(45deg);}
+.nav-hamburger.open span:nth-child(2){opacity:0;transform:scaleX(0);}
+.nav-hamburger.open span:nth-child(3){transform:translateY(-7px) rotate(-45deg);}
+@media(max-width:768px){
+  .nav-hamburger{display:flex;}
+  .nav-links{
+    display:none;position:fixed;top:60px;left:0;right:0;bottom:0;
+    flex-direction:column;align-items:stretch;gap:0;
+    background:rgba(6,13,23,.98);backdrop-filter:blur(20px);
+    border-top:1px solid var(--border);overflow-y:auto;
+    padding:8px 0 24px;z-index:199;margin-left:0;flex-wrap:nowrap;
+  }
+  .nav-links.open{display:flex;}
+  .nav-link{padding:13px 24px;border-radius:0;font-size:.95rem;border:none;border-bottom:1px solid rgba(28,51,73,.4);}
+  .nav-btn{margin:10px 16px 0;justify-content:center;padding:11px;}
+  .nav-badge{margin-left:6px;}
+}
 .nav-link{padding:6px 13px;border-radius:var(--radius-sm);font-size:.82rem;font-weight:500;color:var(--text2);transition:all .15s;white-space:nowrap;border:1px solid transparent;}
 .nav-link:hover{color:var(--text);background:var(--card);border-color:var(--border);}
 .nav-link.active{color:var(--accent);background:rgba(0,200,255,.08);border-color:rgba(0,200,255,.2);}
@@ -449,18 +468,24 @@ function _adminNav(active, pendingUpdate, scannerActive) {
     <span>⚡</span> Apex-MD
     <span class="nav-logo-badge">v${config.VERSION}</span>
   </div>
-  <div class="nav-links">
-    <a href="/admin/"         class="nav-link ${active==='home'    ?'active':''}">Dashboard</a>
-    <a href="/admin/signals"  class="nav-link ${active==='signals' ?'active':''}">Signals${sigCount?`<span id="signal-count-badge" class="nav-badge green">${sigCount}</span>`:'<span id="signal-count-badge" class="nav-badge green" style="display:none">0</span>'}</a>
-    <a href="/admin/trades"   class="nav-link ${active==='trades'  ?'active':''}">Trades</a>
-    <a href="/admin/stats"    class="nav-link ${active==='stats'   ?'active':''}">Stats</a>
-    <a href="/admin/users"    class="nav-link ${active==='users'   ?'active':''}">Users</a>
-    <a href="/admin/scanner"  class="nav-link ${active==='scanner' ?'active':''}">Scanner${scanBadge}</a>
-    <a href="/admin/settings" class="nav-link ${active==='settings'?'active':''}">Settings</a>
-    <a href="/admin/updater"  class="nav-link ${active==='updater' ?'active':''}">Updater${upBadge}</a>
+  <button class="nav-hamburger" id="nav-hbg" onclick="_navToggle()" aria-label="Menu"><span></span><span></span><span></span></button>
+  <div class="nav-links" id="nav-links">
+    <a href="/admin/"         onclick="_navClose()" class="nav-link ${active==='home'    ?'active':''}">Dashboard</a>
+    <a href="/admin/signals"  onclick="_navClose()" class="nav-link ${active==='signals' ?'active':''}">Signals${sigCount?`<span id="signal-count-badge" class="nav-badge green">${sigCount}</span>`:'<span id="signal-count-badge" class="nav-badge green" style="display:none">0</span>'}</a>
+    <a href="/admin/trades"   onclick="_navClose()" class="nav-link ${active==='trades'  ?'active':''}">Trades</a>
+    <a href="/admin/stats"    onclick="_navClose()" class="nav-link ${active==='stats'   ?'active':''}">Stats</a>
+    <a href="/admin/users"    onclick="_navClose()" class="nav-link ${active==='users'   ?'active':''}">Users</a>
+    <a href="/admin/scanner"  onclick="_navClose()" class="nav-link ${active==='scanner' ?'active':''}">Scanner${scanBadge}</a>
+    <a href="/admin/settings" onclick="_navClose()" class="nav-link ${active==='settings'?'active':''}">Settings</a>
+    <a href="/admin/updater"  onclick="_navClose()" class="nav-link ${active==='updater' ?'active':''}">Updater${upBadge}</a>
     <a href="/auth/logout"    class="nav-btn">Logout →</a>
   </div>
 </nav>`;
+<script>
+function _navToggle(){var l=document.getElementById('nav-links'),h=document.getElementById('nav-hbg');l.classList.toggle('open');h.classList.toggle('open');}
+function _navClose(){var l=document.getElementById('nav-links'),h=document.getElementById('nav-hbg');if(l)l.classList.remove('open');if(h)h.classList.remove('open');}
+document.addEventListener('click',function(e){var l=document.getElementById('nav-links'),h=document.getElementById('nav-hbg');if(l&&h&&l.classList.contains('open')&&!l.contains(e.target)&&!h.contains(e.target))_navClose();});
+</script>
 }
 
 // ─── App Nav ───────────────────────────────────────────────────────────
@@ -471,27 +496,33 @@ function _appNav(active, username) {
     <span>⚡</span> Apex-MD
     <span class="nav-logo-badge" style="background:linear-gradient(135deg,#1a3349,#254560);color:var(--text3)">PORTAL</span>
   </div>
-  <div class="nav-links">
-    <a href="/app/"          class="nav-link ${active==='home'      ?'active':''}">Dashboard</a>
-    <a href="/app/market"   class="nav-link ${active==='market'   ?'active':''}">🔍 Scan</a>
-    <a href="/app/scanner"   class="nav-link ${active==='scanner'   ?'active':''}">⚡ Scanner</a>
-    <a href="/app/paper"     class="nav-link ${active==='paper'     ?'active':''}">📄 Paper</a>
-    <a href="/app/watchlist" class="nav-link ${active==='watchlist' ?'active':''}">👁 Watch</a>
-    <a href="/app/alerts"    class="nav-link ${active==='alerts'    ?'active':''}">🔔 Alerts</a>
-    <a href="/app/news"      class="nav-link ${active==='news'      ?'active':''}">📰 Intel</a>
-    <a href="/app/calc"      class="nav-link ${active==='calc'      ?'active':''}">🧮 Calc</a>
-    <a href="/app/stats"     class="nav-link ${active==='stats'     ?'active':''}">📊 Stats</a>
-    <a href="/app/ai"        class="nav-link ${active==='ai'        ?'active':''}">🤖 AI</a>
-    <a href="/app/grid"     class="nav-link ${active==='grid'     ?'active':''}">🕸 Grid</a>
-    <a href="/app/funding"  class="nav-link ${active==='funding'  ?'active':''}">💸 Rates</a>
-    <a href="/app/tracks"   class="nav-link ${active==='tracks'   ?'active':''}">🎯 Tracks</a>
-    <a href="/app/system"  class="nav-link ${active==='system'  ?'active':''}">💻 System</a>
-    <a href="/app/trades"    class="nav-link ${active==='trades'    ?'active':''}">Trades</a>
-    <a href="/app/settings"  class="nav-link ${active==='settings'  ?'active':''}">⚙️</a>
+  <button class="nav-hamburger" id="nav-hbg" onclick="_navToggle()" aria-label="Menu"><span></span><span></span><span></span></button>
+  <div class="nav-links" id="nav-links">
+    <a href="/app/"          onclick="_navClose()" class="nav-link ${active==='home'      ?'active':''}">Dashboard</a>
+    <a href="/app/market"   onclick="_navClose()" class="nav-link ${active==='market'   ?'active':''}">🔍 Scan</a>
+    <a href="/app/scanner"   onclick="_navClose()" class="nav-link ${active==='scanner'   ?'active':''}">⚡ Scanner</a>
+    <a href="/app/paper"     onclick="_navClose()" class="nav-link ${active==='paper'     ?'active':''}">📄 Paper</a>
+    <a href="/app/watchlist" onclick="_navClose()" class="nav-link ${active==='watchlist' ?'active':''}">👁 Watch</a>
+    <a href="/app/alerts"    onclick="_navClose()" class="nav-link ${active==='alerts'    ?'active':''}">🔔 Alerts</a>
+    <a href="/app/news"      onclick="_navClose()" class="nav-link ${active==='news'      ?'active':''}">📰 Intel</a>
+    <a href="/app/calc"      onclick="_navClose()" class="nav-link ${active==='calc'      ?'active':''}">🧮 Calc</a>
+    <a href="/app/stats"     onclick="_navClose()" class="nav-link ${active==='stats'     ?'active':''}">📊 Stats</a>
+    <a href="/app/ai"        onclick="_navClose()" class="nav-link ${active==='ai'        ?'active':''}">🤖 AI</a>
+    <a href="/app/grid"     onclick="_navClose()" class="nav-link ${active==='grid'     ?'active':''}">🕸 Grid</a>
+    <a href="/app/funding"  onclick="_navClose()" class="nav-link ${active==='funding'  ?'active':''}">💸 Rates</a>
+    <a href="/app/tracks"   onclick="_navClose()" class="nav-link ${active==='tracks'   ?'active':''}">🎯 Tracks</a>
+    <a href="/app/system"  onclick="_navClose()" class="nav-link ${active==='system'  ?'active':''}">💻 System</a>
+    <a href="/app/trades"    onclick="_navClose()" class="nav-link ${active==='trades'    ?'active':''}">Trades</a>
+    <a href="/app/settings"  onclick="_navClose()" class="nav-link ${active==='settings'  ?'active':''}">⚙️</a>
     <span style="font-size:.78rem;color:var(--text2);padding:0 5px;font-family:var(--font-mono)">👤 ${username||''}</span>
     <a href="/auth/logout" class="nav-btn">Logout →</a>
   </div>
 </nav>`;
+<script>
+function _navToggle(){var l=document.getElementById('nav-links'),h=document.getElementById('nav-hbg');l.classList.toggle('open');h.classList.toggle('open');}
+function _navClose(){var l=document.getElementById('nav-links'),h=document.getElementById('nav-hbg');if(l)l.classList.remove('open');if(h)h.classList.remove('open');}
+document.addEventListener('click',function(e){var l=document.getElementById('nav-links'),h=document.getElementById('nav-hbg');if(l&&h&&l.classList.contains('open')&&!l.contains(e.target)&&!h.contains(e.target))_navClose();});
+</script>
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────

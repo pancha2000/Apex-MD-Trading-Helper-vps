@@ -46,15 +46,19 @@ function renderUserNav(active) {
 
 /* ── Nav Toggle ───────────────────────────────────────────── */
 function _navToggle() {
+    let ov = document.getElementById("nav-overlay");
+    if (!ov) { ov = document.createElement("div"); ov.id = "nav-overlay"; ov.style.cssText = "position:fixed;inset:0;top:60px;background:rgba(0,0,0,.6);z-index:9998;display:none"; ov.onclick = _navClose; document.body.appendChild(ov); }
     const l = document.getElementById('nav-links');
     const h = document.getElementById('nav-hbg');
     l.classList.toggle('open');
+    const ov2 = document.getElementById("nav-overlay"); if(ov2) ov2.style.display = l.classList.contains("open") ? "block" : "none";
     h.classList.toggle('open');
 }
 function _navClose() {
     const l = document.getElementById('nav-links');
     const h = document.getElementById('nav-hbg');
     if (l) l.classList.remove('open');
+    const ov3 = document.getElementById("nav-overlay"); if(ov3) ov3.style.display = "none";
     if (h) h.classList.remove('open');
 }
 document.addEventListener('click', function(e) {

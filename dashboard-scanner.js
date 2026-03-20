@@ -2175,7 +2175,7 @@ async function mkRun() {
         +'</div>'
         +'<div style="font-size:.68rem;color:var(--text2);margin-bottom:8px">ADX '+(s.adx?parseFloat(s.adx).toFixed(1):'—')+' · RSI '+(s.rsi?parseFloat(s.rsi).toFixed(0):'—')+(s.orderType&&s.orderType.includes('LIMIT')?' · ⏳LIMIT':' · ⚡MARKET')+'</div>'
         +(tags?'<div style="margin-bottom:10px">'+tags+'</div>':'')
-        +'<button class="btn btn-primary" style="width:100%;padding:8px;font-size:.78rem;font-weight:700" onclick="openDeep(\''+s.coin+'\')">⚡ Deep Analyse →</button>';
+        +'<a href="/app/scanner?coin='+s.coin+'" class="btn btn-primary" style="width:100%;padding:8px;font-size:.78rem;font-weight:700;text-align:center;text-decoration:none;display:block">⚡ Deep Scanner →</a>';
       grid.appendChild(card);
     });
 
@@ -2207,6 +2207,8 @@ function closeDeep() {
 document.addEventListener('DOMContentLoaded', function() {
   document.getElementById('coin-input')?.addEventListener('keydown', function(e){ if(e.key==='Enter') runLiveScan(); });
   document.getElementById('coin-input')?.addEventListener('input', function(e){ e.target.value=e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,''); });
+  // Auto-run market scan on page load
+  mkRun();
 });
 </script>`));
 });

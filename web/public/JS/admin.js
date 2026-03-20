@@ -6,9 +6,6 @@
 function renderAdminNav(active) {
     const links = [
         { href: '/admin/',         key: 'home',     label: '📊 Dashboard' },
-        { href: '/admin/signals',  key: 'signals',  label: '📡 Signals',  badge: 'sig-count' },
-        { href: '/admin/trades',   key: 'trades',   label: '⚡ Trades' },
-        { href: '/admin/stats',    key: 'stats',    label: '📈 Stats' },
         { href: '/admin/users',    key: 'users',    label: '👥 Users' },
         { href: '/admin/settings', key: 'settings', label: '⚙️ Settings' },
         { href: '/admin/updater',  key: 'updater',  label: '🔄 Updater',  badge: 'upd-badge' },
@@ -36,7 +33,6 @@ function renderAdminNav(active) {
         ${links.map(l => `
         <a href="${l.href}" onclick="_navClose()" class="nav-link${active === l.key ? ' active' : ''}">
             ${l.label}
-            ${l.badge === 'sig-count' ? '<span id="signal-count-badge" class="nav-badge green" style="display:none">0</span>' : ''}
             ${l.badge === 'upd-badge'  ? '<span id="update-badge" class="nav-badge" style="display:none">!</span>' : ''}
         </a>`).join('')}
         <a href="/auth/logout" class="nav-btn">Logout →</a>

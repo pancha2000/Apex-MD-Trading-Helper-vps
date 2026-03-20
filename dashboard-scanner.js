@@ -1522,7 +1522,7 @@ function fmtP(n,d){d=d||4;if(n==null||isNaN(Number(n)))return'—';var p=parseFl
 function sCol(s){return s>=70?'var(--green)':s>=45?'var(--yellow)':'var(--red)';}
 
 async function mkRun() {
-  var btn   = document.getElementById('mk-rescan');
+  var btn   = document.getElementById('mk-btn');
   var badge = document.getElementById('mk-badge');
   btn.disabled = true; btn.textContent = '⏳...';
   badge.textContent = 'SCANNING'; badge.style.background = 'rgba(255,171,0,.1)'; badge.style.color = 'var(--yellow)'; badge.style.borderColor = 'rgba(255,171,0,.3)';

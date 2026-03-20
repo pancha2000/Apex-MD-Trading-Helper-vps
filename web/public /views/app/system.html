@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>System · Apex-MD</title>
+<link rel="stylesheet" href="/css/main.css">
+</head>
+<body>
+<div id="nav-root"></div>
+<div class="wrap">
+  <h1 class="page-title">💻 System Status</h1>
+  <div class="g-stats" id="sys-grid"></div>
+  <div class="panel" style="margin-top:20px">
+    <div class="panel-head"><div class="panel-title">🖥️ System Details</div></div>
+    <div class="panel-body" id="sys-details"></div>
+  </div>
+</div>
+<script src="/js/user.js"></script>
+<script>
+const D = window.__DATA__ || {};
+renderUserNav('system');
+document.getElementById('sys-grid').innerHTML = [
+  { label:'Bot Uptime',   val: D.uptime||'—',       cls:'c-green' },
+  { label:'Memory Used',  val: D.usedMem+'MB',       cls: parseInt(D.memPct)>80?'c-red':parseInt(D.memPct)>60?'c-yellow':'c-cyan', sub:D.memPct+'% of '+D.totalMem+'MB' },
+  { label:'Free Memory',  val: D.freeMem+'MB',       cls:'' },
+  { label:'CPU Cores',    val: D.cpuCount||'—',      cls:'c-purple' },
+  { label:'Load Average', val: D.loadAvg||'—',       cls:'' },
+  { label:'Process PID',  val: D.pid||'—',           cls:'c-white' },
+].map(c=>`<div class="stat-card"><div class="stat-label">${c.label}</div><div class="stat-val ${c.cls}">${c.val}</div>${c.sub?`<div class="stat-sub">${c.sub}</div>`:''}</div>`).join('');
+document.getElementById('sys-details').innerHTML = [
+  ['Platform',    D.platform||'—'],
+  ['Node.js',     D.nodeVersion||'—'],
+  ['CPU Model',   D.cpuModel||'—'],
+  ['Total Memory',D.totalMem+'MB'],
+].map(([k,v])=>`<div class="stat-row"><span>${k}</span><span class="stat-row-val" style="font-size:.82rem;font-family:var(--font-mono)">${v}</span></div>`).join('');
+</script>
+</body>
+</html>

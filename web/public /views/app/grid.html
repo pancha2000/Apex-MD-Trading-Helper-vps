@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Grid Zones · Apex-MD</title>
+<link rel="stylesheet" href="/css/main.css">
+</head>
+<body>
+<div id="nav-root"></div>
+<div class="wrap" style="max-width:960px">
+  <h1 class="page-title">🕸 Grid &amp; DCA Zones <span>Sideways Market Strategy</span></h1>
+  <div class="panel" style="margin-bottom:20px">
+    <div class="panel-body">
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+        <div style="flex:1;min-width:130px"><label class="field-label">Coin Symbol</label><input type="text" id="g-coin" class="inp" placeholder="BTC, ETH, SOL..." style="font-family:var(--font-mono);font-size:1.05rem;font-weight:700;text-transform:uppercase" maxlength="12" autocomplete="off"></div>
+        <div style="min-width:120px"><label class="field-label">Timeframe</label><select id="g-tf" class="inp"><option value="5m">5m</option><option value="15m" selected>15m</option><option value="1h">1h</option><option value="4h">4h</option></select></div>
+        <button id="g-btn" class="btn btn-warn" style="padding:11px 24px" onclick="calcGrid()">🕸 Get Grid Zones</button>
+      </div>
+    </div>
+  </div>
+  <div id="g-loading" style="display:none" class="loading-center"><div class="spinner"></div><div style="margin-top:12px;color:var(--text2)">Calculating grid levels...</div></div>
+  <div id="g-error" style="display:none" class="panel"><div class="panel-body" style="color:var(--red)"></div></div>
+  <div id="g-results" style="display:none"></div>
+</div>
+<script src="/js/user.js"></script>
+<script>
+renderUserNav('grid');
+document.getElementById('g-coin').addEventListener('keydown',e=>{if(e.key==='Enter')calcGrid();});
+document.getElementById('g-coin').addEventListener('input',e=>{e.target.value=e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,'');});
+function fmtP(n){if(!n)return'—';const p=parseFloat(n);return p>=1000?'$'+p.toFixed(2):p>=1?'$'+p.toFixed(4):'$'+p.toFixed(6);}
+async function calcGrid(){
+  const coin=document.getElementById('g-coin').value.trim(), tf=document.getElementById('g-tf').value;
+  if(!coin){document.getElementById('g-coin').focus();return;}
+  document.getElementById('g-results').style.display='none';document.getElementById('g-error').style.display='none';
+  document.getElementById('g-loading').style.display='block';document.getElementById('g-btn').disabled=true;
+  try{
+    const d=await apiFetch('/app/api/grid',{method:'POST',body:JSON.stringify({coin,timeframe:tf})});
+    document.getElementById('g-loading').style.display='none';document.getElementById('g-btn').disabled=false;
+    if(!d.ok){document.getElementById('g-error').querySelector('div').textContent='❌ '+(d.error||'');document.getElementById('g-error').style.display='block';return;}
+    const r=d.result;
+    document.getElementById('g-results').style.display='block';
+    document.getElementById('g-results').innerHTML=`
+      ${r.warning?`<div style="background:rgba(255,51,85,.07);border:1px solid rgba(255,51,85,.2);border-radius:var(--radius);padding:12px 16px;margin-bottom:16px;color:var(--red);font-size:.85rem">⚠️ ${r.warning}</div>`:''}
+      <div style="background:${r.isTrending?'rgba(255,51,85,.04)':'rgba(0,230,118,.04)'};border:1px solid ${r.isTrending?'rgba(255,51,85,.2)':'rgba(0,230,118,.2)'};border-radius:var(--radius);padding:16px 20px;margin-bottom:16px">
+        <div style="font-size:.9rem;color:${r.isTrending?'var(--red)':'var(--green)'};font-weight:700">${r.isTrending?'🔥 TRENDING MARKET':'✅ SIDEWAYS MARKET'}</div>
+        <div style="font-size:.82rem;color:var(--text2);margin-top:4px">${r.advice}</div>
+      </div>
+      <div class="g-2" style="margin-bottom:16px">
+        <div class="panel"><div class="panel-body">
+          <div class="stat-row"><span>Current Price</span><span class="stat-row-val c-cyan">${fmtP(r.currentPrice)}</span></div>
+          <div class="stat-row"><span>Resistance</span><span class="stat-row-val c-red">${fmtP(r.resistance)}</span></div>
+          <div class="stat-row"><span>Support</span><span class="stat-row-val c-green">${fmtP(r.support)}</span></div>
+          <div class="stat-row"><span>Grid Step</span><span class="stat-row-val">${fmtP(r.gridStep)}</span></div>
+          <div class="stat-row"><span>ATR</span><span class="stat-row-val">${fmtP(r.atr)}</span></div>
+          <div class="stat-row"><span>ADX</span><span class="stat-row-val" style="color:${r.isTrending?'var(--red)':'var(--green)'}">${parseFloat(r.adx||0).toFixed(1)} (${r.adxStatus})</span></div>
+        </div></div>
+        <div class="panel"><div class="panel-head"><div class="panel-title">🕸 Grid Levels</div></div><div class="panel-body">
+          ${(r.gridLevels||[]).map((l,i)=>`<div class="stat-row"><span>Level ${i+1}${i===0?' (Bottom)':i===5?' (Top)':''}</span><span class="stat-row-val" style="font-family:var(--font-mono)">${fmtP(l)}</span></div>`).join('')}
+          <div style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px">
+            <div class="stat-row"><span>DCA Zone 1</span><span class="stat-row-val c-yellow">${fmtP(r.dcaZone1)}</span></div>
+            <div class="stat-row"><span>DCA Zone 2</span><span class="stat-row-val c-yellow">${fmtP(r.dcaZone2)}</span></div>
+          </div>
+        </div></div>
+      </div>`;
+  }catch(e){document.getElementById('g-loading').style.display='none';document.getElementById('g-btn').disabled=false;document.getElementById('g-error').querySelector('div').textContent='❌ '+e.message;document.getElementById('g-error').style.display='block';}
+}
+</script>
+</body>
+</html>

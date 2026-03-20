@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Alerts · Apex-MD</title>
+<link rel="stylesheet" href="/css/main.css">
+</head>
+<body>
+<div id="nav-root"></div>
+<div class="wrap">
+  <h1 class="page-title">🔔 Price Alerts</h1>
+  <div id="wa-warn"></div>
+  <div class="panel" style="margin-bottom:20px">
+    <div class="panel-head"><div class="panel-title">➕ Create Alert</div></div>
+    <div class="panel-body">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+        <div><label class="field-label">Coin</label><input type="text" id="a-coin" class="inp" placeholder="BTC, ETH..." maxlength="12" style="width:120px;font-family:var(--font-mono);text-transform:uppercase"></div>
+        <div><label class="field-label">Condition</label><select id="a-cond" class="inp" style="width:120px"><option value="above">Above ↑</option><option value="below">Below ↓</option></select></div>
+        <div><label class="field-label">Target Price</label><input type="number" id="a-price" class="inp" placeholder="0.00" step="any" style="width:150px"></div>
+        <button class="btn btn-primary" onclick="createAlert()">🔔 Create Alert</button>
+        <button class="btn btn-ghost btn-sm" onclick="clearAlerts()">🗑️ Clear All</button>
+      </div>
+      <div id="a-msg" style="margin-top:8px;font-size:.83rem"></div>
+    </div>
+  </div>
+  <div class="panel" style="margin-bottom:20px">
+    <div class="panel-head"><div class="panel-title">🔔 Active Alerts <span id="active-count"></span></div></div>
+    <div class="panel-body" style="padding:0">
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Coin</th><th>Condition</th><th>Target</th><th>Created</th><th>Action</th></tr></thead>
+        <tbody id="active-body"></tbody>
+      </table></div>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-head"><div class="panel-title">✅ Triggered Alerts</div></div>
+    <div class="panel-body" style="padding:0">
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Coin</th><th>Condition</th><th>Target Price</th></tr></thead>
+        <tbody id="triggered-body"></tbody>
+      </table></div>
+    </div>
+  </div>
+</div>
+<script src="/js/user.js"></script>
+<script>
+const D = window.__DATA__ || {};
+renderUserNav('alerts');
+if (!D.waLinked) document.getElementById('wa-warn').innerHTML = '<div style="background:rgba(255,171,0,.07);border:1px solid rgba(255,171,0,.2);border-radius:var(--radius);padding:12px 16px;margin-bottom:20px;font-size:.84rem;color:var(--yellow)">⚠️ WhatsApp not linked. <a href="/app/settings">Link →</a></div>';
+function fmtP(n){if(!n)return'—';const p=parseFloat(n);return p>=1000?'$'+p.toFixed(2):p>=1?'$'+p.toFixed(4):'$'+p.toFixed(6);}
+const active = D.activeAlerts || [];
+document.getElementById('active-count').textContent = active.length ? '('+active.length+')' : '';
+document.getElementById('active-body').innerHTML = active.length===0
+  ? '<tr><td colspan="5" class="empty-state"><div class="empty-msg">No active alerts</div></td></tr>'
+  : active.map(a=>`<tr><td><strong style="font-family:var(--font-mono)">${a.coin.replace('USDT','')}</strong></td><td><span class="pill ${a.condition==='above'?'pill-long':'pill-short'}">${a.condition==='above'?'↑ Above':'↓ Below'}</span></td><td style="font-family:var(--font-mono)">${fmtP(a.targetPrice)}</td><td style="font-size:.82rem;color:var(--text2)">${a.createdAt}</td><td><button class="btn btn-danger btn-sm" onclick="deleteAlert('${a._id}')">✕</button></td></tr>`).join('');
+const triggered = D.triggeredAlerts || [];
+document.getElementById('triggered-body').innerHTML = triggered.length===0
+  ? '<tr><td colspan="3" class="empty-state"><div class="empty-msg">No triggered alerts yet</div></td></tr>'
+  : triggered.map(a=>`<tr><td><strong style="font-family:var(--font-mono)">${a.coin.replace('USDT','')}</strong></td><td>${a.condition}</td><td style="font-family:var(--font-mono)">${fmtP(a.targetPrice)}</td></tr>`).join('');
+async function createAlert(){
+  const msg=document.getElementById('a-msg');
+  const coin=document.getElementById('a-coin').value.trim().toUpperCase();
+  const cond=document.getElementById('a-cond').value;
+  const price=parseFloat(document.getElementById('a-price').value);
+  if(!coin||!price){msg.style.color='var(--red)';msg.textContent='❌ Fill all fields';return;}
+  msg.style.color='var(--text2)';msg.textContent='⏳...';
+  const d=await apiFetch('/app/api/alerts',{method:'POST',body:JSON.stringify({coin,condition:cond,targetPrice:price})});
+  if(d.ok){showToast('✅ Alert created');setTimeout(()=>location.reload(),700);}else{msg.style.color='var(--red)';msg.textContent='❌ '+d.error;}
+}
+async function deleteAlert(id){const d=await apiFetch('/app/api/alerts/'+id,{method:'DELETE'});if(d.ok)location.reload();else showToast('❌ '+d.error,'err');}
+async function clearAlerts(){if(!confirm('Clear all alerts?'))return;const d=await apiFetch('/app/api/alerts/clear',{method:'POST',body:'{}'});if(d.ok){showToast('✅ Cleared');setTimeout(()=>location.reload(),700);}else showToast('❌ '+d.error,'err');}
+</script>
+</body>
+</html>

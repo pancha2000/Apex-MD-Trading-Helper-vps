@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AI Chat · Apex-MD</title>
+<link rel="stylesheet" href="/css/main.css">
+</head>
+<body>
+<div id="nav-root"></div>
+<div class="wrap" style="max-width:800px">
+  <h1 class="page-title">🤖 AI Trading Assistant</h1>
+  <div id="no-groq" style="display:none" class="panel" style="margin-bottom:20px">
+    <div class="panel-body" style="color:var(--yellow)">⚠️ GROQ API not configured. Add GROQ_API to config.env to enable AI chat.</div>
+  </div>
+  <div class="panel" style="margin-bottom:16px">
+    <div class="panel-body" id="chat-box" style="height:420px;overflow-y:auto;display:flex;flex-direction:column;gap:12px;font-size:.87rem">
+      <div style="background:var(--bg2);border-radius:10px;padding:12px 14px;align-self:flex-start;max-width:80%;border:1px solid var(--border)">
+        👋 Hi! I'm your AI trading assistant powered by LLaMA 3. Ask me about crypto analysis, trading strategies, or market conditions.
+      </div>
+    </div>
+  </div>
+  <div style="display:flex;gap:10px">
+    <input type="text" id="chat-inp" class="inp" placeholder="Ask about BTC, trading strategies..." style="flex:1" onkeydown="if(event.key==='Enter')sendMsg()">
+    <button class="btn btn-primary" id="send-btn" onclick="sendMsg()">Send →</button>
+  </div>
+</div>
+<script src="/js/user.js"></script>
+<script>
+const D = window.__DATA__ || {};
+renderUserNav('ai');
+if (!D.hasGroq) document.getElementById('no-groq').style.display = 'block';
+const history = [{role:'system',content:'You are an expert cryptocurrency trading analyst assistant for the Apex-MD trading bot. Be concise, practical, and data-driven. Focus on actionable trading insights.'}];
+const box = document.getElementById('chat-box');
+function addMsg(role, text) {
+  const isUser = role==='user';
+  const el=document.createElement('div');
+  el.style.cssText='background:var(--'+(isUser?'bg-active':'bg2')+');border-radius:10px;padding:12px 14px;align-self:'+(isUser?'flex-end':'flex-start')+';max-width:80%;border:1px solid var(--border);white-space:pre-wrap;line-height:1.6';
+  el.textContent = (isUser?'You: ':'')+text;
+  box.appendChild(el); box.scrollTop=box.scrollHeight;
+}
+async function sendMsg() {
+  const inp=document.getElementById('chat-inp'), btn=document.getElementById('send-btn');
+  const msg=inp.value.trim(); if(!msg)return;
+  addMsg('user',msg); history.push({role:'user',content:msg}); inp.value=''; btn.disabled=true;
+  const thinking=document.createElement('div');
+  thinking.style.cssText='background:var(--bg2);border-radius:10px;padding:12px 14px;align-self:flex-start;border:1px solid var(--border);color:var(--text2);font-size:.82rem';
+  thinking.textContent='🤖 Thinking...'; box.appendChild(thinking); box.scrollTop=box.scrollHeight;
+  try {
+    const d=await apiFetch('/app/api/ai-chat',{method:'POST',body:JSON.stringify({messages:history})});
+    thinking.remove();
+    if(d.ok){addMsg('ai',d.reply);history.push({role:'assistant',content:d.reply});}
+    else{const el=document.createElement('div');el.style.cssText='color:var(--red);padding:8px';el.textContent='❌ '+d.error;box.appendChild(el);}
+  } catch(e){thinking.remove();const el=document.createElement('div');el.style.cssText='color:var(--red);padding:8px';el.textContent='❌ Network error';box.appendChild(el);}
+  btn.disabled=false; inp.focus();
+}
+</script>
+</body>
+</html>

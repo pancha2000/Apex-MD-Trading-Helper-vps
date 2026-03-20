@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sign In · Apex-MD</title>
+<link rel="stylesheet" href="/css/main.css">
+<link rel="stylesheet" href="/css/auth.css">
+</head>
+<body>
+<div class="auth-wrap">
+  <div class="auth-box fade-up">
+    <div class="auth-logo">
+      <div class="auth-logo-icon">⚡</div>
+      <div class="auth-title">Sign In</div>
+      <div class="auth-sub">Apex-MD Trading Portal</div>
+    </div>
+    <div id="msg"></div>
+    <form method="POST" action="/auth/login">
+      <input type="hidden" id="next-input" name="next" value="">
+      <div class="field">
+        <label class="field-label">Email Address</label>
+        <input class="inp" type="email" name="email" placeholder="you@example.com" autocomplete="email" autofocus required>
+      </div>
+      <div class="field">
+        <label class="field-label">Password</label>
+        <input class="inp" type="password" name="password" placeholder="Your password" autocomplete="current-password" required>
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;font-size:.95rem;margin-top:6px">
+        Sign In →
+      </button>
+    </form>
+    <div class="auth-footer">New here? <a href="/auth/register">Create account →</a></div>
+  </div>
+</div>
+
+<script>
+const D = window.__DATA__ || {};
+if (D.registered) {
+  document.getElementById('msg').innerHTML = '<div class="auth-alert-ok">✅ Account created! Please sign in.</div>';
+}
+if (D.suspended) {
+  document.getElementById('msg').innerHTML = '<div style="background:rgba(255,171,0,.08);border:1px solid rgba(255,171,0,.25);border-radius:6px;padding:11px 14px;margin-bottom:16px;font-size:.83rem;color:var(--yellow)">⚠️ Your account has been suspended.</div>';
+}
+if (D.errMsg) {
+  document.getElementById('msg').innerHTML = '<div class="auth-alert-err">'+D.errMsg+'</div>';
+}
+if (D.nextUrl) {
+  document.getElementById('next-input').value = D.nextUrl;
+}
+</script>
+</body>
+</html>

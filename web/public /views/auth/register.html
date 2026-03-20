@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Register · Apex-MD</title>
+<link rel="stylesheet" href="/css/main.css">
+<link rel="stylesheet" href="/css/auth.css">
+</head>
+<body>
+<div class="auth-wrap">
+  <div class="auth-box fade-up">
+    <div class="auth-logo">
+      <div class="auth-logo-icon">⚡</div>
+      <div class="auth-title">Create Account</div>
+      <div class="auth-sub">Apex-MD Trading Portal</div>
+    </div>
+    <div id="msg"></div>
+    <form method="POST" action="/auth/register">
+      <div class="field">
+        <label class="field-label">Username</label>
+        <input class="inp" type="text" name="username" placeholder="e.g. trader_pancha" minlength="3" maxlength="32" autocomplete="username" required>
+      </div>
+      <div class="field">
+        <label class="field-label">Email Address</label>
+        <input class="inp" type="email" name="email" placeholder="you@example.com" autocomplete="email" required>
+      </div>
+      <div class="field">
+        <label class="field-label">Password</label>
+        <input class="inp" type="password" name="password" placeholder="Min 8 characters" minlength="8" autocomplete="new-password" required>
+      </div>
+      <div class="field">
+        <label class="field-label">Confirm Password</label>
+        <input class="inp" type="password" name="confirm" placeholder="Repeat password" autocomplete="new-password" required>
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;font-size:.95rem;margin-top:6px">
+        Create Account →
+      </button>
+    </form>
+    <div class="auth-footer">Already have an account? <a href="/auth/login">Sign in →</a></div>
+  </div>
+</div>
+
+<script>
+const D = window.__DATA__ || {};
+if (D.success) {
+  document.getElementById('msg').innerHTML = '<div class="auth-alert-ok">✅ Account created! Please sign in.</div>';
+}
+if (D.errMsg) {
+  document.getElementById('msg').innerHTML = '<div class="auth-alert-err">'+D.errMsg+'</div>';
+}
+</script>
+</body>
+</html>

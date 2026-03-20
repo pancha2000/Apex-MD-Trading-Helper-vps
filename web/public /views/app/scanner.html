@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AI Scanner · Apex-MD</title>
+<link rel="stylesheet" href="/css/main.css">
+</head>
+<body>
+<div id="nav-root"></div>
+<div class="wrap">
+  <h1 class="page-title">⚡ AI Deep Scanner</h1>
+  <div class="scan-hero" style="margin-bottom:20px">
+    <div style="flex:1">
+      <div style="font-family:var(--font-head);font-size:1.15rem;font-weight:700;color:#fff;margin-bottom:6px">Single Coin Deep Analysis</div>
+      <div style="font-size:.82rem;color:var(--text2)">70-Factor SMC · Funding · Confirmations · AI Summary</div>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+      <div><label class="field-label">Coin</label><input type="text" id="s-coin" class="inp" placeholder="BTC, ETH..." maxlength="12" style="width:130px;font-family:var(--font-mono);font-size:1.05rem;font-weight:700;text-transform:uppercase" autocomplete="off"></div>
+      <div><label class="field-label">Timeframe</label><select id="s-tf" class="inp" style="width:120px"><option value="5m">5m</option><option value="15m" selected>15m</option><option value="1h">1h</option><option value="4h">4h</option><option value="1d">1d</option></select></div>
+      <button id="scan-btn" class="btn btn-primary" style="padding:11px 24px;font-weight:700" onclick="doScan()">⚡ Analyze</button>
+    </div>
+  </div>
+  <div id="scan-loading" style="display:none" class="loading-center"><div class="spinner"></div><div style="margin-top:12px;color:var(--text2)">Deep analysis running...</div></div>
+  <div id="scan-error" style="display:none" class="panel"><div class="panel-body" style="color:var(--red)"></div></div>
+  <div id="scan-result" style="display:none"></div>
+
+  <div class="panel" style="margin-top:24px">
+    <div class="panel-head">
+      <div class="panel-title">🔍 Auto Market Scan <span style="font-size:.75rem;color:var(--text2);margin-left:8px">Top 5 setups</span></div>
+      <button class="btn btn-ghost btn-sm" onclick="loadMarketScan()">↺ Scan Now</button>
+    </div>
+    <div class="panel-body" id="market-scan-body"><div class="loading-center"><div class="spinner"></div></div></div>
+  </div>
+</div>
+
+<script src="/js/user.js"></script>
+<script>
+renderUserNav('scanner');
+document.getElementById('s-coin').addEventListener('keydown', e=>{if(e.key==='Enter')doScan();});
+document.getElementById('s-coin').addEventListener('input', e=>{e.target.value=e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,'');});
+
+function fmtP(n){if(!n||isNaN(n))return'—';const p=parseFloat(n);if(p>=1000)return'$'+p.toFixed(2);if(p>=1)return'$'+p.toFixed(4);return'$'+p.toFixed(6);}
+
+async function doScan() {
+  const coin=document.getElementById('s-coin').value.trim();
+  const tf=document.getElementById('s-tf').value;
+  if(!coin){document.getElementById('s-coin').focus();return;}
+  document.getElementById('scan-result').style.display='none';
+  document.getElementById('scan-error').style.display='none';
+  document.getElementById('scan-loading').style.display='block';
+  document.getElementById('scan-btn').disabled=true;
+  try {
+    const d=await apiFetch('/app/api/scan',{method:'POST',body:JSON.stringify({coin,timeframe:tf})});
+    document.getElementById('scan-loading').style.display='none';
+    document.getElementById('scan-btn').disabled=false;
+    if(!d.ok){document.getElementById('scan-error').querySelector('div').textContent='❌ '+(d.error||'Scan failed');document.getElementById('scan-error').style.display='block';return;}
+    renderScanResult(d.analysis);
+  } catch(e){document.getElementById('scan-loading').style.display='none';document.getElementById('scan-btn').disabled=false;document.getElementById('scan-error').querySelector('div').textContent='❌ Network error: '+e.message;document.getElementById('scan-error').style.display='block';}
+}
+
+function renderScanResult(a) {
+  const isLong=a.direction==='LONG';
+  const sc=a.score>=70?'var(--green)':a.score>=45?'var(--yellow)':'var(--red)';
+  const sent=a.sentiment||{}, conf=a.confirmation||{}, ai=a.ai||null;
+  document.getElementById('scan-result').style.display='block';
+  document.getElementById('scan-result').innerHTML = `
+    <div class="signal-card ${isLong?'long-card':'short-card'}" style="margin-bottom:16px">
+      <div style="display:flex;align-items:flex-start;gap:16px;margin-bottom:14px">
+        <div class="score-ring-lg" style="border-color:${sc};color:${sc}">${a.score}</div>
+        <div style="flex:1">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <span style="font-family:var(--font-head);font-size:1.3rem;font-weight:800;color:#fff">${a.coin}</span>
+            <span class="pill ${isLong?'pill-long':'pill-short'}">${isLong?'▲':'▼'} ${a.direction}</span>
+            <span class="pill pill-${(a.orderType||'MARKET')==='LIMIT'?'pending':'active'}" style="font-size:.65rem">${a.orderType||'MARKET'}</span>
+            <span style="font-size:.78rem;color:var(--text2);font-family:var(--font-mono)">${a.timeframe} · ${a.trend4H||'—'} 4H · ${a.trend1H||'—'} 1H</span>
+          </div>
+          <div style="font-size:.82rem;color:var(--text2);margin-top:6px;font-family:var(--font-mono)">
+            Current: <span style="color:var(--accent)">${fmtP(a.currentPrice)}</span> · Entry: <span style="color:#fff">${fmtP(a.entryPrice)}</span> · Lev: <span style="color:var(--yellow)">${a.leverage||1}x</span> · RRR: <span style="color:var(--green)">${a.rrr||'—'}:1</span>
+          </div>
+        </div>
+      </div>
+      <div class="signal-levels">
+        <div class="sig-level"><div class="sig-level-label">TP 1</div><div class="sig-level-val c-green">${fmtP(a.tp1)}</div></div>
+        <div class="sig-level"><div class="sig-level-label">TP 2</div><div class="sig-level-val c-green">${fmtP(a.tp2)}</div></div>
+        <div class="sig-level"><div class="sig-level-label">TP 3</div><div class="sig-level-val c-green">${fmtP(a.tp3)}</div></div>
+        <div class="sig-level"><div class="sig-level-label">Stop Loss</div><div class="sig-level-val c-red">${fmtP(a.sl)}</div></div>
+        <div class="sig-level"><div class="sig-level-label">DCA 1</div><div class="sig-level-val c-yellow">${fmtP(a.dca1)}</div></div>
+        <div class="sig-level"><div class="sig-level-label">DCA 2</div><div class="sig-level-val c-yellow">${fmtP(a.dca2)}</div></div>
+        <div class="sig-level"><div class="sig-level-label">Confirm</div><div class="sig-level-val" style="font-size:.72rem">${conf.strength||'—'}</div></div>
+        <div class="sig-level"><div class="sig-level-label">F&G</div><div class="sig-level-val">${sent.fng||'N/A'}</div></div>
+      </div>
+      ${a.reasons?`<div style="font-size:.75rem;color:var(--text2);margin-top:12px;line-height:1.6">${String(a.reasons).replace(/,/g,' · ')}</div>`:''}
+      ${ai?`<div style="margin-top:12px;background:rgba(0,200,255,.05);border:1px solid rgba(0,200,255,.15);border-radius:8px;padding:12px 14px"><div style="font-size:.7rem;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">🤖 AI Analysis</div><div style="font-size:.82rem;color:var(--text);line-height:1.6">${ai.summary||''}</div>${ai.confidence?`<div style="font-size:.75rem;color:var(--text2);margin-top:6px">Confidence: <strong style="color:var(--accent)">${ai.confidence}</strong> · Risk: ${ai.risk||'—'}</div>`:''}</div>`:''}
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <button class="btn btn-warn" onclick="openPaperFromScan()">📄 Open Paper Trade</button>
+    </div>`;
+  window._lastScan = a;
+}
+
+async function openPaperFromScan() {
+  if(!window._lastScan){showToast('❌ No scan result','err');return;}
+  const a=window._lastScan;
+  const d=await apiFetch('/app/api/paper/open',{method:'POST',body:JSON.stringify({coin:a.coin,direction:a.direction,entry:a.entryPrice,tp2:a.tp2,sl:a.sl,leverage:a.leverage||10})});
+  if(d.ok)showToast('✅ Paper trade opened');else showToast('❌ '+(d.error||'Failed'),'err');
+}
+
+async function loadMarketScan() {
+  const body=document.getElementById('market-scan-body');
+  body.innerHTML='<div class="loading-center"><div class="spinner"></div></div>';
+  try {
+    const d=await apiFetch('/app/api/market-scan');
+    if(!d.ok){body.innerHTML='<div style="color:var(--red);padding:20px">❌ '+(d.error||'')+'</div>';return;}
+    const setups=d.setups||[];
+    body.innerHTML = setups.length===0
+      ? '<div class="empty-state"><div class="empty-icon">🔍</div><div class="empty-msg">No high-probability setups found right now — try again soon.</div></div>'
+      : setups.map(s=>{
+          const isL=s.direction==='LONG';const sc=s.score>=70?'var(--green)':s.score>=45?'var(--yellow)':'var(--red)';
+          return `<div class="signal-card ${isL?'long-card':'short-card'}" style="margin-bottom:12px">
+            <div style="display:flex;align-items:center;gap:14px">
+              <div class="score-ring" style="border-color:${sc};color:${sc}">${s.score}</div>
+              <div style="flex:1">
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                  <strong style="font-family:var(--font-head);font-size:1rem">${s.coin}</strong>
+                  <span class="pill ${isL?'pill-long':'pill-short'}">${isL?'▲':'▼'} ${s.direction}</span>
+                  <span style="font-size:.72rem;color:var(--text2);font-family:var(--font-mono)">Lev:${s.leverage}x · RRR:${s.rrr}:1</span>
+                </div>
+                <div style="font-size:.78rem;color:var(--text2);margin-top:4px;font-family:var(--font-mono)">
+                  Entry:${fmtP(s.entryPrice)} · TP2:${fmtP(s.tp2)} · SL:${fmtP(s.sl)}
+                </div>
+              </div>
+              <button class="btn btn-ghost btn-sm" onclick="document.getElementById('s-coin').value='${s.coin}';doScan()">Deep Scan →</button>
+            </div>
+          </div>`;
+        }).join('') + `<div style="font-size:.75rem;color:var(--text2);margin-top:10px;text-align:right">Scanned ${d.scanned||0} coins</div>`;
+  } catch(e){body.innerHTML='<div style="color:var(--red);padding:20px">❌ '+e.message+'</div>';}
+}
+loadMarketScan();
+</script>
+</body>
+</html>

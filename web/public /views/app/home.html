@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dashboard · Apex-MD</title>
+<link rel="stylesheet" href="/css/main.css">
+</head>
+<body>
+<div id="nav-root"></div>
+<div class="wrap">
+  <h1 class="page-title" id="welcome-title"></h1>
+  <div id="forbidden-msg"></div>
+  <div class="g-stats" id="stats-grid"></div>
+  <div class="panel" style="margin-bottom:20px">
+    <div class="panel-head">
+      <div class="panel-title">⚡ Active Trades</div>
+      <a href="/app/trades" class="btn btn-ghost btn-sm">Full History →</a>
+    </div>
+    <div class="panel-body" style="padding:0">
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Coin</th><th>Dir</th><th>Entry</th><th>TP</th><th>SL</th><th>Lev</th><th>Status</th></tr></thead>
+          <tbody id="trades-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="g-2" style="margin-bottom:4px">
+    <a href="/app/scanner" class="panel" style="text-decoration:none;background:linear-gradient(135deg,rgba(0,200,255,.05),var(--card));display:block">
+      <div class="panel-body">
+        <div style="font-size:1.4rem;margin-bottom:8px">⚡</div>
+        <div style="font-family:var(--font-head);font-size:1rem;font-weight:700;margin-bottom:5px">AI Scanner</div>
+        <div style="font-size:.82rem;color:var(--text2);margin-bottom:14px">70-Factor · Funding · Whale Walls · AI</div>
+        <span class="btn btn-primary" style="pointer-events:none">⚡ Open Scanner →</span>
+      </div>
+    </a>
+    <a href="/app/paper" class="panel" style="text-decoration:none;background:linear-gradient(135deg,rgba(255,171,0,.04),var(--card));display:block">
+      <div class="panel-body">
+        <div style="font-size:1.4rem;margin-bottom:8px">📄</div>
+        <div style="font-family:var(--font-head);font-size:1rem;font-weight:700;margin-bottom:5px">Paper Trading</div>
+        <div style="font-size:.82rem;color:var(--text2);margin-bottom:14px">Virtual trades · Live P&L tracking</div>
+        <span class="btn btn-warn" style="pointer-events:none">📄 Paper Trades →</span>
+      </div>
+    </a>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-top:18px">
+    <a href="/app/watchlist" class="stat-card" style="text-decoration:none">
+      <div class="stat-label">👁 Watchlist</div>
+      <div id="watch-count-lbl" style="font-size:.88rem;color:var(--text);margin-top:8px"></div>
+      <div style="font-size:.72rem;color:var(--accent);margin-top:6px">Open →</div>
+    </a>
+    <a href="/app/alerts" class="stat-card" style="text-decoration:none">
+      <div class="stat-label">🔔 Alerts</div>
+      <div id="alert-count-lbl" style="font-size:.88rem;color:var(--text);margin-top:8px"></div>
+      <div style="font-size:.72rem;color:var(--accent);margin-top:6px">Open →</div>
+    </a>
+    <a href="/app/news" class="stat-card" style="text-decoration:none">
+      <div class="stat-label">📰 Market Intel</div>
+      <div style="font-size:.88rem;color:var(--text);margin-top:8px">F&G · Sentiment · News</div>
+      <div style="font-size:.72rem;color:var(--accent);margin-top:6px">Open →</div>
+    </a>
+    <a href="/app/calc" class="stat-card" style="text-decoration:none">
+      <div class="stat-label">🧮 Risk Calc</div>
+      <div style="font-size:.88rem;color:var(--text);margin-top:8px">Position sizing</div>
+      <div style="font-size:.72rem;color:var(--accent);margin-top:6px">Open →</div>
+    </a>
+  </div>
+</div>
+
+<script src="/js/user.js"></script>
+<script>
+const D = window.__DATA__ || {};
+window._apexUser = { username: D.username };
+renderUserNav('home');
+
+if (D.forbidden) {
+  document.getElementById('forbidden-msg').innerHTML = '<div style="background:rgba(255,51,85,.08);border:1px solid rgba(255,51,85,.2);border-radius:var(--radius);padding:12px 16px;margin-bottom:20px;font-size:.84rem;color:var(--red)">🚫 Admin panel requires an <strong>admin</strong> role account.</div>';
+}
+
+document.getElementById('welcome-title').innerHTML = '👋 Welcome, <span style="color:var(--accent)">' + D.username + '</span>';
+
+const s = D.stats || {};
+document.getElementById('stats-grid').innerHTML = [
+  { label:'Active Trades',  val: s.activeCount||0,   cls:'c-cyan',   sub:'Open positions' },
+  { label:'Win Rate',       val: s.winRate||'—',       cls:'c-green',  sub:(s.closedCount||0)+' closed' },
+  { label:'Paper Balance',  val: '$'+(s.paperBalance||'0.00'), cls:'c-yellow', sub:'Virtual wallet' },
+  { label:'Watchlist',      val: s.watchCount||0,     cls:'c-purple', sub:'Coins tracked' },
+  { label:'Active Alerts',  val: s.alertCount||0,     cls:'',         sub:'Price alerts' },
+  { label:'Account',        val: '<span class="pill pill-ok">active</span>', cls:'', sub: 'user' },
+].map(c => `<div class="stat-card"><div class="stat-label">${c.label}</div><div class="stat-val ${c.cls}">${c.val}</div><div class="stat-sub">${c.sub}</div></div>`).join('');
+
+document.getElementById('watch-count-lbl').textContent = 'Track '+(s.watchCount||0)+' coins';
+document.getElementById('alert-count-lbl').textContent = (s.alertCount||0)+' active alerts';
+
+const trades = D.activeTrades || [];
+document.getElementById('trades-body').innerHTML = trades.length === 0
+  ? '<tr><td colspan="7" class="empty-state"><div class="empty-icon">🛑</div><div class="empty-msg">No active trades</div></td></tr>'
+  : trades.map(t => {
+      const dir = t.direction==='LONG' ? '<span class="pill pill-long">▲ LONG</span>' : '<span class="pill pill-short">▼ SHORT</span>';
+      const st  = t.status==='pending' ? '<span class="pill pill-pending">PENDING</span>' : '<span class="pill pill-active">ACTIVE</span>';
+      return `<tr><td><strong style="font-family:var(--font-mono)">${t.coin}</strong></td><td>${dir}</td><td style="font-family:var(--font-mono)">${t.entry}</td><td style="font-family:var(--font-mono);color:var(--green)">${t.tp2}</td><td style="font-family:var(--font-mono);color:var(--red)">${t.sl}</td><td style="font-family:var(--font-mono)">${t.leverage}x</td><td>${st} <span style="color:var(--text2);font-size:.72rem;font-family:var(--font-mono)">${t.ageHrs}h</span></td></tr>`;
+    }).join('');
+</script>
+</body>
+</html>

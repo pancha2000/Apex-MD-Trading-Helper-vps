@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Settings · Apex-MD</title>
+<link rel="stylesheet" href="/css/main.css">
+</head>
+<body>
+<div id="nav-root"></div>
+<div class="wrap">
+  <h1 class="page-title">⚙️ Account Settings</h1>
+  <div id="msg-banner"></div>
+  <div class="g-2">
+    <div>
+      <div class="panel" style="margin-bottom:20px">
+        <div class="panel-head"><div class="panel-title">🗝️ Exchange API Keys</div></div>
+        <div class="panel-body">
+          <div style="font-size:.82rem;color:var(--text2);margin-bottom:14px">Keys stored encrypted (AES-256-GCM). <strong style="color:var(--yellow)">⚠️ Never share secret key.</strong></div>
+          <div id="keys-table"></div>
+          <form method="POST" action="/app/api/keys/add">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+              <div><label class="field-label">Label</label><input class="inp" type="text" name="label" placeholder="Binance Main" required maxlength="40"></div>
+              <div><label class="field-label">Exchange</label><select class="inp" name="exchange"><option value="binance">Binance</option><option value="bybit">Bybit</option></select></div>
+              <div><label class="field-label">API Key</label><input class="inp" type="text" name="apiKey" placeholder="Your API key" autocomplete="off" required></div>
+              <div><label class="field-label">Secret Key</label><input class="inp" type="password" name="secretKey" placeholder="Your secret" autocomplete="off" required></div>
+            </div>
+            <button type="submit" class="btn btn-primary">🔒 Save Key</button>
+          </form>
+        </div>
+      </div>
+      <div class="panel" style="margin-bottom:20px">
+        <div class="panel-head"><div class="panel-title">💰 Capital &amp; Paper Balance</div></div>
+        <div class="panel-body">
+          <div class="stat-row"><span>Trading Capital</span><span class="stat-row-val c-cyan" id="margin-disp"></span></div>
+          <div class="stat-row"><span>Paper Balance</span><span class="stat-row-val c-yellow" id="paper-disp"></span></div>
+          <div style="margin-top:12px;display:flex;gap:10px;align-items:flex-end">
+            <div style="flex:1"><label class="field-label">Set Capital ($)</label><input type="number" id="margin-inp" class="inp" min="1" step="1" placeholder="1000"></div>
+            <button class="btn btn-primary" onclick="setMargin()">Save</button>
+          </div>
+          <div id="margin-msg" style="margin-top:8px;font-size:.82rem"></div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="panel" id="wa-panel" style="margin-bottom:20px">
+        <div class="panel-head"><div class="panel-title">📱 WhatsApp</div></div>
+        <div class="panel-body" id="wa-body"></div>
+      </div>
+      <div class="panel" style="margin-bottom:20px">
+        <div class="panel-head"><div class="panel-title">🤖 Trading Mode</div></div>
+        <div class="panel-body">
+          <div id="mode-cards" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px"></div>
+          <div id="mode-msg" style="font-size:.82rem"></div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title">👤 Account</div></div>
+        <div class="panel-body" id="account-info"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/js/user.js"></script>
+<script>
+const D = window.__DATA__ || {};
+renderUserNav('settings');
+
+// Msg banner
+const msgs = { added:'✅ API key added.', removed:'✅ API key removed.', unlinked:'✅ WhatsApp unlinked.', invalid:'❌ Fill all fields.', exists:'❌ Label already exists.', server:'❌ Server error.' };
+if (D.msg && msgs[D.msg]) {
+  const ok = D.msg==='added'||D.msg==='removed'||D.msg==='unlinked';
+  document.getElementById('msg-banner').innerHTML = `<div style="color:var(${ok?'--green':'--red'});font-size:.82rem;margin-bottom:14px">${msgs[D.msg]}</div>`;
+}
+
+// Capital display
+document.getElementById('margin-disp').textContent = '$'+(D.margin||'0.00');
+document.getElementById('paper-disp').textContent  = '$'+(D.paperBalance||'0.00');
+
+// API keys table
+const keys = D.apiKeys || [];
+document.getElementById('keys-table').innerHTML = keys.length === 0
+  ? '<div style="text-align:center;padding:20px;color:var(--text2)"><div style="font-size:1.5rem;margin-bottom:8px">🔑</div>No API keys yet</div>'
+  : '<div class="tbl-wrap" style="margin-bottom:16px"><table><thead><tr><th>Label</th><th>Exchange</th><th>Added</th><th>Action</th></tr></thead><tbody>'+
+    keys.map(k=>`<tr><td><strong>${k.label}</strong></td><td style="text-transform:capitalize;font-size:.82rem">${k.exchange}</td><td style="font-size:.82rem;color:var(--text2)">${k.addedAt}</td><td><button class="btn btn-danger btn-sm" onclick="removeKey('${k._id}')">Remove</button></td></tr>`).join('')+
+    '</tbody></table></div>';
+
+// WhatsApp panel
+const waLinked = D.waLinked;
+document.getElementById('wa-panel').style.borderColor = waLinked ? 'rgba(0,230,118,.25)' : 'var(--border)';
+document.getElementById('wa-body').innerHTML = `
+  ${waLinked ? `<div style="background:rgba(0,230,118,.06);border:1px solid rgba(0,230,118,.2);border-radius:var(--radius);padding:12px 14px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+    <div><div style="color:var(--green);font-weight:600">✅ Connected</div>
+      <div style="color:var(--text2);font-size:.78rem">${D.waJid||''}</div>
+      <div style="color:var(--text2);font-size:.78rem">${D.waLinkedAt||''}</div></div>
+    <button class="btn btn-danger btn-sm" onclick="unlinkWa()">Unlink</button>
+  </div>` : `<div style="background:rgba(255,171,0,.06);border:1px solid rgba(255,171,0,.2);border-radius:var(--radius);padding:10px 12px;margin-bottom:12px;font-size:.82rem;color:var(--yellow)">⚠️ Not linked</div>`}
+  <div style="font-size:.8rem;color:var(--text2);margin-bottom:10px">1. Generate token → 2. Send <code style="background:var(--card2);padding:1px 5px;border-radius:3px">.link TOKEN</code> to bot</div>
+  <button class="btn btn-primary" onclick="generateToken()" id="gen-btn">⚡ Generate Token</button>
+  <div id="token-display" style="display:none;margin-top:14px">
+    <div style="font-size:.78rem;color:var(--text2);margin-bottom:6px">Token (valid 15 min):</div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <code id="token-value" style="background:var(--bg2);border:1px solid var(--accent);border-radius:7px;padding:10px 16px;font-size:1.1rem;font-weight:700;letter-spacing:.12em;color:var(--accent);font-family:var(--font-mono)"></code>
+      <button class="btn btn-ghost btn-sm" onclick="copyToken()">📋 Copy</button>
+    </div>
+    <div id="token-timer" style="font-size:.76rem;color:var(--yellow);margin-top:4px">⏳ Expires in 15:00</div>
+  </div>`;
+
+// Trading mode
+const isAuto = D.tradingMode === 'auto_trade';
+document.getElementById('mode-cards').innerHTML = [
+  { mode:'signals_only', icon:'📡', label:'Signals Only', desc:'Alerts via WhatsApp & website', active:!isAuto, cls:'var(--green)' },
+  { mode:'auto_trade',   icon:'🤖', label:'Auto Trade',   desc:'Bot executes on Binance',      active:isAuto,  cls:'var(--accent)' },
+].map(m => `<div onclick="setMode('${m.mode}')" style="cursor:pointer;border:2px solid ${m.active?m.cls:'var(--border)'};border-radius:var(--radius);padding:14px;background:${m.active?'rgba(0,200,255,.04)':'var(--bg2)'};transition:.2s">
+  <div style="font-size:1.2rem;margin-bottom:6px">${m.icon}</div>
+  <div style="font-weight:700;font-size:.88rem;color:${m.active?m.cls:'var(--text)'}">${m.label}</div>
+  <div style="font-size:.73rem;color:var(--text2);margin-top:4px">${m.desc}</div>
+  ${m.active?`<div style="margin-top:7px;font-size:.7rem;font-weight:700;color:${m.cls}">✅ ACTIVE</div>`:''}
+</div>`).join('');
+
+// Account info
+const u = D.user || {};
+document.getElementById('account-info').innerHTML = `
+  <div class="stat-row"><span>Username</span><span class="stat-row-val">${u.username||'—'}</span></div>
+  <div class="stat-row"><span>Role</span><span class="stat-row-val">${u.role||'user'}</span></div>
+  <div class="stat-row"><span>Mode</span><span class="stat-row-val">${isAuto?'<span class="pill pill-active">🤖 Auto</span>':'<span class="pill pill-ok">📡 Signals</span>'}</span></div>
+  <div class="stat-row"><span>WhatsApp</span><span class="stat-row-val">${waLinked?'<span class="pill pill-ok">linked</span>':'<span class="pill pill-susp">not linked</span>'}</span></div>`;
+
+// Actions
+async function removeKey(id) { if(!confirm('Remove this API key?'))return; const d=await apiFetch('/app/api/keys/'+id,{method:'DELETE'}); if(d.ok)location.href='/app/settings?removed=1'; else showToast('❌ '+d.error,'err'); }
+async function unlinkWa() { if(!confirm('Unlink WhatsApp?'))return; const d=await apiFetch('/app/api/link/unlink',{method:'POST',body:'{}'}); if(d.ok)location.href='/app/settings?unlinked=1'; else showToast('❌ '+d.error,'err'); }
+async function setMargin() {
+  const v=parseFloat(document.getElementById('margin-inp').value), msg=document.getElementById('margin-msg');
+  if(!v||v<1){msg.style.color='var(--red)';msg.textContent='❌ Enter valid amount';return;}
+  const d=await apiFetch('/app/api/margin',{method:'POST',body:JSON.stringify({amount:v})});
+  if(d.ok){msg.style.color='var(--green)';msg.textContent='✅ Capital set to $'+v.toFixed(2);}
+  else{msg.style.color='var(--red)';msg.textContent='❌ '+(d.error||'');}
+}
+async function setMode(mode) {
+  const msg=document.getElementById('mode-msg');
+  msg.style.color='var(--text2)';msg.textContent='⏳...';
+  const d=await apiFetch('/app/api/trading-mode',{method:'POST',body:JSON.stringify({mode})});
+  if(d.ok){msg.style.color='var(--green)';msg.textContent='✅ Mode updated';setTimeout(()=>location.reload(),900);}
+  else{msg.style.color='var(--red)';msg.textContent='❌ '+d.error;}
+}
+async function generateToken() {
+  const btn=document.getElementById('gen-btn');btn.disabled=true;btn.textContent='⏳...';
+  const d=await apiFetch('/app/api/link/generate',{method:'POST',body:'{}'});
+  if(!d.ok){showToast('❌ '+d.error,'err');btn.disabled=false;btn.textContent='⚡ Generate Token';return;}
+  document.getElementById('token-value').textContent=d.token;
+  document.getElementById('token-display').style.display='block';
+  btn.textContent='🔄 Regenerate';btn.disabled=false;
+  let secs=900;const iv=setInterval(()=>{secs--;const m=String(Math.floor(secs/60)).padStart(2,'0'),s=String(secs%60).padStart(2,'0');document.getElementById('token-timer').textContent='⏳ Expires in '+m+':'+s;if(secs<=0){clearInterval(iv);document.getElementById('token-timer').textContent='❌ Expired';document.getElementById('token-timer').style.color='var(--red)';}},1000);
+}
+function copyToken(){navigator.clipboard.writeText(document.getElementById('token-value').textContent).then(()=>{showToast('✅ Copied!')});}
+</script>
+</body>
+</html>

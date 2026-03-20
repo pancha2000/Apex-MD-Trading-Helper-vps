@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Updater · Apex-MD</title>
+<link rel="stylesheet" href="/css/main.css">
+</head>
+<body>
+<div id="nav-root"></div>
+<div class="wrap">
+  <h1 class="page-title">🔄 Auto Updater</h1>
+  <div id="pending-banner"></div>
+  <div class="g-2">
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title">🔧 Update Controls</div></div>
+      <div class="panel-body">
+        <div class="toggle-row">
+          <div class="toggle-info"><h3>Auto-Update</h3><p>Apply updates automatically on git push</p></div>
+          <label class="toggle"><input type="checkbox" id="auto-toggle" onchange="setAutoUpdate(this.checked)"><span class="slider"></span></label>
+        </div>
+        <div style="margin-top:20px;display:flex;flex-direction:column;gap:12px">
+          <button class="btn btn-primary" onclick="runUpdate()">🔄 Pull Update Now</button>
+          <code id="update-cmd" style="font-size:.72rem;color:var(--text2);background:var(--bg2);padding:8px 10px;border-radius:6px;display:block"></code>
+          <div id="webhook-status" style="font-size:.78rem"></div>
+        </div>
+        <div class="update-out" id="update-out"></div>
+        <div id="update-msg" style="margin-top:10px;font-size:.85rem"></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title">📋 Update Info</div></div>
+      <div class="panel-body">
+        <div class="stat-row"><span>Last Update</span><span class="stat-row-val" id="last-update-val" style="font-size:.82rem"></span></div>
+        <div class="stat-row"><span>Bot Version</span><span class="stat-row-val c-cyan" id="version-val"></span></div>
+        <div style="margin-top:16px">
+          <div style="font-size:.8rem;color:var(--text2);margin-bottom:8px">GitHub Webhook URL:</div>
+          <code id="webhook-url" style="font-size:.74rem;color:var(--text3);background:var(--bg2);padding:10px 12px;border-radius:6px;display:block;word-break:break-all;border:1px solid var(--border)"></code>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/js/admin.js"></script>
+<script>
+const D = window.__DATA__ || {};
+renderAdminNav('updater');
+
+document.getElementById('auto-toggle').checked = D.enabled;
+document.getElementById('last-update-val').textContent = D.lastUpdate || 'Never';
+document.getElementById('version-val').textContent = 'v' + (D.version||'?');
+document.getElementById('update-cmd').textContent = `git pull && npm install && pm2 restart ${D.pm2Name||'ApexBot'}`;
+document.getElementById('webhook-url').textContent = `http://YOUR_VPS_IP:${D.port||3000}/admin/webhook/update`;
+document.getElementById('webhook-status').innerHTML = D.webhookSecret
+  ? '<span style="color:var(--green)">✅ Webhook secret configured</span>'
+  : '<span style="color:var(--yellow)">⚠️ No GITHUB_WEBHOOK_SECRET set</span>';
+
+if (D.pending) {
+  document.getElementById('pending-banner').innerHTML = `
+    <div style="background:rgba(255,171,0,.08);border:1px solid rgba(255,171,0,.25);border-radius:var(--radius);padding:14px 18px;margin-bottom:20px;color:var(--yellow);font-size:.88rem">
+      ⚠️ <strong>New update available</strong> — auto-update is OFF. Click Pull Update to apply manually.
+    </div>`;
+}
+
+async function setAutoUpdate(val) {
+  const r = await fetch('/admin/api/autoupdate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:val})});
+  const d = await r.json();
+  const msg = document.getElementById('update-msg');
+  msg.textContent = d.ok ? '✅ Auto-update '+(val?'enabled':'disabled') : '❌ '+d.error;
+  msg.style.color = d.ok ? 'var(--green)' : 'var(--red)';
+}
+
+async function runUpdate() {
+  const msg = document.getElementById('update-msg');
+  const out = document.getElementById('update-out');
+  msg.textContent = '🔄 Running update...';
+  msg.style.color = 'var(--text2)';
+  out.style.display = 'block';
+  out.textContent = 'Running...';
+  try {
+    const d = await (await fetch('/admin/api/update',{method:'POST'})).json();
+    out.textContent = d.ok ? (d.output||'Done.') : ('Error: '+d.error+'\n'+(d.stderr||''));
+    msg.textContent = d.ok ? '✅ Update complete — bot restarting' : '❌ Update failed';
+    msg.style.color = d.ok ? 'var(--green)' : 'var(--red)';
+  } catch(e) { out.textContent = 'Network error: '+e.message; }
+}
+</script>
+</body>
+</html>

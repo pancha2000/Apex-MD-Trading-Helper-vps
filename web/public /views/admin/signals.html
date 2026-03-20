@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Signals · Apex-MD</title>
+<link rel="stylesheet" href="/css/main.css">
+</head>
+<body>
+<div id="nav-root"></div>
+<div class="wrap">
+  <h1 class="page-title">📡 Live Signals <span id="sig-count-label"></span></h1>
+  <div id="signals-wrap"></div>
+</div>
+
+<script src="/js/admin.js"></script>
+<script>
+const D = window.__DATA__ || {};
+renderAdminNav('signals');
+
+function fmtP(n) { if(!n||isNaN(n))return '—'; const p=parseFloat(n); if(p>=1000)return '$'+p.toFixed(2); if(p>=1)return '$'+p.toFixed(4); return '$'+p.toFixed(6); }
+
+function renderSignals(signals) {
+  const wrap = document.getElementById('signals-wrap');
+  document.getElementById('sig-count-label').textContent = signals.length + ' signals';
+  if (!signals.length) {
+    wrap.innerHTML = '<div class="empty-state"><div class="empty-icon">📡</div><div class="empty-msg">No signals yet — scanner will push signals here in real-time.</div></div>';
+    return;
+  }
+  wrap.innerHTML = signals.map(s => {
+    const isLong = s.direction==='LONG';
+    const sc = s.score>=70?'var(--green)':s.score>=45?'var(--yellow)':'var(--red)';
+    const age = Math.floor((Date.now()-s.ts)/60000);
+    const ageStr = age < 60 ? age+'m ago' : Math.floor(age/60)+'h ago';
+    return `<div class="signal-card ${isLong?'long-card':'short-card'}">
+      <div style="display:flex;align-items:flex-start;gap:16px;margin-bottom:12px">
+        <div class="score-ring" style="border-color:${sc};color:${sc}">${s.score}</div>
+        <div style="flex:1">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <span style="font-family:var(--font-head);font-size:1.1rem;font-weight:700;color:#fff">${s.coin}</span>
+            <span class="pill ${isLong?'pill-long':'pill-short'}">${isLong?'▲':'▼'} ${s.direction}</span>
+            <span class="pill pill-${s.orderType==='LIMIT'?'pending':'active'}" style="font-size:.65rem">${s.orderType}</span>
+            <span style="font-size:.72rem;color:var(--text2);font-family:var(--font-mono);margin-left:auto">${ageStr}</span>
+          </div>
+          <div style="font-size:.8rem;color:var(--text2);margin-top:4px;font-family:var(--font-mono)">Entry: <span style="color:var(--accent)">${fmtP(s.price)}</span> · Lev: ${s.leverage}x</div>
+        </div>
+      </div>
+      <div class="signal-levels">
+        <div class="sig-level"><div class="sig-level-label">TP 1</div><div class="sig-level-val c-green">${fmtP(s.tp1)}</div></div>
+        <div class="sig-level"><div class="sig-level-label">TP 2</div><div class="sig-level-val c-green">${fmtP(s.tp2)}</div></div>
+        <div class="sig-level"><div class="sig-level-label">TP 3</div><div class="sig-level-val c-green">${fmtP(s.tp3)}</div></div>
+        <div class="sig-level"><div class="sig-level-label">Stop Loss</div><div class="sig-level-val c-red">${fmtP(s.sl)}</div></div>
+      </div>
+      ${s.reasons ? `<div style="font-size:.75rem;color:var(--text2);margin-top:10px;line-height:1.5">${String(s.reasons).replace(/,/g,' · ')}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+let signals = D.signals || [];
+renderSignals(signals);
+
+// Live SSE updates
+const es = new EventSource('/admin/api/signals/stream');
+es.onmessage = e => {
+  try {
+    const sig = JSON.parse(e.data);
+    signals.unshift(sig);
+    renderSignals(signals);
+    showSignalToast(sig);
+  } catch(_) {}
+};
+</script>
+</body>
+</html>

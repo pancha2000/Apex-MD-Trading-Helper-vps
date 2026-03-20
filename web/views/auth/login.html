@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Login · Apex-MD</title>
+<link rel="stylesheet" href="/css/main.css">
+<link rel="stylesheet" href="/css/auth.css">
+</head>
+<body>
+<div class="auth-wrap">
+  <div class="auth-box">
+    <div class="auth-logo">
+      <div class="auth-logo-icon">⚡</div>
+      <div class="auth-title">Apex-MD</div>
+      <div class="auth-sub">Sign in to your account</div>
+    </div>
+    <div id="msg"></div>
+    <div class="field">
+      <label class="field-label">Username</label>
+      <input class="inp" id="uname" type="text" autocomplete="username" placeholder="your username">
+    </div>
+    <div class="field">
+      <label class="field-label">Password</label>
+      <input class="inp" id="pwd" type="password" autocomplete="current-password" placeholder="••••••••">
+    </div>
+    <button class="btn btn-primary" style="width:100%;justify-content:center;padding:11px" id="login-btn" onclick="doLogin()">
+      Sign In →
+    </button>
+    <div class="auth-footer">
+      No account? <a href="/auth/register">Register here</a>
+    </div>
+  </div>
+</div>
+<script>
+const params = new URLSearchParams(location.search);
+if (params.get('registered')) {
+  document.getElementById('msg').innerHTML = '<div class="auth-alert-ok">✅ Account created — please log in.</div>';
+}
+if (params.get('error')) {
+  document.getElementById('msg').innerHTML = '<div class="auth-alert-err">❌ ' + decodeURIComponent(params.get('error')) + '</div>';
+}
+
+document.getElementById('pwd').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+
+async function doLogin() {
+  const btn = document.getElementById('login-btn');
+  btn.disabled = true; btn.textContent = 'Signing in…';
+  const uname = document.getElementById('uname').value.trim();
+  const pwd   = document.getElementById('pwd').value;
+  if (!uname || !pwd) {
+    document.getElementById('msg').innerHTML = '<div class="auth-alert-err">Please fill in all fields.</div>';
+    btn.disabled = false; btn.textContent = 'Sign In →'; return;
+  }
+  try {
+    const r = await fetch('/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: uname, password: pwd })
+    });
+    const d = await r.json();
+    if (d.ok) {
+      location.href = d.redirect || '/app/';
+    } else {
+      document.getElementById('msg').innerHTML = '<div class="auth-alert-err">❌ ' + (d.error || 'Login failed') + '</div>';
+      btn.disabled = false; btn.textContent = 'Sign In →';
+    }
+  } catch(e) {
+    document.getElementById('msg').innerHTML = '<div class="auth-alert-err">❌ Network error</div>';
+    btn.disabled = false; btn.textContent = 'Sign In →';
+  }
+}
+</script>
+</body>
+</html>

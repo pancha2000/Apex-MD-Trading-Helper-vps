@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Market Intel · Apex-MD</title>
+<link rel="stylesheet" href="/css/main.css">
+</head>
+<body>
+<div id="nav-root"></div>
+<div class="wrap">
+  <h1 class="page-title">📰 Market Intelligence</h1>
+  <div class="g-2" style="margin-bottom:20px">
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title">😱 Fear &amp; Greed Index</div></div>
+      <div class="panel-body" id="fg-body"><div class="loading-center"><div class="spinner"></div></div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title">📊 Market Summary</div></div>
+      <div class="panel-body" id="sentiment-body"><div class="loading-center"><div class="spinner"></div></div></div>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-title">📰 Latest Crypto News</div>
+      <button class="btn btn-ghost btn-sm" onclick="loadIntel()">↺ Refresh</button>
+    </div>
+    <div class="panel-body" id="news-body"><div class="loading-center"><div class="spinner"></div></div></div>
+  </div>
+</div>
+<script src="/js/user.js"></script>
+<script>
+renderUserNav('news');
+async function loadIntel() {
+  try {
+    const d = await apiFetch('/app/api/market-intel');
+    if (!d.ok) { document.getElementById('news-body').innerHTML = '<div style="color:var(--red);padding:20px">❌ Failed to load</div>'; return; }
+    const fg = d.fearGreed;
+    if (fg) {
+      const v=parseInt(fg.value), col=v>=60?'var(--green)':v>=40?'var(--yellow)':'var(--red)';
+      document.getElementById('fg-body').innerHTML = `<div style="text-align:center;padding:20px"><div style="font-size:3.5rem;font-family:var(--font-mono);font-weight:800;color:${col}">${fg.value}</div><div style="font-size:1rem;font-weight:600;color:${col};margin-top:6px">${fg.value_classification}</div><div style="font-size:.78rem;color:var(--text2);margin-top:8px">Updated: ${fg.timestamp?new Date(parseInt(fg.timestamp)*1000).toLocaleDateString():'—'}</div></div>`;
+    } else { document.getElementById('fg-body').innerHTML = '<div class="empty-state"><div class="empty-msg">Fear & Greed unavailable</div></div>'; }
+    const news = d.news || [];
+    document.getElementById('news-body').innerHTML = news.length===0
+      ? '<div class="empty-state"><div class="empty-msg">No news available</div></div>'
+      : news.map(n=>`<div style="padding:14px 0;border-bottom:1px solid var(--border)"><a href="${n.url}" target="_blank" rel="noopener" style="font-size:.9rem;font-weight:600;color:var(--text);line-height:1.5">${n.title}</a><div style="font-size:.75rem;color:var(--text2);margin-top:4px">${n.source?.title||''} · ${n.published_at?new Date(n.published_at).toLocaleDateString():'—'}</div></div>`).join('');
+    document.getElementById('sentiment-body').innerHTML = `<div class="stat-row"><span>Data loaded</span><span class="stat-row-val c-green">✅</span></div><div class="stat-row"><span>News items</span><span class="stat-row-val c-cyan">${news.length}</span></div>`;
+  } catch(e) { document.getElementById('news-body').innerHTML = '<div style="color:var(--red);padding:20px">❌ '+e.message+'</div>'; }
+}
+loadIntel();
+</script>
+</body>
+</html>

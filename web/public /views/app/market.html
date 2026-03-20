@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Market Scan · Apex-MD</title>
+<link rel="stylesheet" href="/css/main.css">
+</head>
+<body>
+<div id="nav-root"></div>
+<div class="wrap">
+  <h1 class="page-title">🔍 Market Intelligence Scan</h1>
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-title">⚡ Top Market Setups</div>
+      <button class="btn btn-ghost btn-sm" onclick="loadScan()">↺ Re-scan</button>
+    </div>
+    <div class="panel-body" id="scan-body"><div class="loading-center"><div class="spinner"></div></div></div>
+  </div>
+</div>
+<script src="/js/user.js"></script>
+<script>
+renderUserNav('market');
+function fmtP(n){if(!n)return'—';const p=parseFloat(n);return p>=1000?'$'+p.toFixed(2):p>=1?'$'+p.toFixed(4):'$'+p.toFixed(6);}
+async function loadScan(){
+  document.getElementById('scan-body').innerHTML='<div class="loading-center"><div class="spinner"></div><div style="margin-top:12px;color:var(--text2)">Scanning markets...</div></div>';
+  try{
+    const d=await apiFetch('/app/api/market-scan');
+    const setups=d.setups||[];
+    document.getElementById('scan-body').innerHTML = setups.length===0
+      ? '<div class="empty-state"><div class="empty-icon">🔍</div><div class="empty-msg">No high-probability setups right now.</div></div>'
+      : setups.map(s=>{
+          const isL=s.direction==='LONG';const sc=s.score>=70?'var(--green)':s.score>=45?'var(--yellow)':'var(--red)';
+          return `<div class="signal-card ${isL?'long-card':'short-card'}" style="margin-bottom:14px">
+            <div style="display:flex;align-items:flex-start;gap:16px">
+              <div class="score-ring" style="border-color:${sc};color:${sc}">${s.score}</div>
+              <div style="flex:1">
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+                  <strong style="font-family:var(--font-head);font-size:1rem">${s.coin}</strong>
+                  <span class="pill ${isL?'pill-long':'pill-short'}">${isL?'▲':'▼'} ${s.direction}</span>
+                  <span style="font-size:.72rem;color:var(--text2);font-family:var(--font-mono)">Lev:${s.leverage}x · RRR:${s.rrr}:1</span>
+                </div>
+                <div class="signal-levels">
+                  <div class="sig-level"><div class="sig-level-label">Entry</div><div class="sig-level-val c-cyan">${fmtP(s.entryPrice)}</div></div>
+                  <div class="sig-level"><div class="sig-level-label">TP2</div><div class="sig-level-val c-green">${fmtP(s.tp2)}</div></div>
+                  <div class="sig-level"><div class="sig-level-label">TP3</div><div class="sig-level-val c-green">${fmtP(s.tp3)}</div></div>
+                  <div class="sig-level"><div class="sig-level-label">Stop Loss</div><div class="sig-level-val c-red">${fmtP(s.sl)}</div></div>
+                </div>
+                ${s.reasons?`<div style="font-size:.73rem;color:var(--text2);margin-top:8px">${String(s.reasons).replace(/,/g,' · ')}</div>`:''}
+              </div>
+            </div>
+          </div>`;
+        }).join('') + `<div style="font-size:.72rem;color:var(--text2);text-align:right;margin-top:8px">Scanned ${d.scanned||0} coins</div>`;
+  }catch(e){document.getElementById('scan-body').innerHTML='<div style="color:var(--red);padding:20px">❌ '+e.message+'</div>';}
+}
+loadScan();
+</script>
+</body>
+</html>

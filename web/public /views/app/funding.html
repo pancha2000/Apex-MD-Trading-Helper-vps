@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Funding Rates · Apex-MD</title>
+<link rel="stylesheet" href="/css/main.css">
+</head>
+<body>
+<div id="nav-root"></div>
+<div class="wrap">
+  <h1 class="page-title">💸 Funding Rates <span>Binance Perpetuals · Top 25</span></h1>
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-title">📊 Current Rates</div>
+      <button class="btn btn-ghost btn-sm" onclick="loadRates()">↺ Refresh</button>
+    </div>
+    <div class="panel-body" style="padding:0" id="rates-body"><div class="loading-center"><div class="spinner"></div></div></div>
+  </div>
+</div>
+<script src="/js/user.js"></script>
+<script>
+renderUserNav('funding');
+async function loadRates(){
+  document.getElementById('rates-body').innerHTML='<div class="loading-center"><div class="spinner"></div></div>';
+  try{
+    const d=await apiFetch('/app/api/funding');
+    if(!d.ok){document.getElementById('rates-body').innerHTML='<div style="color:var(--red);padding:20px">❌ '+(d.error||'')+'</div>';return;}
+    const rates=d.rates||[];
+    document.getElementById('rates-body').innerHTML='<div class="tbl-wrap"><table><thead><tr><th>Coin</th><th>Funding Rate</th><th>Tier</th><th>Signal</th><th>Label</th></tr></thead><tbody>'+
+    rates.map(r=>{
+      const col=Math.abs(r.rate)>=0.1?'var(--red)':Math.abs(r.rate)>=0.05?'var(--yellow)':'var(--text2)';
+      const dir=r.dir==='SHORT'?'<span class="pill pill-short">▼ SHORT bias</span>':'<span class="pill pill-long">▲ LONG bias</span>';
+      return `<tr><td><strong style="font-family:var(--font-mono)">${r.name}</strong></td><td style="font-family:var(--font-mono);font-weight:700;color:${col}">${r.rate>=0?'+':''}${r.rate}%</td><td><span class="pill ${r.tier==='extreme'?'pill-loss':r.tier==='elevated'?'pill-pending':'pill-be'}">${r.tier}</span></td><td>${dir}</td><td style="font-size:.78rem;color:var(--text2)">${r.label}</td></tr>`;
+    }).join('')+'</tbody></table></div>'
+    +'<div style="font-size:.72rem;color:var(--text2);padding:10px 16px">Updated: '+new Date(d.ts).toLocaleTimeString()+'</div>';
+  }catch(e){document.getElementById('rates-body').innerHTML='<div style="color:var(--red);padding:20px">❌ '+e.message+'</div>';}
+}
+loadRates();
+</script>
+</body>
+</html>

@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Settings · Apex-MD</title>
+<link rel="stylesheet" href="/css/main.css">
+</head>
+<body>
+<div id="nav-root"></div>
+<div class="wrap">
+  <h1 class="page-title">⚙️ Settings</h1>
+
+  <div class="pro-banner" style="margin-bottom:24px">
+    <div style="font-size:2rem">🎛️</div>
+    <div style="flex:1">
+      <div style="font-family:var(--font-head);font-size:1rem;font-weight:700;color:var(--accent)">
+        Pro Custom Mode <span class="pro-badge">PRO</span>
+      </div>
+      <div style="font-size:.8rem;color:var(--text2);margin-top:4px">Override every indicator and strategy parameter. OFF = bot uses optimal built-in defaults.</div>
+    </div>
+    <label class="toggle" style="width:50px;height:27px">
+      <input type="checkbox" id="pro-toggle" onchange="toggleProMode(this.checked)">
+      <span class="slider"></span>
+    </label>
+  </div>
+
+  <div class="g-2" style="margin-bottom:20px">
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title">🧩 Module Toggles</div></div>
+      <div class="panel-body" id="modules-panel"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title">💼 Core Trading Parameters</div></div>
+      <div class="panel-body" id="trading-panel"></div>
+    </div>
+  </div>
+
+  <div id="pro-panels">
+    <div class="g-2" style="margin-bottom:20px">
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title">📈 Trend &amp; Momentum</div><span style="font-size:.75rem;color:var(--text2)">RSI · EMA · ADX</span></div>
+        <div class="panel-body" id="indicators-panel"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title">🔮 Smart Money (SMC)</div><span style="font-size:.75rem;color:var(--text2)">OB · Sweep · FVG</span></div>
+        <div class="panel-body" id="smc-panel"></div>
+      </div>
+    </div>
+    <div class="panel" style="margin-bottom:20px">
+      <div class="panel-head"><div class="panel-title">🎯 Risk &amp; Target Parameters</div><span style="font-size:.75rem;color:var(--text2)">TP · SL · RRR</span></div>
+      <div class="panel-body">
+        <div class="g-2"><div id="targets-left"></div><div id="targets-right"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><div class="panel-title">🔔 Notifications</div></div>
+    <div class="panel-body">
+      <div class="toggle-row">
+        <div class="toggle-info"><h3>📊 Auto Daily P&amp;L Report</h3><p>Send P&amp;L summary to owner every midnight UTC</p></div>
+        <label class="toggle"><input type="checkbox" id="daily-toggle" onchange="toggleMod('DAILY_REPORT',this.checked)"><span class="slider"></span></label>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/js/admin.js"></script>
+<script>
+const D = window.__DATA__ || {};
+renderAdminNav('settings');
+
+const m   = D.modules || {};
+const t   = D.trading || {};
+const ind = D.indicatorParams || {};
+const smc = D.smcParams || {};
+const tgt = D.targetParams || {};
+const pr  = D.proMode || false;
+
+// Pro toggle
+document.getElementById('pro-toggle').checked = pr;
+if (!pr) document.getElementById('pro-panels').classList.add('pro-overlay');
+
+// Daily report toggle
+document.getElementById('daily-toggle').checked = D.dailyReportEnabled !== false;
+
+// Modules
+const mods = [
+  { id:'AI_MODEL',       label:'🤖 AI Model',       desc:'Local Python LSTM prediction server',     val:m.AI_MODEL },
+  { id:'BYBIT',          label:'🐋 Bybit Layer',     desc:'Cross-exchange OB + volume validation',   val:m.BYBIT },
+  { id:'DYNAMIC_WEIGHTS',label:'🧠 Dynamic Weights', desc:'ADX/ATR adaptive score multipliers',      val:m.DYNAMIC_WEIGHTS },
+  { id:'SMC',            label:'🔮 SMC Scoring',     desc:'ChoCH, Sweep, OB, Wyckoff, BOS, Breakers',val:m.SMC },
+];
+document.getElementById('modules-panel').innerHTML = mods.map(x => `
+<div class="toggle-row">
+  <div class="toggle-info"><h3>${x.label}</h3><p>${x.desc}</p></div>
+  <label class="toggle"><input type="checkbox" ${x.val?'checked':''} onchange="toggleMod('${x.id}',this.checked)"><span class="slider"></span></label>
+</div>`).join('');
+
+// Trading params
+const tradRows = [
+  { key:'DEFAULT_RISK_PCT',      label:'💰 Risk per Trade',  val:t.DEFAULT_RISK_PCT??2,      min:0.1, max:10,  step:0.1, unit:'%' },
+  { key:'DEFAULT_LEVERAGE',      label:'⚡ Default Leverage', val:t.DEFAULT_LEVERAGE??10,    min:1,   max:125, step:1,   unit:'x' },
+  { key:'MAX_OPEN_TRADES',       label:'📂 Max Open Trades',  val:t.MAX_OPEN_TRADES??5,      min:1,   max:20,  step:1 },
+  { key:'MIN_SCORE_THRESHOLD',   label:'📊 Min Signal Score', val:t.MIN_SCORE_THRESHOLD??20,  min:5,   max:80,  step:1,   unit:'/100' },
+  { key:'SIGNAL_COOLDOWN_HOURS', label:'⏱️ Cooldown',         val:t.SIGNAL_COOLDOWN_HOURS??4, min:0.5, max:48,  step:0.5, unit:'hr' },
+  { key:'WS_WATCH_COUNT',        label:'🪙 Watched Coins',    val:t.WS_WATCH_COUNT??30,       min:5,   max:100, step:1 },
+];
+document.getElementById('trading-panel').innerHTML = tradRows.map(r => paramRow(r.key, r.label, r.val, r.min, r.max, r.step, r.unit||'', 'setTradingParam', true)).join('');
+
+// Indicator params
+const indRows = [
+  { key:'RSI_PERIOD',  label:'RSI Period',   val:ind.RSI_PERIOD??14,  min:2,  max:50,  step:1, unit:'bars' },
+  { key:'FAST_EMA',    label:'Fast EMA',     val:ind.FAST_EMA??50,    min:2,  max:200, step:1, unit:'bars' },
+  { key:'SLOW_EMA',    label:'Slow EMA',     val:ind.SLOW_EMA??200,   min:10, max:500, step:5, unit:'bars' },
+  { key:'ADX_CHOPPY',  label:'ADX Choppy',   val:ind.ADX_CHOPPY??20,  min:5,  max:40,  step:1, hint:'ADX < this = sideways' },
+  { key:'ADX_TRENDING',label:'ADX Trending', val:ind.ADX_TRENDING??25, min:10, max:60, step:1, hint:'ADX > this = trending' },
+];
+document.getElementById('indicators-panel').innerHTML = indRows.map(r => paramRow(r.key, r.label, r.val, r.min, r.max, r.step, r.unit||'', 'setIndicatorParam', pr, r.hint||'')).join('');
+
+// SMC params
+const smcRows = [
+  { key:'OB_LOOKBACK', label:'OB Lookback', val:smc.OB_LOOKBACK??10, min:3,    max:60, step:1,    unit:'bars' },
+  { key:'FVG_MIN_PCT', label:'FVG Min Size',val:smc.FVG_MIN_PCT??0.1, min:0.01, max:2,  step:0.01, unit:'%' },
+  { key:'SWEEP_BUFFER',label:'Sweep Buffer',val:smc.SWEEP_BUFFER??0.5, min:0.1, max:5,  step:0.1,  unit:'%' },
+];
+document.getElementById('smc-panel').innerHTML = smcRows.map(r => paramRow(r.key, r.label, r.val, r.min, r.max, r.step, r.unit||'', 'setSMCParam', pr)).join('');
+
+// Target params
+const tgtRowsLeft  = [
+  { key:'TP1_MULT', label:'TP1 Multiplier', val:tgt.TP1_MULT??1.0, min:0.3, max:20,  step:0.1, unit:':1 RRR' },
+  { key:'TP2_MULT', label:'TP2 Multiplier', val:tgt.TP2_MULT??2.0, min:0.5, max:30,  step:0.1, unit:':1 RRR' },
+];
+const tgtRowsRight = [
+  { key:'TP3_MULT', label:'TP3 Multiplier', val:tgt.TP3_MULT??3.0, min:1,   max:50,  step:0.5, unit:':1 RRR' },
+  { key:'SL_BUFFER',label:'SL Buffer',      val:tgt.SL_BUFFER??0.5, min:0.1, max:5,  step:0.1, unit:'%' },
+];
+document.getElementById('targets-left').innerHTML  = tgtRowsLeft.map(r  => paramRow(r.key, r.label, r.val, r.min, r.max, r.step, r.unit||'', 'setTargetParam', pr)).join('');
+document.getElementById('targets-right').innerHTML = tgtRowsRight.map(r => paramRow(r.key, r.label, r.val, r.min, r.max, r.step, r.unit||'', 'setTargetParam', pr)).join('');
+
+function paramRow(key, label, val, min, max, step, unit, fn, enabled, hint='') {
+  return `<div class="param-row">
+    <div>
+      <div class="param-label">${label}${unit?`<span class="param-unit">${unit}</span>`:''}</div>
+      ${hint?`<div class="param-hint">${hint}</div>`:''}
+      <div class="param-key">${key}</div>
+    </div>
+    <input type="number" class="inp-num" value="${val}" min="${min}" max="${max}" step="${step}" onchange="${fn}('${key}',this.value)" ${enabled?'':'disabled'}>
+  </div>`;
+}
+
+async function apiPost(url, body) { const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); return r.json(); }
+async function toggleProMode(val)         { const d=await apiPost('/admin/api/promode',{enabled:val}); if(d.ok){showToast('🎛️ Pro Mode '+(val?'ON':'OFF')); document.getElementById('pro-panels').classList.toggle('pro-overlay',!val);}else{showToast('❌ '+d.error,'err'); document.getElementById('pro-toggle').checked=!val;} }
+async function toggleMod(id,val)          { const d=await apiPost('/admin/api/modules/'+id,{enabled:val}); showToast(d.ok?'✅ '+id+' → '+(val?'ON':'OFF'):'❌ '+d.error,d.ok?'ok':'err'); }
+async function setTradingParam(key,val)   { const d=await apiPost('/admin/api/params/'+key,{value:parseFloat(val)}); showToast(d.ok?'✅ '+key+' = '+val:'❌ '+d.error,d.ok?'ok':'err'); }
+async function setIndicatorParam(key,val) { const d=await apiPost('/admin/api/indicators/'+key,{value:parseFloat(val)}); showToast(d.ok?'📈 '+key+' = '+val:'❌ '+d.error,d.ok?'ok':'err'); }
+async function setSMCParam(key,val)       { const d=await apiPost('/admin/api/smc/'+key,{value:parseFloat(val)}); showToast(d.ok?'🔮 '+key+' = '+val:'❌ '+d.error,d.ok?'ok':'err'); }
+async function setTargetParam(key,val)    { const d=await apiPost('/admin/api/targets/'+key,{value:parseFloat(val)}); showToast(d.ok?'🎯 '+key+' = '+val:'❌ '+d.error,d.ok?'ok':'err'); }
+</script>
+</body>
+</html>

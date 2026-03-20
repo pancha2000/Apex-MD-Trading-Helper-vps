@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Paper Trading · Apex-MD</title>
+<link rel="stylesheet" href="/css/main.css">
+</head>
+<body>
+<div id="nav-root"></div>
+<div class="wrap">
+  <h1 class="page-title">📄 Paper Trading <span>Virtual trades · Zero risk · Full realism</span></h1>
+  <div id="wa-warn"></div>
+  <div class="g-stats" style="margin-bottom:22px" id="stats-grid"></div>
+
+  <div class="panel" style="margin-bottom:18px;border-color:rgba(255,171,0,.2)">
+    <div class="panel-head">
+      <div class="panel-title" style="color:var(--yellow)">📄 Open Paper Trade</div>
+      <div style="font-size:.75rem;color:var(--text2)">Manual entry</div>
+    </div>
+    <div class="panel-body">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px;margin-bottom:14px">
+        <div><label class="field-label">Coin</label><input type="text" id="pt-coin" class="inp" placeholder="BTC" style="font-family:var(--font-mono);font-weight:700;text-transform:uppercase" maxlength="10"></div>
+        <div><label class="field-label">Direction</label><select id="pt-dir" class="inp"><option value="LONG">▲ LONG</option><option value="SHORT">▼ SHORT</option></select></div>
+        <div><label class="field-label">Entry Price</label><input type="number" id="pt-entry" class="inp" placeholder="0.00" step="any"></div>
+        <div><label class="field-label">TP2 Price</label><input type="number" id="pt-tp2" class="inp" placeholder="0.00" step="any"></div>
+        <div><label class="field-label">SL Price</label><input type="number" id="pt-sl" class="inp" placeholder="0.00" step="any"></div>
+        <div><label class="field-label">Leverage</label><input type="number" id="pt-lev" class="inp" placeholder="10" value="10" min="1" max="125"></div>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <button class="btn btn-warn" onclick="openPaperTrade()">📄 Open Trade</button>
+        <button class="btn btn-ghost btn-sm" onclick="resetPaper()">↺ Reset Account</button>
+        <div id="pt-msg" style="font-size:.83rem"></div>
+      </div>
+      <div style="margin-top:12px;display:flex;gap:10px;align-items:flex-end">
+        <div><label class="field-label">Set Capital ($)</label><input type="number" id="cap-inp" class="inp" placeholder="1000" min="10" step="1" style="width:120px"></div>
+        <button class="btn btn-ghost btn-sm" onclick="setCapital()">Set</button>
+        <div id="cap-msg" style="font-size:.82rem"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-bottom:20px">
+    <div class="panel-head"><div class="panel-title">⚡ Open Positions</div></div>
+    <div class="panel-body" style="padding:0">
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Coin</th><th>Dir</th><th>Entry</th><th>TP1</th><th>TP2</th><th>SL</th><th>Lev</th><th>Status</th><th>Action</th></tr></thead>
+          <tbody id="active-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-head"><div class="panel-title">📜 Closed Paper Trades</div></div>
+    <div class="panel-body" style="padding:0">
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Coin</th><th>Dir</th><th>Entry</th><th>TP2</th><th>SL</th><th>Result</th><th>Profit</th></tr></thead>
+          <tbody id="closed-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/js/user.js"></script>
+<script>
+const D = window.__DATA__ || {};
+renderUserNav('paper');
+
+if (!D.waLinked) {
+  document.getElementById('wa-warn').innerHTML = '<div style="background:rgba(255,171,0,.07);border:1px solid rgba(255,171,0,.2);border-radius:var(--radius);padding:14px 18px;margin-bottom:20px;font-size:.85rem;color:var(--yellow)">⚠️ <strong>WhatsApp not linked.</strong> Paper balance & history is tied to your WhatsApp. <a href="/app/settings">Link →</a></div>';
+}
+
+const s = D.stats || {};
+document.getElementById('stats-grid').innerHTML = [
+  { label:'Paper Balance', val:'$'+s.balance, cls:'c-yellow', sub:'Virtual wallet' },
+  { label:'Start Balance', val:'$'+s.startBal, cls:'', sub:'Baseline' },
+  { label:'Net P&L', val:(s.pnlAmt||'')+'', cls:'', sub:s.pnlPct||'', style:'color:'+s.pnlColor },
+  { label:'Win Rate', val:s.winRate||'—', cls:'c-green', sub:s.wins+'W / '+s.losses+'L' },
+  { label:'Open Positions', val:s.openCount||0, cls:'c-cyan', sub:'Max 5' },
+].map(c => `<div class="stat-card"><div class="stat-label">${c.label}</div><div class="stat-val ${c.cls}" style="${c.style||''}">${c.val}</div><div class="stat-sub">${c.sub}</div></div>`).join('');
+
+const active = D.activePaper || [];
+document.getElementById('active-body').innerHTML = active.length === 0
+  ? '<tr><td colspan="9" class="empty-state"><div class="empty-icon">📄</div><div class="empty-msg">No open positions — open a trade above or from <a href="/app/scanner">Scanner</a></div></td></tr>'
+  : active.map(t => {
+      const dir = t.direction==='LONG'?'<span class="pill pill-long">▲ L</span>':'<span class="pill pill-short">▼ S</span>';
+      const st  = t.status==='pending'?'<span class="pill pill-pending">LIMIT</span>':'<span class="pill pill-active">LIVE</span>';
+      return `<tr><td><strong style="font-family:var(--font-mono)">${t.coin}</strong></td><td>${dir}</td><td style="font-family:var(--font-mono)">${t.entry}</td><td style="font-family:var(--font-mono);color:var(--text3)">${t.tp1}</td><td style="font-family:var(--font-mono);color:var(--green)">${t.tp2}</td><td style="font-family:var(--font-mono);color:var(--red)">${t.sl}</td><td style="font-family:var(--font-mono)">${t.leverage}x</td><td>${st} <span style="color:var(--text2);font-size:.72rem">${t.ageHrs}h</span></td><td><button class="btn btn-danger btn-sm" onclick="closeTrade('${t._id}','${t.coin}')">Close</button></td></tr>`;
+    }).join('');
+
+const closed = D.closedPaper || [];
+document.getElementById('closed-body').innerHTML = closed.length === 0
+  ? '<tr><td colspan="7" class="empty-state"><div class="empty-msg">No closed trades yet</div></td></tr>'
+  : closed.map(t => {
+      const dir    = t.direction==='LONG'?'<span class="pill pill-long">▲ L</span>':'<span class="pill pill-short">▼ S</span>';
+      const result = t.result==='WIN'?'<span class="pill pill-win">WIN</span>':t.result==='LOSS'?'<span class="pill pill-loss">LOSS</span>':'<span class="pill pill-be">B/E</span>';
+      return `<tr><td><strong style="font-family:var(--font-mono)">${t.coin}</strong></td><td>${dir}</td><td style="font-family:var(--font-mono)">${t.entry}</td><td style="font-family:var(--font-mono);color:var(--green)">${t.tp2}</td><td style="font-family:var(--font-mono);color:var(--red)">${t.sl}</td><td>${result}</td><td style="font-family:var(--font-mono);font-weight:700;color:${t.profitColor}">${t.profit}</td></tr>`;
+    }).join('');
+
+async function openPaperTrade() {
+  const msg = document.getElementById('pt-msg');
+  const coin = document.getElementById('pt-coin').value.trim().toUpperCase();
+  const dir  = document.getElementById('pt-dir').value;
+  const entry= document.getElementById('pt-entry').value;
+  const tp2  = document.getElementById('pt-tp2').value;
+  const sl   = document.getElementById('pt-sl').value;
+  const lev  = document.getElementById('pt-lev').value;
+  if (!coin||!entry||!tp2||!sl) { msg.style.color='var(--red)'; msg.textContent='❌ Fill all fields'; return; }
+  msg.style.color='var(--text2)'; msg.textContent='⏳ Opening...';
+  try {
+    const d = await apiFetch('/app/api/paper/open', {method:'POST',body:JSON.stringify({coin,direction:dir,entry:parseFloat(entry),tp2:parseFloat(tp2),sl:parseFloat(sl),leverage:parseInt(lev)})});
+    if (d.ok) { showToast('✅ Paper trade opened'); setTimeout(()=>location.reload(),800); }
+    else { msg.style.color='var(--red)'; msg.textContent='❌ '+(d.error||'Failed'); }
+  } catch(e) { msg.style.color='var(--red)'; msg.textContent='❌ Network error'; }
+}
+
+async function closeTrade(id, coin) {
+  if (!confirm('Close '+coin+' paper trade at current market price?')) return;
+  try {
+    const d = await apiFetch('/app/api/paper/close/'+id, {method:'POST',body:JSON.stringify({})});
+    showToast(d.ok ? '✅ Closed: '+(d.result||'')+(d.profit?` $${d.profit}`:'') : '❌ '+(d.error||''), d.ok?'ok':'err');
+    if (d.ok) setTimeout(()=>location.reload(),900);
+  } catch { showToast('❌ Network error','err'); }
+}
+
+async function resetPaper() {
+  if (!confirm('Reset paper account to $100?')) return;
+  try {
+    const d = await apiFetch('/app/api/paper/reset', {method:'POST',body:JSON.stringify({})});
+    if (d.ok) { showToast('✅ Reset to $100'); setTimeout(()=>location.reload(),800); }
+    else showToast('❌ '+(d.error||''),'err');
+  } catch { showToast('❌ Network error','err'); }
+}
+
+async function setCapital() {
+  const v = parseFloat(document.getElementById('cap-inp').value);
+  const msg = document.getElementById('cap-msg');
+  if (!v||v<10) { msg.style.color='var(--red)'; msg.textContent='❌ Min $10'; return; }
+  try {
+    const d = await apiFetch('/app/api/paper/set-capital', {method:'POST',body:JSON.stringify({amount:v})});
+    if (d.ok) { msg.style.color='var(--green)'; msg.textContent='✅ Set to $'+v; setTimeout(()=>location.reload(),900); }
+    else { msg.style.color='var(--red)'; msg.textContent='❌ '+(d.error||''); }
+  } catch { msg.style.color='var(--red)'; msg.textContent='❌ Network error'; }
+}
+</script>
+</body>
+</html>

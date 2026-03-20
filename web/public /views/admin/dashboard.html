@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dashboard · Apex-MD</title>
+<link rel="stylesheet" href="/css/main.css">
+</head>
+<body>
+<div id="nav-root"></div>
+<div class="wrap">
+  <h1 class="page-title">📊 Admin Dashboard <span>Live Overview</span></h1>
+  <div class="g-stats" id="stats-grid"></div>
+  <div class="panel" style="margin-bottom:20px">
+    <div class="panel-head">
+      <div class="panel-title">🔌 API Health Monitor</div>
+      <button class="btn btn-ghost btn-sm" onclick="refreshHealth()">↺ Refresh</button>
+    </div>
+    <div class="panel-body">
+      <div class="health-grid" id="health-grid"><div class="loading-center"><div class="spinner"></div></div></div>
+    </div>
+  </div>
+  <div class="panel" style="margin-bottom:20px">
+    <div class="panel-head">
+      <div class="panel-title">⚡ Active Trades</div>
+      <a href="/admin/trades" class="btn btn-ghost btn-sm">View All →</a>
+    </div>
+    <div class="panel-body" style="padding:0">
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Coin</th><th>Dir</th><th>Entry</th><th>TP2</th><th>SL</th><th>Lev</th><th>Status</th><th>Open</th></tr></thead>
+          <tbody id="trades-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-title">🖥️ Live Logs</div>
+      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('log-box').innerHTML=''">🗑️ Clear</button>
+    </div>
+    <div class="panel-body" style="padding:14px">
+      <div class="log-box" id="log-box"><div class="log-info">Connecting...</div></div>
+    </div>
+  </div>
+</div>
+
+<script src="/js/admin.js"></script>
+<script>
+const D = window.__DATA__ || {};
+renderAdminNav('home');
+
+// ── Stat cards
+document.getElementById('stats-grid').innerHTML = [
+  { label:'WhatsApp',      val: D.waConnected ? '<span class="dot dot-green pulse"></span>Online' : '<span class="dot dot-red"></span>Offline', cls: D.waConnected?'c-green':'c-red', sub:'Bot connection', id:'wa-val' },
+  { label:'Auto Scanner',  val: D.scannerActive ? '<span class="dot dot-green pulse"></span>Active' : '<span class="dot dot-grey"></span>Standby', cls: D.scannerActive?'c-green':'c-yellow', sub:'Signal engine', id:'scan-val' },
+  { label:'Active Trades', val: D.tradeCount||0, cls:'c-cyan', sub:'Open positions', id:'trade-count-val' },
+  { label:'Signals Today', val: D.signalsToday||0, cls:'c-purple', sub:'Website feed' },
+  { label:'Uptime',        val: D.uptime||'—', cls:'c-white', sub:'Since restart', id:'uptime-val' },
+  { label:'SaaS Users',    val: D.saasUserCount||0, cls:'c-purple', sub:'Accounts' },
+].map(s => `<div class="stat-card"><div class="stat-label">${s.label}</div><div class="stat-val ${s.cls}" ${s.id?`id="${s.id}"`:''}>${s.val}</div><div class="stat-sub">${s.sub}</div></div>`).join('');
+
+// ── Trades table
+const trades = D.trades || [];
+document.getElementById('trades-body').innerHTML = trades.length === 0
+  ? '<tr><td colspan="8" class="empty-state"><div class="empty-icon">🛑</div><div class="empty-msg">No active trades</div></td></tr>'
+  : trades.map(t => {
+      const dir = t.direction==='LONG' ? '<span class="pill pill-long">▲ LONG</span>' : '<span class="pill pill-short">▼ SHORT</span>';
+      const st  = t.status==='pending' ? '<span class="pill pill-pending">PENDING</span>' : '<span class="pill pill-active">ACTIVE</span>';
+      return `<tr><td><strong style="font-family:var(--font-mono)">${t.coin}</strong>${t.isPaper?' <span style="color:var(--text2);font-size:.7rem">📄</span>':''}</td><td>${dir}</td><td style="font-family:var(--font-mono)">${t.entry}</td><td style="font-family:var(--font-mono);color:var(--green)">${t.tp2}</td><td style="font-family:var(--font-mono);color:var(--red)">${t.sl}</td><td style="font-family:var(--font-mono)">${t.leverage}x</td><td>${st}</td><td style="color:var(--text2);font-family:var(--font-mono)">${t.ageHrs}h</td></tr>`;
+    }).join('');
+
+// ── Log stream
+const lb = document.getElementById('log-box');
+lb.innerHTML = '';
+let autoScroll = true;
+lb.addEventListener('scroll', () => { autoScroll = lb.scrollTop + lb.clientHeight >= lb.scrollHeight - 40; });
+const es = new EventSource('/admin/api/logs/stream');
+es.onmessage = e => {
+  const d = JSON.parse(e.data), msg = d.msg || '';
+  const el = document.createElement('div');
+  el.className = 'log-' + (msg.includes('[ERROR]')?'error':msg.includes('[WARN]')?'warn':msg.includes('[SIGNAL]')?'signal':msg.includes('[BOT]')?'bot':'info');
+  el.textContent = new Date(d.ts).toLocaleTimeString() + '  ' + msg;
+  lb.appendChild(el);
+  if (autoScroll) lb.scrollTop = lb.scrollHeight;
+};
+es.onerror = () => { const el=document.createElement('div');el.className='log-warn';el.textContent='[stream disconnected — reload page]';lb.appendChild(el); };
+
+// ── Status polling
+setInterval(async () => {
+  try {
+    const d = await (await fetch('/admin/api/status')).json();
+    const wa = document.getElementById('wa-val');
+    if (wa) { wa.className='stat-val '+(d.waConnected?'c-green':'c-red'); wa.innerHTML=d.waConnected?'<span class="dot dot-green pulse"></span>Online':'<span class="dot dot-red"></span>Offline'; }
+    const sc = document.getElementById('scan-val');
+    if (sc) { sc.className='stat-val '+(d.scannerActive?'c-green':'c-yellow'); sc.innerHTML=d.scannerActive?'<span class="dot dot-green pulse"></span>Active':'<span class="dot dot-grey"></span>Standby'; }
+    const tc = document.getElementById('trade-count-val'); if (tc) tc.textContent = d.tradeCount;
+    const uv = document.getElementById('uptime-val'); if (uv) uv.textContent = d.uptime;
+  } catch(_) {}
+}, 10000);
+
+async function refreshHealth() {
+  const g = document.getElementById('health-grid');
+  g.innerHTML = '<div class="loading-center"><div class="spinner"></div></div>';
+  try {
+    const h = await (await fetch('/admin/api/health')).json();
+    g.innerHTML = '<div class="health-grid">' + Object.values(h).map(s => {
+      const cls  = s.missing ? 'dot-yellow' : (s.ok ? 'dot-green' : 'dot-red');
+      const text = s.missing ? '⚠️ Not configured' : (s.ok ? '✅ Online' : (s.warn ? '⚠️ Warning' : '❌ Offline'));
+      const col  = s.ok&&!s.missing ? 'var(--green)' : s.missing ? 'var(--yellow)' : 'var(--red)';
+      return `<div class="health-card"><div class="health-label"><span class="dot ${cls}"></span>${s.label}</div><div class="health-status" style="color:${col}">${text}</div></div>`;
+    }).join('') + '</div>';
+  } catch { g.innerHTML = '<div style="color:var(--red);padding:20px">❌ Health check failed</div>'; }
+}
+refreshHealth();
+</script>
+</body>
+</html>

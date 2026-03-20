@@ -3,23 +3,80 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Dashboard · Apex-MD</title>
+<title>Dashboard · Apex-MD Admin</title>
 <link rel="stylesheet" href="/css/main.css">
 </head>
 <body>
 <div id="nav-root"></div>
 <div class="wrap">
-  <h1 class="page-title">📊 Admin Dashboard <span>Live Overview</span></h1>
+
+  <h1 class="page-title">📊 Admin Dashboard</h1>
+
+  <!-- ── Stat Cards ── -->
   <div class="g-stats" id="stats-grid"></div>
+
+  <!-- ── Bot Controls + Scanner ── -->
+  <div class="g-2" style="margin-bottom:20px">
+
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-title">🤖 Bot Controls</div>
+        <span id="wa-status-pill"></span>
+      </div>
+      <div class="panel-body" style="display:flex;flex-direction:column;gap:12px">
+        <button class="btn btn-primary" onclick="botAction('restart')" id="btn-restart">
+          🔄 Restart Bot
+        </button>
+        <button class="btn btn-danger" onclick="botAction('stop')" id="btn-stop"
+          style="background:rgba(255,51,85,.12);border-color:rgba(255,51,85,.35);color:var(--red)">
+          ⛔ Stop Bot
+        </button>
+        <div id="bot-msg" style="font-size:.84rem;min-height:20px"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-title">⚡ Auto Scanner</div>
+        <span id="scanner-pill"></span>
+      </div>
+      <div class="panel-body" style="display:flex;flex-direction:column;gap:12px">
+        <button class="btn btn-success" id="btn-scan-start" onclick="scannerAction('start')">
+          ▶ Start Scanner
+        </button>
+        <button class="btn" id="btn-scan-stop" onclick="scannerAction('stop')"
+          style="background:rgba(255,171,0,.1);border-color:rgba(255,171,0,.3);color:var(--yellow)">
+          ⏹ Stop Scanner
+        </button>
+        <div id="scanner-msg" style="font-size:.84rem;min-height:20px"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── System Info ── -->
   <div class="panel" style="margin-bottom:20px">
     <div class="panel-head">
-      <div class="panel-title">🔌 API Health Monitor</div>
-      <button class="btn btn-ghost btn-sm" onclick="refreshHealth()">↺ Refresh</button>
+      <div class="panel-title">🖥️ System Info</div>
+      <button class="btn btn-ghost btn-sm" onclick="loadSystem()">↺ Refresh</button>
     </div>
-    <div class="panel-body">
-      <div class="health-grid" id="health-grid"><div class="loading-center"><div class="spinner"></div></div></div>
+    <div class="panel-body" id="system-panel">
+      <div class="loading-center"><div class="spinner"></div></div>
     </div>
   </div>
+
+  <!-- ── API Health ── -->
+  <div class="panel" style="margin-bottom:20px">
+    <div class="panel-head">
+      <div class="panel-title">🔌 API Health</div>
+      <button class="btn btn-ghost btn-sm" onclick="loadHealth()">↺ Refresh</button>
+    </div>
+    <div class="panel-body">
+      <div id="health-grid"><div class="loading-center"><div class="spinner"></div></div></div>
+    </div>
+  </div>
+
+  <!-- ── Active Trades ── -->
   <div class="panel" style="margin-bottom:20px">
     <div class="panel-head">
       <div class="panel-title">⚡ Active Trades</div>
@@ -28,12 +85,14 @@
     <div class="panel-body" style="padding:0">
       <div class="tbl-wrap">
         <table>
-          <thead><tr><th>Coin</th><th>Dir</th><th>Entry</th><th>TP2</th><th>SL</th><th>Lev</th><th>Status</th><th>Open</th></tr></thead>
+          <thead><tr><th>Coin</th><th>Dir</th><th>Entry</th><th>TP2</th><th>SL</th><th>Lev</th><th>Status</th><th>Age</th></tr></thead>
           <tbody id="trades-body"></tbody>
         </table>
       </div>
     </div>
   </div>
+
+  <!-- ── Live Logs ── -->
   <div class="panel">
     <div class="panel-head">
       <div class="panel-title">🖥️ Live Logs</div>
@@ -43,6 +102,7 @@
       <div class="log-box" id="log-box"><div class="log-info">Connecting...</div></div>
     </div>
   </div>
+
 </div>
 
 <script src="/js/admin.js"></script>
@@ -50,17 +110,134 @@
 const D = window.__DATA__ || {};
 renderAdminNav('home');
 
-// ── Stat cards
+// ── Stat cards ──────────────────────────────────────────────
 document.getElementById('stats-grid').innerHTML = [
   { label:'WhatsApp',      val: D.waConnected ? '<span class="dot dot-green pulse"></span>Online' : '<span class="dot dot-red"></span>Offline', cls: D.waConnected?'c-green':'c-red', sub:'Bot connection', id:'wa-val' },
   { label:'Auto Scanner',  val: D.scannerActive ? '<span class="dot dot-green pulse"></span>Active' : '<span class="dot dot-grey"></span>Standby', cls: D.scannerActive?'c-green':'c-yellow', sub:'Signal engine', id:'scan-val' },
-  { label:'Active Trades', val: D.tradeCount||0, cls:'c-cyan', sub:'Open positions', id:'trade-count-val' },
+  { label:'Active Trades', val: D.tradeCount||0, cls:'c-cyan',   sub:'Open positions', id:'trade-count-val' },
   { label:'Signals Today', val: D.signalsToday||0, cls:'c-purple', sub:'Website feed' },
-  { label:'Uptime',        val: D.uptime||'—', cls:'c-white', sub:'Since restart', id:'uptime-val' },
+  { label:'Uptime',        val: D.uptime||'—',   cls:'c-white',  sub:'Since restart', id:'uptime-val' },
   { label:'SaaS Users',    val: D.saasUserCount||0, cls:'c-purple', sub:'Accounts' },
 ].map(s => `<div class="stat-card"><div class="stat-label">${s.label}</div><div class="stat-val ${s.cls}" ${s.id?`id="${s.id}"`:''}>${s.val}</div><div class="stat-sub">${s.sub}</div></div>`).join('');
 
-// ── Trades table
+// ── WA status pill ──────────────────────────────────────────
+function updateWaPill(online) {
+  const el = document.getElementById('wa-status-pill');
+  if (el) el.innerHTML = online
+    ? '<span class="pill pill-ok" style="font-size:.7rem">● Online</span>'
+    : '<span class="pill pill-susp" style="font-size:.7rem">● Offline</span>';
+}
+updateWaPill(D.waConnected);
+
+// ── Scanner pill ────────────────────────────────────────────
+function updateScannerPill(active) {
+  const el = document.getElementById('scanner-pill');
+  if (el) el.innerHTML = active
+    ? '<span class="pill pill-ok" style="font-size:.7rem">● Active</span>'
+    : '<span class="pill pill-pending" style="font-size:.7rem">● Standby</span>';
+}
+updateScannerPill(D.scannerActive);
+
+// ── Bot action ──────────────────────────────────────────────
+async function botAction(action) {
+  const msg = document.getElementById('bot-msg');
+  if (action === 'stop' && !confirm('⛔ Stop the bot? It will go offline until manually restarted.')) return;
+  if (action === 'restart' && !confirm('🔄 Restart the bot?')) return;
+  msg.textContent = action === 'restart' ? '🔄 Restarting...' : '⛔ Stopping...';
+  msg.style.color = 'var(--text2)';
+  document.getElementById('btn-restart').disabled = true;
+  document.getElementById('btn-stop').disabled = true;
+  try {
+    const d = await (await fetch('/admin/api/bot/' + action, { method: 'POST' })).json();
+    msg.textContent = d.ok ? (action === 'restart' ? '✅ Restarting — page will reload in 5s' : '⛔ Bot stopped') : '❌ ' + d.error;
+    msg.style.color = d.ok ? 'var(--green)' : 'var(--red)';
+    if (d.ok && action === 'restart') setTimeout(() => location.reload(), 5000);
+  } catch(e) {
+    msg.textContent = '❌ Network error';
+    msg.style.color = 'var(--red)';
+    document.getElementById('btn-restart').disabled = false;
+    document.getElementById('btn-stop').disabled = false;
+  }
+}
+
+// ── Scanner action ──────────────────────────────────────────
+async function scannerAction(action) {
+  const msg = document.getElementById('scanner-msg');
+  msg.textContent = action === 'start' ? '🔄 Starting...' : '🔄 Stopping...';
+  msg.style.color = 'var(--text2)';
+  try {
+    const d = await (await fetch('/admin/api/scanner/' + action, { method: 'POST', headers: { 'Content-Type': 'application/json' } })).json();
+    const active = action === 'start' && d.ok;
+    msg.textContent = d.ok ? (action === 'start' ? '✅ Scanner started' : '✅ Scanner stopped') : '❌ ' + d.error;
+    msg.style.color = d.ok ? 'var(--green)' : 'var(--red)';
+    updateScannerPill(active);
+    const sv = document.getElementById('scan-val');
+    if (sv) { sv.className = 'stat-val ' + (active ? 'c-green' : 'c-yellow'); sv.innerHTML = active ? '<span class="dot dot-green pulse"></span>Active' : '<span class="dot dot-grey"></span>Standby'; }
+  } catch(e) {
+    msg.textContent = '❌ Network error';
+    msg.style.color = 'var(--red)';
+  }
+}
+
+// ── System info ─────────────────────────────────────────────
+async function loadSystem() {
+  const p = document.getElementById('system-panel');
+  p.innerHTML = '<div class="loading-center"><div class="spinner"></div></div>';
+  try {
+    const d = await (await fetch('/admin/api/system')).json();
+    const memPct  = d.mem?.pct || 0;
+    const cpuPct  = d.cpu?.pct || 0;
+    const diskPct = d.disk?.pct || 0;
+    const bar = (pct, col) => `<div style="background:var(--bg2);border-radius:99px;height:7px;margin-top:6px;overflow:hidden"><div style="width:${pct}%;height:100%;background:${col};border-radius:99px;transition:.4s"></div></div>`;
+    const fmtMem = b => (b / 1024 / 1024 / 1024).toFixed(1) + 'GB';
+    const uptimeFmt = s => { const h=Math.floor(s/3600),m=Math.floor((s%3600)/60); return h+'h '+m+'m'; };
+    p.innerHTML = `
+      <div class="g-3" style="gap:16px">
+        <div class="stat-card">
+          <div class="stat-label">🧠 RAM</div>
+          <div class="stat-val c-cyan" style="font-size:1.4rem">${memPct}%</div>
+          <div class="stat-sub">${fmtMem(d.mem?.used||0)} / ${fmtMem(d.mem?.total||0)}</div>
+          ${bar(memPct, memPct>85?'var(--red)':memPct>65?'var(--yellow)':'var(--cyan)')}
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">⚡ CPU</div>
+          <div class="stat-val c-yellow" style="font-size:1.4rem">${cpuPct}%</div>
+          <div class="stat-sub">${d.cpu?.cores||1} cores</div>
+          ${bar(cpuPct, cpuPct>85?'var(--red)':cpuPct>65?'var(--yellow)':'var(--green)')}
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">💾 Disk</div>
+          <div class="stat-val c-purple" style="font-size:1.4rem">${diskPct}%</div>
+          <div class="stat-sub">${d.disk?.used||'—'} / ${d.disk?.total||'—'}</div>
+          ${bar(diskPct, diskPct>85?'var(--red)':diskPct>65?'var(--yellow)':'var(--purple)')}
+        </div>
+      </div>
+      <div class="stat-row" style="margin-top:14px"><span>🕒 Process Uptime</span><span class="stat-row-val c-cyan">${uptimeFmt(d.uptime||0)}</span></div>
+      <div class="stat-row"><span>🖥️ CPU Model</span><span class="stat-row-val" style="font-size:.78rem;color:var(--text2)">${d.cpu?.model||'—'}</span></div>
+    `;
+  } catch(e) {
+    p.innerHTML = '<div style="color:var(--red);padding:20px">❌ Failed to load system info</div>';
+  }
+}
+loadSystem();
+
+// ── API Health ──────────────────────────────────────────────
+async function loadHealth() {
+  const g = document.getElementById('health-grid');
+  g.innerHTML = '<div class="loading-center"><div class="spinner"></div></div>';
+  try {
+    const h = await (await fetch('/admin/api/health')).json();
+    g.innerHTML = '<div class="health-grid">' + Object.values(h).map(s => {
+      const cls  = s.missing ? 'dot-yellow' : (s.ok ? 'dot-green' : 'dot-red');
+      const text = s.missing ? '⚠️ Not configured' : (s.ok ? '✅ Online' : (s.warn ? '⚠️ Warning' : '❌ Offline'));
+      const col  = s.ok && !s.missing ? 'var(--green)' : s.missing ? 'var(--yellow)' : 'var(--red)';
+      return `<div class="health-card"><div class="health-label"><span class="dot ${cls}"></span>${s.label}</div><div class="health-status" style="color:${col}">${text}</div></div>`;
+    }).join('') + '</div>';
+  } catch { g.innerHTML = '<div style="color:var(--red);padding:20px">❌ Health check failed</div>'; }
+}
+loadHealth();
+
+// ── Trades table ────────────────────────────────────────────
 const trades = D.trades || [];
 document.getElementById('trades-body').innerHTML = trades.length === 0
   ? '<tr><td colspan="8" class="empty-state"><div class="empty-icon">🛑</div><div class="empty-msg">No active trades</div></td></tr>'
@@ -70,7 +247,7 @@ document.getElementById('trades-body').innerHTML = trades.length === 0
       return `<tr><td><strong style="font-family:var(--font-mono)">${t.coin}</strong>${t.isPaper?' <span style="color:var(--text2);font-size:.7rem">📄</span>':''}</td><td>${dir}</td><td style="font-family:var(--font-mono)">${t.entry}</td><td style="font-family:var(--font-mono);color:var(--green)">${t.tp2}</td><td style="font-family:var(--font-mono);color:var(--red)">${t.sl}</td><td style="font-family:var(--font-mono)">${t.leverage}x</td><td>${st}</td><td style="color:var(--text2);font-family:var(--font-mono)">${t.ageHrs}h</td></tr>`;
     }).join('');
 
-// ── Log stream
+// ── Live Logs ────────────────────────────────────────────────
 const lb = document.getElementById('log-box');
 lb.innerHTML = '';
 let autoScroll = true;
@@ -86,7 +263,7 @@ es.onmessage = e => {
 };
 es.onerror = () => { const el=document.createElement('div');el.className='log-warn';el.textContent='[stream disconnected — reload page]';lb.appendChild(el); };
 
-// ── Status polling
+// ── Status polling ───────────────────────────────────────────
 setInterval(async () => {
   try {
     const d = await (await fetch('/admin/api/status')).json();
@@ -95,24 +272,11 @@ setInterval(async () => {
     const sc = document.getElementById('scan-val');
     if (sc) { sc.className='stat-val '+(d.scannerActive?'c-green':'c-yellow'); sc.innerHTML=d.scannerActive?'<span class="dot dot-green pulse"></span>Active':'<span class="dot dot-grey"></span>Standby'; }
     const tc = document.getElementById('trade-count-val'); if (tc) tc.textContent = d.tradeCount;
-    const uv = document.getElementById('uptime-val'); if (uv) uv.textContent = d.uptime;
+    const uv = document.getElementById('uptime-val');      if (uv) uv.textContent = d.uptime;
+    updateWaPill(d.waConnected);
+    updateScannerPill(d.scannerActive);
   } catch(_) {}
 }, 10000);
-
-async function refreshHealth() {
-  const g = document.getElementById('health-grid');
-  g.innerHTML = '<div class="loading-center"><div class="spinner"></div></div>';
-  try {
-    const h = await (await fetch('/admin/api/health')).json();
-    g.innerHTML = '<div class="health-grid">' + Object.values(h).map(s => {
-      const cls  = s.missing ? 'dot-yellow' : (s.ok ? 'dot-green' : 'dot-red');
-      const text = s.missing ? '⚠️ Not configured' : (s.ok ? '✅ Online' : (s.warn ? '⚠️ Warning' : '❌ Offline'));
-      const col  = s.ok&&!s.missing ? 'var(--green)' : s.missing ? 'var(--yellow)' : 'var(--red)';
-      return `<div class="health-card"><div class="health-label"><span class="dot ${cls}"></span>${s.label}</div><div class="health-status" style="color:${col}">${text}</div></div>`;
-    }).join('') + '</div>';
-  } catch { g.innerHTML = '<div style="color:var(--red);padding:20px">❌ Health check failed</div>'; }
-}
-refreshHealth();
 </script>
 </body>
 </html>

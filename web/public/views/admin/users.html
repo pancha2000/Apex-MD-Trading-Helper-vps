@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Users · Apex-MD</title>
+<title>Users · Apex-MD Admin</title>
 <link rel="stylesheet" href="/css/main.css">
 </head>
 <body>
 <div id="nav-root"></div>
 <div class="wrap">
-  <h1 class="page-title">👥 SaaS Users <span id="user-count"></span></h1>
+  <h1 class="page-title">👥 SaaS Users <span id="user-count" style="font-size:.9rem;color:var(--text2);font-weight:400"></span></h1>
   <div class="panel">
     <div class="panel-head">
       <div class="panel-title">All Platform Users</div>
@@ -18,48 +18,39 @@
     <div class="panel-body" style="padding:0">
       <div class="tbl-wrap">
         <table>
-          <thead><tr><th>Username</th><th>Email</th><th>Role</th><th>Status</th><th>Joined</th><th>Last Login</th><th>Action</th></tr></thead>
+          <thead><tr><th>Username</th><th>Email</th><th>Role</th><th>Status</th><th>Joined</th><th>Last Login</th><th>Actions</th></tr></thead>
           <tbody id="users-body"></tbody>
         </table>
       </div>
     </div>
   </div>
 </div>
-
 <script src="/js/admin.js"></script>
 <script>
 const D = window.__DATA__ || {};
 renderAdminNav('users');
-
 document.getElementById('user-count').textContent = (D.totalUsers||0) + ' total';
-
 const users = D.users || [];
 document.getElementById('users-body').innerHTML = users.length === 0
   ? '<tr><td colspan="7" class="empty-state"><div class="empty-msg">No users yet</div></td></tr>'
   : users.map(u => {
-      const rolePill   = u.role==='admin' ? '<span class="pill pill-admin">admin</span>' : '<span class="pill pill-user">user</span>';
-      const statusPill = u.status==='active' ? '<span class="pill pill-ok">active</span>' : '<span class="pill pill-susp">suspended</span>';
-      const btn = u.status==='active'
-        ? `<button class="btn btn-danger btn-sm" onclick="setStatus('${u.id}','suspended')">Suspend</button>`
-        : `<button class="btn btn-success btn-sm" onclick="setStatus('${u.id}','active')">Activate</button>`;
-      return `<tr>
-        <td><strong>${u.username}</strong></td>
-        <td style="color:var(--text2);font-size:.82rem">${u.email}</td>
-        <td>${rolePill}</td>
-        <td>${statusPill}</td>
-        <td style="font-size:.82rem">${u.createdAt}</td>
-        <td style="font-size:.82rem">${u.lastLoginAt} <span style="color:var(--text2)">(${u.loginCount}x)</span></td>
-        <td>${btn}</td>
-      </tr>`;
+      const rolePill   = u.role==='admin' ? '<span class="pill pill-admin" style="background:rgba(255,51,85,.15);color:#ff6b6b;border-color:rgba(255,51,85,.3)">👑 admin</span>' : '<span class="pill pill-user">👤 user</span>';
+      const statusPill = u.status==='active' ? '<span class="pill pill-ok">✅ active</span>' : '<span class="pill pill-susp">🚫 suspended</span>';
+      const statusBtn  = u.status==='active' ? `<button class="btn btn-danger btn-sm" onclick="setStatus('${u.id}','suspended')">Suspend</button>` : `<button class="btn btn-success btn-sm" onclick="setStatus('${u.id}','active')">Activate</button>`;
+      const roleBtn    = u.role==='admin' ? `<button class="btn btn-sm" onclick="setRole('${u.id}','user')" style="background:rgba(255,171,0,.1);border-color:rgba(255,171,0,.3);color:var(--yellow)">→ User</button>` : `<button class="btn btn-sm" onclick="setRole('${u.id}','admin')" style="background:rgba(255,51,85,.1);border-color:rgba(255,51,85,.3);color:#ff6b6b">→ Admin</button>`;
+      return `<tr><td><strong>${u.username}</strong></td><td style="color:var(--text2);font-size:.82rem">${u.email}</td><td>${rolePill}</td><td>${statusPill}</td><td style="font-size:.82rem;color:var(--text2)">${u.createdAt}</td><td style="font-size:.82rem;color:var(--text2)">${u.lastLoginAt} <span style="color:var(--text3)">(${u.loginCount}x)</span></td><td style="display:flex;gap:6px;flex-wrap:wrap">${statusBtn}${roleBtn}</td></tr>`;
     }).join('');
-
-async function setStatus(userId, status) {
-  if (!confirm('Change user status to "'+status+'"?')) return;
-  try {
-    const d = await (await fetch('/admin/api/users/'+userId+'/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({status})})).json();
-    showToast(d.ok ? '✅ Status updated to '+status : '❌ '+d.error, d.ok?'ok':'err');
-    if (d.ok) setTimeout(() => location.reload(), 1200);
-  } catch(e) { alert('Network error: '+e.message); }
+async function setStatus(id, status) {
+  if (!confirm('Change status to "'+status+'"?')) return;
+  const d = await (await fetch('/admin/api/users/'+id+'/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({status})})).json();
+  showToast(d.ok?'✅ Status → '+status:'❌ '+d.error, d.ok?'ok':'err');
+  if (d.ok) setTimeout(()=>location.reload(),1200);
+}
+async function setRole(id, role) {
+  if (!confirm((role==='admin'?'👑 Make Admin':'👤 Make User')+'?')) return;
+  const d = await (await fetch('/admin/api/users/'+id+'/role',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({role})})).json();
+  showToast(d.ok?'✅ Role → '+role:'❌ '+d.error, d.ok?'ok':'err');
+  if (d.ok) setTimeout(()=>location.reload(),1200);
 }
 </script>
 </body>

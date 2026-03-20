@@ -95,6 +95,7 @@ function requireAdminAuth(req, res, next) {
 const _botState = {
     waConnected: false, startTime: Date.now(),
     lastUpdate: null, pendingUpdate: false,
+    waCommandsEnabled: true,
 };
 function setBotConnected(connected) { _botState.waConnected = connected; }
 
@@ -196,7 +197,8 @@ function start() {
         try { saasUserCount = await db.SaasUser.countDocuments(); } catch(_){}
         const uptime = Math.floor((Date.now() - _botState.startTime) / 60000);
         res.send(renderView('admin/dashboard', {
-            waConnected:    _botState.waConnected,
+            waConnected:        _botState.waConnected,
+            waCommandsEnabled:  _botState.waCommandsEnabled,
             scannerActive,
             tradeCount:     trades.length,
             signalsToday:   _signalBuffer.filter(s => Date.now()-s.ts < 86400000).length,
@@ -338,7 +340,7 @@ function start() {
         try { scannerActive=require('../plugins/scanner').getScannerStatus(); } catch(_){}
         try { tradeCount=await db.Trade.countDocuments({status:{$in:['active','pending']}}); } catch(_){}
         const uptime=Math.floor((Date.now()-_botState.startTime)/60000);
-        res.json({ waConnected:_botState.waConnected, scannerActive, tradeCount,
+        res.json({ waConnected:_botState.waConnected, waCommandsEnabled:_botState.waCommandsEnabled, scannerActive, tradeCount,
             uptime: uptime>=60?`${Math.floor(uptime/60)}h ${uptime%60}m`:`${uptime}m`,
             pendingUpdate: _botState.pendingUpdate,
             modules:config.modules, trading:config.trading });
@@ -446,6 +448,83 @@ function start() {
             if (!['active','suspended'].includes(status)) return res.status(400).json({ok:false,error:'Invalid status'});
             await db.setSaasUserStatus(req.params.id, status);
             res.json({ok:true,status});
+        } catch(e){ res.status(500).json({ok:false,error:e.message}); }
+    });
+
+
+    // ── User role change ─────────────────────────────────────────
+    app.post('/admin/api/users/:id/role', requireAdminAuth, async (req, res) => {
+        try {
+            const { role } = req.body;
+            if (!['admin','user'].includes(role)) return res.status(400).json({ok:false,error:'Invalid role'});
+            await db.getSaasUserById(req.params.id); // verify exists
+            const mongoose = require('mongoose');
+            const SaasUser = mongoose.model('SaasUser');
+            await SaasUser.findByIdAndUpdate(req.params.id, { role });
+            res.json({ok:true, role});
+        } catch(e){ res.status(500).json({ok:false,error:e.message}); }
+    });
+
+    // ── Bot restart / stop ───────────────────────────────────────
+    app.post('/admin/api/bot/:action', requireAdminAuth, (req, res) => {
+        const action = req.params.action;
+        if (!['restart','stop'].includes(action)) return res.status(400).json({ok:false,error:'Invalid action'});
+        res.json({ok:true, action});
+        setTimeout(() => {
+            if (action === 'restart') {
+                _pushLog('[ADMIN] 🔄 Bot restart requested by admin');
+                process.exit(0); // pm2 will restart
+            } else {
+                _pushLog('[ADMIN] ⛔ Bot stop requested by admin');
+                process.exit(1);
+            }
+        }, 500);
+    });
+
+    // ── WA Commands mode toggle (admin only) ───────────────────
+    app.post('/admin/api/wa/mode', requireAdminAuth, (req, res) => {
+        const { enabled } = req.body;
+        if (typeof enabled !== 'boolean') return res.status(400).json({ok:false, error:'enabled must be boolean'});
+        _botState.waCommandsEnabled = enabled;
+        // Propagate to index.js via global
+        global._waCommandsEnabled = enabled;
+        const status = enabled ? 'ONLINE' : 'OFFLINE';
+        _pushLog(`[ADMIN] ${enabled ? '🟢' : '🔴'} WA Commands set to ${status} by admin`);
+        res.json({ ok: true, waCommandsEnabled: enabled });
+    });
+
+    // ── System info ──────────────────────────────────────────────
+    app.get('/admin/api/system', requireAdminAuth, async (req, res) => {
+        try {
+            const os = require('os');
+            const { execSync } = require('child_process');
+            const totalMem  = os.totalmem();
+            const freeMem   = os.freemem();
+            const usedMem   = totalMem - freeMem;
+            const cpus      = os.cpus();
+            const cpuModel  = cpus[0]?.model?.trim() || 'Unknown';
+            const cpuCount  = cpus.length;
+            // CPU usage (1s sample)
+            let cpuPct = 0;
+            try {
+                const load = os.loadavg()[0];
+                cpuPct = Math.min(100, Math.round((load / cpuCount) * 100));
+            } catch(_){}
+            // Disk
+            let diskTotal = '—', diskUsed = '—', diskPct = 0;
+            try {
+                const df = execSync("df -BG / | tail -1").toString().trim().split(/\s+/);
+                diskTotal = df[1]; diskUsed = df[2]; diskPct = parseInt(df[4]);
+            } catch(_){}
+            res.json({
+                ok: true,
+                mem:  { total: totalMem, used: usedMem, free: freeMem, pct: Math.round((usedMem/totalMem)*100) },
+                cpu:  { model: cpuModel, cores: cpuCount, pct: cpuPct },
+                disk: { total: diskTotal, used: diskUsed, pct: diskPct },
+                uptime: Math.floor(process.uptime()),
+                node: process.version,
+                platform: os.platform(),
+            });
         } catch(e){ res.status(500).json({ok:false,error:e.message}); }
     });
 

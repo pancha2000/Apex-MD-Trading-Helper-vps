@@ -54,6 +54,27 @@
 
   </div>
 
+  <!-- ── WA Commands Mode ── -->
+  <div class="panel" style="margin-bottom:20px;border-color:rgba(0,200,255,.2)">
+    <div class="panel-head">
+      <div class="panel-title">📱 WhatsApp Commands</div>
+      <span id="wa-cmd-pill"></span>
+    </div>
+    <div class="panel-body">
+      <div style="font-size:.84rem;color:var(--text2);margin-bottom:16px;line-height:1.6">
+        Commands <strong>OFF</strong> → users cannot send bot commands.<br>
+        <span style="color:var(--green)">✅ Trading signals, TP/SL alerts &amp; notifications still work normally.</span>
+      </div>
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        <button class="btn btn-success" id="wa-btn-on"  onclick="setWaMode(true)"
+          style="min-width:110px">🟢 Commands ON</button>
+        <button class="btn" id="wa-btn-off" onclick="setWaMode(false)"
+          style="min-width:110px;background:rgba(255,51,85,.1);border-color:rgba(255,51,85,.3);color:var(--red)">🔴 Commands OFF</button>
+      </div>
+      <div id="wa-mode-msg" style="font-size:.84rem;margin-top:12px;min-height:20px"></div>
+    </div>
+  </div>
+
   <!-- ── System Info ── -->
   <div class="panel" style="margin-bottom:20px">
     <div class="panel-head">
@@ -119,6 +140,49 @@ document.getElementById('stats-grid').innerHTML = [
   { label:'Uptime',        val: D.uptime||'—',   cls:'c-white',  sub:'Since restart', id:'uptime-val' },
   { label:'SaaS Users',    val: D.saasUserCount||0, cls:'c-purple', sub:'Accounts' },
 ].map(s => `<div class="stat-card"><div class="stat-label">${s.label}</div><div class="stat-val ${s.cls}" ${s.id?`id="${s.id}"`:''}>${s.val}</div><div class="stat-sub">${s.sub}</div></div>`).join('');
+
+// ── WA Commands mode ───────────────────────────────────────
+function updateWaCmdUI(enabled) {
+  const pill   = document.getElementById('wa-cmd-pill');
+  const msg    = document.getElementById('wa-mode-msg');
+  const btnOn  = document.getElementById('wa-btn-on');
+  const btnOff = document.getElementById('wa-btn-off');
+  if (pill) pill.innerHTML = enabled
+    ? '<span class="pill pill-ok" style="font-size:.7rem">🟢 Online</span>'
+    : '<span class="pill pill-susp" style="font-size:.7rem">🔴 Offline</span>';
+  if (btnOn)  btnOn.disabled  = enabled;
+  if (btnOff) btnOff.disabled = !enabled;
+  if (msg && msg.textContent === '') {
+    msg.textContent = enabled ? '✅ Users can send commands normally.' : '🔴 Commands blocked — signals still active.';
+    msg.style.color = enabled ? 'var(--green)' : 'var(--red)';
+  }
+}
+updateWaCmdUI(D.waCommandsEnabled !== false);
+
+async function setWaMode(enabled) {
+  const msg = document.getElementById('wa-mode-msg');
+  msg.textContent = '⏳ Updating...';
+  msg.style.color = 'var(--text2)';
+  try {
+    const d = await (await fetch('/admin/api/wa/mode', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled })
+    })).json();
+    if (d.ok) {
+      updateWaCmdUI(enabled);
+      msg.textContent = enabled ? '✅ Commands are now ONLINE.' : '🔴 Commands OFFLINE — signals still running.';
+      msg.style.color = enabled ? 'var(--green)' : 'var(--red)';
+      showToast(enabled ? '🟢 WA Commands ON' : '🔴 WA Commands OFF', enabled ? 'ok' : 'info');
+    } else {
+      msg.textContent = '❌ ' + d.error;
+      msg.style.color = 'var(--red)';
+    }
+  } catch(e) {
+    msg.textContent = '❌ Network error';
+    msg.style.color = 'var(--red)';
+  }
+}
 
 // ── WA status pill ──────────────────────────────────────────
 function updateWaPill(online) {
@@ -275,6 +339,7 @@ setInterval(async () => {
     const uv = document.getElementById('uptime-val');      if (uv) uv.textContent = d.uptime;
     updateWaPill(d.waConnected);
     updateScannerPill(d.scannerActive);
+    if (typeof d.waCommandsEnabled !== 'undefined') updateWaCmdUI(d.waCommandsEnabled);
   } catch(_) {}
 }, 10000);
 </script>

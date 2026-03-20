@@ -11,6 +11,9 @@
 
 'use strict';
 
+// ── WhatsApp command mode (admin can toggle OFF via dashboard) ──
+global._waCommandsEnabled = true;
+
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const pino    = require('pino');
 const express = require('express');
@@ -196,6 +199,15 @@ async function startBot() {
             mek.react = async (emoji) => {
                 try { await conn.sendMessage(from, { react: { text: emoji, key: msg.key } }); } catch (_) {}
             };
+
+            // ── WA Commands mode gate ─────────────────────────────
+            if (isCmd && global._waCommandsEnabled === false) {
+                // Commands are disabled by admin — notify user once, then ignore
+                await conn.sendMessage(from, {
+                    text: '🔴 *Bot commands are temporarily offline.*\nTrading signals and notifications are still active. Please try again later.'
+                }, { quoted: msg });
+                return;
+            }
 
             if (isCmd) {
                 console.log(`\n💬 Command: ${command}`);

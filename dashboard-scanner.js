@@ -106,7 +106,7 @@ app.get('/app/api/market-scan', saasAuth.requireUserAuth, async (req, res) => {
 
                 const qualityPass =
                     adjustedScore >= 30 ? (confScore >= 1 || coreConf >= 1) :
-                    adjustedScore >= 20 ? (confGate  || coreConf >= 2) : false;
+                    adjustedScore >= 20 ? (confGate  || coreConf >= 1) : false;
                 if (!qualityPass) continue;
 
                 const f = calcFutures(a);
@@ -1420,189 +1420,150 @@ app.get('/app/market', saasAuth.requireUserAuth, (req, res) => {
     res.send(_html('Market Scanner', `
 ${_appNav('market', user.username)}
 <div class="wrap">
-  <h1 class="page-title">🔍 Market Scanner <span>Top 30 Coins · 14-Factor SMC + ICT</span></h1>
+  <h1 class="page-title">🔍 Market Scanner <span>Top 30 Coins · 14-Factor SMC + ICT · Auto Quality Gate</span></h1>
 
-  <!-- ════ SECTION 1: MARKET SCAN ════ -->
-  <div class="panel" style="margin-bottom:22px;border-color:rgba(0,200,255,.2)">
+  <div class="panel" style="border-color:rgba(0,200,255,.2)">
     <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
       <div>
-        <div class="panel-title">🌐 Best Trade Setups Right Now
-          <span id="mk-badge" style="font-size:.65rem;padding:2px 10px;border-radius:99px;background:rgba(0,200,255,.1);color:var(--accent);border:1px solid rgba(0,200,255,.2);margin-left:8px">READY</span>
+        <div class="panel-title">
+          🌐 Best Trade Setups Right Now
+          <span id="s-badge" style="font-size:.65rem;padding:2px 10px;border-radius:99px;background:rgba(255,171,0,.1);color:var(--yellow);border:1px solid rgba(255,171,0,.3);margin-left:8px">LOADING...</span>
         </div>
-        <div style="font-size:.7rem;color:var(--text2);margin-top:2px">Quality gate · Sentiment overlay · .scan parity</div>
+        <div style="font-size:.7rem;color:var(--text2);margin-top:2px">Quality gate · Sentiment overlay · .scan parity · Auto scans on load</div>
       </div>
-      <button id="mk-btn" onclick="mkRun()" class="btn btn-primary" style="padding:9px 24px;font-weight:700">⚡ Scan Now</button>
+      <button id="s-btn" onclick="doScan()" class="btn btn-primary" style="padding:9px 24px;font-weight:700">⚡ Scan Now</button>
     </div>
 
-    <div id="mk-sent" style="display:none;padding:10px 20px;border-bottom:1px solid var(--border)">
+    <div id="s-sentiment" style="display:none;padding:10px 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border)">
       <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:center">
-        <span style="font-size:.78rem">🧠 <b id="mk-overall">—</b></span>
-        <span style="font-size:.78rem" id="mk-fng-el">—</span>
-        <span style="font-size:.78rem">₿ BTC.D: <b id="mk-btcdom">—</b>%</span>
-        <span style="font-size:.78rem">📰 <b id="mk-news">—</b></span>
-        <span style="font-size:.7rem;color:var(--text2);margin-left:auto" id="mk-meta"></span>
+        <span style="font-size:.78rem">🧠 <b id="s-overall">—</b></span>
+        <span style="font-size:.78rem" id="s-fng">—</span>
+        <span style="font-size:.78rem">₿ BTC.D: <b id="s-btcdom">—</b>%</span>
+        <span style="font-size:.78rem">📰 News: <b id="s-news">—</b></span>
+        <span style="font-size:.7rem;color:var(--text2);margin-left:auto" id="s-meta"></span>
       </div>
     </div>
 
-    <div id="mk-loading" style="display:none;padding:40px 20px;text-align:center">
-      <div style="font-size:2.5rem;animation:spin 1.2s linear infinite;display:inline-block">🔍</div>
-      <div style="margin-top:10px;font-size:.9rem;color:var(--text)" id="mk-msg">Scanning top 30 coins...</div>
+    <div id="s-loading" style="padding:50px 20px;text-align:center">
+      <div style="font-size:2.8rem;animation:spin 1.2s linear infinite;display:inline-block">🔍</div>
+      <div style="margin-top:12px;font-size:.92rem;color:var(--text);font-weight:600" id="s-msg">Scanning top 30 coins...</div>
+      <div style="margin-top:4px;font-size:.72rem;color:var(--text2)">14-Factor SMC + ICT · Quality Gate · Sentiment</div>
     </div>
-    <div id="mk-error"  style="display:none;color:var(--red);padding:14px 20px;font-size:.85rem"></div>
-    <div id="mk-empty" style="display:none;padding:32px 20px;text-align:center;color:var(--text2);font-size:.84rem">
-      <div style="font-size:2rem;margin-bottom:10px">🔍</div>
-      High-quality setups නෑ. Next 15m candle close වෙනකල් try again.
-      <button class="btn btn-ghost" style="display:block;margin:14px auto 0" onclick="mkRun()">↺ Retry</button>
+    <div id="s-error" style="display:none;color:var(--red);padding:20px;font-size:.88rem"></div>
+    <div id="s-empty" style="display:none;padding:44px 20px;text-align:center;color:var(--text2)">
+      <div style="font-size:2.5rem;margin-bottom:10px">🔍</div>
+      <div style="font-size:.92rem;font-weight:600;margin-bottom:5px">High-quality setups නෑ</div>
+      <div style="font-size:.78rem">Score 20+ සහ SMC confirmation pass setups නෑ. Next 15m candle close වෙනකල් wait.</div>
+      <button class="btn btn-ghost" style="margin-top:16px" onclick="doScan()">↺ Try Again</button>
     </div>
-    <div id="mk-grid-wrap" style="display:none;padding:16px 20px 20px">
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px" id="mk-grid"></div>
+    <div id="s-results" style="display:none;padding:16px 20px 20px">
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px" id="s-grid"></div>
     </div>
-  </div>
-
-  <!-- ════ SECTION 2: DEEP ANALYSIS (inline, no page change) ════ -->
-  <div id="deep-section" style="display:none">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-      <h2 style="margin:0;font-size:1rem;font-family:var(--font-head);font-weight:700;color:var(--accent)">⚡ Deep Analysis</h2>
-      <button class="btn btn-ghost btn-sm" onclick="closeDeep()">✕ Close</button>
-    </div>
-    <div class="panel" style="max-width:680px;margin-bottom:18px">
-      <div class="panel-body">
-        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
-          <div style="flex:1;min-width:130px">
-            <label class="field-label">Coin Symbol</label>
-            <input type="text" id="coin-input" class="inp" placeholder="BTC, ETH, SOL..."
-              style="font-family:var(--font-mono);font-size:1.05rem;font-weight:700;text-transform:uppercase"
-              maxlength="12" autocomplete="off">
-          </div>
-          <div style="min-width:120px">
-            <label class="field-label">Timeframe</label>
-            <select id="tf-select" class="inp">
-              <option value="5m">5m</option>
-              <option value="15m" selected>15m</option>
-              <option value="1h">1h</option>
-              <option value="4h">4h</option>
-              <option value="1d">1d</option>
-            </select>
-          </div>
-          <button id="scan-btn" class="btn btn-primary" style="padding:11px 26px;font-weight:700" onclick="runLiveScan()">⚡ Analyse</button>
-        </div>
-        <div style="font-size:.7rem;color:var(--text2);margin-top:8px">70-Factor MTF + SMC + Wyckoff · Funding Rate · Whale Walls · 11-Factor Confirmation · AI</div>
-      </div>
-    </div>
-    <div id="live-loading" style="display:none;padding:50px 0;text-align:center">
-      <div style="font-size:2.8rem;animation:spin 1s linear infinite;display:inline-block">⚙️</div>
-      <div style="margin-top:14px;font-size:.95rem;color:var(--text)" id="live-msg">Running 70-Factor Analysis...</div>
-      <div style="margin-top:5px;font-size:.75rem;color:var(--text2)">Candles · Indicators · External Data · AI</div>
-    </div>
-    <div id="live-error" style="display:none;background:rgba(255,51,85,.07);border:1px solid rgba(255,51,85,.25);border-radius:var(--radius);padding:14px 18px;margin-bottom:16px;color:var(--red);font-size:.88rem"></div>
-    <div id="live-results" style="display:none"></div>
   </div>
 </div>
 
 <style>
-.mk-card{border-radius:var(--radius);border:1px solid var(--border);padding:15px;background:var(--card);cursor:pointer;transition:.15s}
-.mk-card:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(0,0,0,.3);border-color:var(--accent)}
-.mk-long{border-left:3px solid var(--green)}.mk-short{border-left:3px solid var(--red)}
-.scan-hero{background:linear-gradient(135deg,#031526,#060d17);border:1px solid var(--accent);border-radius:var(--radius-lg,10px);padding:30px 26px;margin-bottom:20px;display:flex;align-items:center;gap:26px;flex-wrap:wrap;box-shadow:0 0 30px rgba(0,200,255,.08)}
-.res-section{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px;margin-bottom:14px}
-.res-section-title{font-family:var(--font-head);font-size:.82rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.08em;margin-bottom:14px;display:flex;align-items:center;gap:8px}
-.res-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:10px}
-.res-item{background:var(--bg2);border-radius:var(--radius-sm);padding:10px 12px}
-.res-item-label{font-size:.62rem;color:var(--text2);text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px}
-.res-item-val{font-family:var(--font-mono);font-size:.88rem;font-weight:600;color:var(--text)}
-.conf-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:middle}
-.conf-row{display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:.8rem}
-.conf-row:last-child{border-bottom:none}
-.score-bar{height:3px;border-radius:99px;background:var(--border);margin:8px 0}
-.score-bar-fill{height:100%;border-radius:99px}
+.s-card{border-radius:var(--radius);border:1px solid var(--border);padding:16px;background:var(--card);transition:.18s}
+.s-card:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,.35)}
+.s-long{border-left:4px solid var(--green)}.s-short{border-left:4px solid var(--red)}
+.s-tag{font-size:.6rem;padding:2px 7px;border-radius:3px;display:inline-block;margin:1px}
+.s-smc{background:rgba(0,200,255,.08);color:var(--accent)}
+.s-hot{background:rgba(0,230,118,.08);color:var(--green)}
+.s-warn{background:rgba(255,171,0,.1);color:var(--yellow)}
 </style>
 
 <script>
-function fmtP(n,d){d=d||4;if(n==null||isNaN(Number(n)))return'—';var p=parseFloat(n);if(isNaN(p))return'—';if(d===4){if(p>=10000)return'$'+p.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});if(p>=1)return'$'+p.toFixed(4);return'$'+p.toFixed(6);}return p.toFixed(d);}
-function sCol(s){return s>=70?'var(--green)':s>=45?'var(--yellow)':'var(--red)';}
+async function doScan() {
+  var btn   = document.getElementById('s-btn');
+  var badge = document.getElementById('s-badge');
+  btn.disabled = true;
+  btn.textContent = '⏳...';
+  badge.textContent = 'SCANNING';
+  badge.style.background = 'rgba(255,171,0,.1)';
+  badge.style.color = 'var(--yellow)';
+  badge.style.borderColor = 'rgba(255,171,0,.3)';
+  document.getElementById('s-sentiment').style.display = 'none';
+  document.getElementById('s-results').style.display   = 'none';
+  document.getElementById('s-empty').style.display     = 'none';
+  document.getElementById('s-error').style.display     = 'none';
+  document.getElementById('s-loading').style.display   = 'block';
 
-async function mkRun() {
-  var btn   = document.getElementById('mk-btn');
-  var badge = document.getElementById('mk-badge');
-  btn.disabled = true; btn.textContent = '⏳...';
-  badge.textContent = 'SCANNING'; badge.style.background = 'rgba(255,171,0,.1)'; badge.style.color = 'var(--yellow)'; badge.style.borderColor = 'rgba(255,171,0,.3)';
-  document.getElementById('mk-sent').style.display    = 'none';
-  document.getElementById('mk-results').style.display = 'none';
-  document.getElementById('mk-empty').style.display   = 'none';
-  document.getElementById('mk-error').style.display   = 'none';
-  document.getElementById('mk-loading').style.display = 'block';
-
-  var msgs = ['Scanning top 30 coins...','14-Factor SMC + ICT analysis...','Applying quality gate...','Sentiment overlay...','Ranking best setups...'];
+  var msgs = ['Scanning top 30 coins...','14-Factor SMC + ICT analysis...','Applying quality gate...','Sentiment overlay...','Ranking best 5 setups...'];
   var mi = 0;
-  var mt = setInterval(function() { document.getElementById('mk-msg').textContent = msgs[mi%msgs.length]; mi++; }, 3000);
+  var mt = setInterval(function() {
+    document.getElementById('s-msg').textContent = msgs[mi % msgs.length]; mi++;
+  }, 3000);
 
   try {
-    var r = await fetch('/app/api/market-scan');
-    var d = await r.json();
+    var resp = await fetch('/app/api/market-scan');
+    var data = await resp.json();
     clearInterval(mt);
-    document.getElementById('mk-loading').style.display = 'none';
+    document.getElementById('s-loading').style.display = 'none';
 
-    if (!r.ok || !d.ok) {
-      document.getElementById('mk-error').style.display = 'block';
-      document.getElementById('mk-error').textContent = '❌ ' + (d.error || 'Scan failed');
-      badge.textContent = 'ERROR'; badge.style.color = 'var(--red)'; badge.style.borderColor = 'rgba(255,51,85,.3)';
+    if (!resp.ok || !data.ok) {
+      document.getElementById('s-error').style.display = 'block';
+      document.getElementById('s-error').textContent = 'Error: ' + (data.error || 'Scan failed');
+      badge.textContent = 'ERROR';
+      badge.style.color = 'var(--red)';
+      badge.style.borderColor = 'rgba(255,51,85,.3)';
       return;
     }
 
     // Sentiment bar
-    var sn = d.sentiment || {};
+    var sn = data.sentiment || {};
     var ns = parseInt(sn.newsScore || 0);
     var nc = ns > 0 ? 'var(--green)' : ns < 0 ? 'var(--red)' : 'var(--text2)';
-    document.getElementById('mk-overall').textContent = sn.overall || '—';
-    document.getElementById('mk-fng').innerHTML = (sn.fngEmoji||'') + ' F&G: <b style="color:var(--accent)">' + (sn.fngValue||'—') + '</b>';
-    document.getElementById('mk-btcdom').textContent = sn.btcDom || '—';
-    document.getElementById('mk-news').innerHTML = '<span style="color:' + nc + '">' + (ns >= 0 ? '+' : '') + ns + '</span>';
-    document.getElementById('mk-meta').textContent = d.setups.length + ' setups · ' + d.scanned + ' coins · ' + new Date(d.ts).toLocaleTimeString();
-    document.getElementById('mk-sent').style.display = 'block';
+    document.getElementById('s-overall').textContent = sn.overall || '—';
+    document.getElementById('s-fng').innerHTML = (sn.fngEmoji || '') + ' F&G: <b style="color:var(--accent)">' + (sn.fngValue || '—') + '</b>';
+    document.getElementById('s-btcdom').textContent = sn.btcDom || '—';
+    document.getElementById('s-news').innerHTML = '<span style="color:' + nc + '">' + (ns >= 0 ? '+' : '') + ns + '</span>';
+    document.getElementById('s-meta').textContent = data.setups.length + ' setups · ' + data.scanned + ' coins · ' + new Date(data.ts).toLocaleTimeString();
+    document.getElementById('s-sentiment').style.display = 'block';
 
-    if (!d.setups || !d.setups.length) {
-      document.getElementById('mk-empty').style.display = 'block';
-      badge.textContent = 'NO SETUPS'; badge.style.color = 'var(--text2)'; badge.style.borderColor = 'var(--border)';
+    if (!data.setups || !data.setups.length) {
+      document.getElementById('s-empty').style.display = 'block';
+      badge.textContent = 'NO SETUPS';
+      badge.style.color = 'var(--text2)';
+      badge.style.background = 'rgba(255,255,255,.05)';
+      badge.style.borderColor = 'var(--border)';
       return;
     }
 
-    var grid = document.getElementById('mk-grid');
+    var grid = document.getElementById('s-grid');
     grid.innerHTML = '';
 
-    d.setups.forEach(function(s, i) {
+    data.setups.forEach(function(s, i) {
       var isL  = s.direction === 'LONG';
       var dc   = isL ? 'var(--green)' : 'var(--red)';
-      var sc   = sCol(s.score);
+      var sc   = s.score >= 70 ? 'var(--green)' : s.score >= 45 ? 'var(--yellow)' : 'var(--red)';
       var sPct = Math.min((s.score / (s.maxScore || 100)) * 100, 100).toFixed(0);
 
-      // Top confluence reasons
       var reasons = (s.reasons || '').split(',').slice(0, 4).map(function(r) {
         return '<div style="font-size:.62rem;color:var(--text2)">• ' + r.trim() + '</div>';
       }).join('');
 
-      // SMC signal tags
       var tags = '';
-      if (s.liquiditySweep && s.liquiditySweep !== 'None') tags += '<span class="mk-tag mk-smc">💧 Sweep</span>';
-      if (s.choch && s.choch !== 'None')                   tags += '<span class="mk-tag mk-smc">🔄 ChoCH</span>';
-      if (s.choch5m && s.choch5m !== 'None')               tags += '<span class="mk-tag mk-smc">⚡ 5m ChoCH</span>';
-      if (s.tf3Align && s.tf3Align.aligned)                tags += '<span class="mk-tag mk-hot">✅ 3TF</span>';
-      if (s.bbSqueeze && s.bbSqueeze.exploding)            tags += '<span class="mk-tag mk-hot">💥 BB Explode</span>';
-      if (s.mmTrap && (s.mmTrap.bullTrap || s.mmTrap.bearTrap)) tags += '<span class="mk-tag mk-warn">🪤 Trap</span>';
-      if (s.dailyTrend) tags += '<span class="mk-tag" style="background:rgba(255,255,255,.05);color:var(--text2)">' + (s.dailyAligned ? '✅' : '⚠️') + ' ' + s.dailyTrend + '</span>';
+      if (s.liquiditySweep && s.liquiditySweep !== 'None') tags += '<span class="s-tag s-smc">💧 Sweep</span>';
+      if (s.choch && s.choch !== 'None')                   tags += '<span class="s-tag s-smc">🔄 ChoCH</span>';
+      if (s.choch5m && s.choch5m !== 'None')               tags += '<span class="s-tag s-smc">⚡ 5m ChoCH</span>';
+      if (s.tf3Align && s.tf3Align.aligned)                tags += '<span class="s-tag s-hot">✅ 3TF</span>';
+      if (s.bbSqueeze && s.bbSqueeze.exploding)            tags += '<span class="s-tag s-hot">💥 BB Explode</span>';
+      if (s.mmTrap && (s.mmTrap.bullTrap || s.mmTrap.bearTrap)) tags += '<span class="s-tag s-warn">🪤 Trap</span>';
+      if (s.dailyTrend) tags += '<span class="s-tag" style="background:rgba(255,255,255,.05);color:var(--text2)">' + (s.dailyAligned ? '✅' : '⚠️') + ' ' + s.dailyTrend + '</span>';
 
       var card = document.createElement('div');
-      card.className = 'mk-card ' + (isL ? 'mk-long' : 'mk-short');
+      card.className = 's-card ' + (isL ? 's-long' : 's-short');
       card.innerHTML =
         '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">'
         + '<div style="display:flex;align-items:center;gap:7px">'
-        + '<span style="font-family:var(--font-mono);font-size:.62rem;color:var(--text2);background:var(--card2);padding:1px 5px;border-radius:3px">#' + (i+1) + '</span>'
+        + '<span style="font-family:var(--font-mono);font-size:.62rem;color:var(--text2);background:var(--card2);padding:1px 5px;border-radius:3px">#' + (i + 1) + '</span>'
         + '<span style="font-family:var(--font-head);font-size:1.12rem;font-weight:800;color:#fff">' + s.coin + '</span>'
-        + '<span style="font-size:.72rem;font-weight:700;padding:2px 10px;border-radius:99px;background:' + (isL?'rgba(0,230,118,.12)':'rgba(255,51,85,.12)') + ';color:' + dc + '">' + (isL?'▲ LONG':'▼ SHORT') + '</span>'
+        + '<span style="font-size:.72rem;font-weight:700;padding:2px 10px;border-radius:99px;background:' + (isL ? 'rgba(0,230,118,.12)' : 'rgba(255,51,85,.12)') + ';color:' + dc + '">' + (isL ? '▲ LONG' : '▼ SHORT') + '</span>'
         + (s.sentEmoji ? '<span style="font-size:.8rem">' + s.sentEmoji + '</span>' : '')
         + '</div>'
         + '<div style="text-align:right">'
-        + '<div style="font-family:var(--font-mono);font-size:.82rem;font-weight:700;color:' + sc + '">' + s.score + '/' + (s.maxScore||100) + ' ⭐</div>'
-        + '<div style="font-size:.6rem;color:var(--text2)">ADX ' + (s.adx?parseFloat(s.adx).toFixed(1):'—') + ' · RSI ' + (s.rsi?parseFloat(s.rsi).toFixed(0):'—') + '</div>'
+        + '<div style="font-family:var(--font-mono);font-size:.82rem;font-weight:700;color:' + sc + '">' + s.score + '/' + (s.maxScore || 100) + ' ⭐</div>'
+        + '<div style="font-size:.6rem;color:var(--text2)">ADX ' + (s.adx ? parseFloat(s.adx).toFixed(1) : '—') + ' · RSI ' + (s.rsi ? parseFloat(s.rsi).toFixed(0) : '—') + '</div>'
         + '</div>'
         + '</div>'
         + '<div style="height:4px;background:var(--border);border-radius:99px;margin-bottom:12px;overflow:hidden">'
@@ -1611,8 +1572,8 @@ async function mkRun() {
         + '<div style="margin-bottom:9px">' + reasons + '</div>'
         + (tags ? '<div style="margin-bottom:10px">' + tags + '</div>' : '')
         + '<div style="font-size:.62rem;color:var(--text2);margin-bottom:12px">'
-        + '🔒 ' + (s.confScore||s.coreConf||0) + '/' + (s.confScore?21:4) + ' confirms ' + (s.confGate?'✅':'')
-        + (s.orderType&&s.orderType.includes('LIMIT')?' · ⏳ LIMIT':' · ⚡ MARKET')
+        + '🔒 ' + (s.confScore || s.coreConf || 0) + '/' + (s.confScore ? 21 : 4) + ' confirms ' + (s.confGate ? '✅' : '')
+        + (s.orderType && s.orderType.includes('LIMIT') ? ' · ⏳ LIMIT' : ' · ⚡ MARKET')
         + (s.tradeCategory ? ' · ' + s.tradeCategory : '')
         + '</div>'
         + '<a href="/app/scanner?coin=' + s.coin + '" class="btn btn-primary" style="display:block;width:100%;padding:9px;font-size:.8rem;font-weight:700;text-align:center;text-decoration:none">⚡ Deep Scanner →</a>';
@@ -1620,24 +1581,29 @@ async function mkRun() {
       grid.appendChild(card);
     });
 
-    document.getElementById('mk-results').style.display = 'block';
-    badge.textContent = '✅ ' + d.setups.length + ' Setups Found';
-    badge.style.background = 'rgba(0,230,118,.08)'; badge.style.color = 'var(--green)'; badge.style.borderColor = 'rgba(0,230,118,.3)';
+    document.getElementById('s-results').style.display = 'block';
+    badge.textContent = '✅ ' + data.setups.length + ' Setups Found';
+    badge.style.background = 'rgba(0,230,118,.08)';
+    badge.style.color = 'var(--green)';
+    badge.style.borderColor = 'rgba(0,230,118,.3)';
 
-  } catch(e) {
+  } catch (e) {
     clearInterval(mt);
-    document.getElementById('mk-loading').style.display = 'none';
-    document.getElementById('mk-error').style.display   = 'block';
-    document.getElementById('mk-error').textContent = '❌ ' + e.message;
-    badge.textContent = 'ERROR'; badge.style.color = 'var(--red)';
+    document.getElementById('s-loading').style.display = 'none';
+    document.getElementById('s-error').style.display   = 'block';
+    document.getElementById('s-error').textContent = 'Network error: ' + e.message;
+    badge.textContent = 'ERROR';
+    badge.style.color = 'var(--red)';
   } finally {
-    btn.disabled = false; btn.textContent = '⚡ Scan Now';
+    btn.disabled = false;
+    btn.textContent = '⚡ Scan Now';
   }
 }
 
-document.addEventListener('DOMContentLoaded', function() { mkRun(); });
+document.addEventListener('DOMContentLoaded', function() { doScan(); });
 </script>`));
 });
+
 
 
 // ─── /app/analyzer — serve same as /app/market (not redirect) ──

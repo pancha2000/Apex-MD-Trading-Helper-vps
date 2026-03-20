@@ -506,6 +506,12 @@ async function createAlert() {
     else{msg.style.color='var(--red)';msg.textContent='❌ '+(d.error||'Failed');}
   }catch(e){msg.style.color='var(--red)';msg.textContent='❌ Network error';}
 }
+async function clearAllAlerts() {
+  if (!confirm('Delete ALL active alerts?')) return;
+  const r = await fetch('/app/api/alerts/clear',{method:'POST'});
+  const d = await r.json();
+  if (d.ok) location.reload(); else alert('Error: '+d.error);
+}
 async function deleteAlert(id) {
   if(!confirm('Delete this alert?'))return;
   try{
@@ -583,7 +589,7 @@ ${_appNav('watchlist', user.username)}
   <div class="panel">
     <div class="panel-head">
       <div class="panel-title">👁 My Watchlist</div>
-      <button class="btn btn-ghost btn-sm" onclick="refreshPrices()">↺ Refresh Prices</button>
+      <div style="display:flex;gap:8px"><button class="btn btn-ghost btn-sm" onclick="refreshPrices()">↺ Refresh Prices</button><button class="btn btn-danger btn-sm" onclick="clearAllWatchlist()" style="padding:5px 12px;font-size:.75rem">🗑 Clear All</button></div>
     </div>
     <div id="wl-loading" style="display:none;padding:20px;text-align:center;color:var(--text2);font-size:.85rem">⏳ Loading prices...</div>
     <div id="wl-grid" style="padding:16px 20px;display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px">
@@ -617,6 +623,12 @@ async function addCoins() {
     if(d.ok){msg.style.color='var(--green)';msg.textContent='✅ Added!';setTimeout(()=>location.reload(),1000);}
     else{msg.style.color='var(--red)';msg.textContent='❌ '+(d.error||'Failed');}
   }catch(e){msg.style.color='var(--red)';msg.textContent='❌ Network error';}
+}
+async function clearAllWatchlist() {
+  if (!confirm('Remove ALL coins from watchlist?')) return;
+  const r = await fetch('/app/api/watchlist/clear',{method:'POST'});
+  const d = await r.json();
+  if (d.ok) location.reload(); else alert('Error: '+d.error);
 }
 async function removeCoin(coin) {
   try{
@@ -1470,6 +1482,165 @@ app.get('/app/api/tracks/delete/:id', saasAuth.requireUserAuth, async (req, res)
     } catch(e) {
         res.redirect('/app/tracks?error=1');
     }
+});
+
+
+// ══════════════════════════════════════════════════════════════
+//  CLEAR ALL ALERTS  POST /app/api/alerts/clear
+// ══════════════════════════════════════════════════════════════
+app.post('/app/api/alerts/clear', saasAuth.requireUserAuth, async (req, res) => {
+    try {
+        const fullUser = await db.getSaasUserById(req.saasUser.userId);
+        const waJid = fullUser?.whatsappJid;
+        if (!waJid) return res.json({ok:false,error:'WhatsApp not linked'});
+        await Alert.deleteMany({userJid:waJid});
+        res.json({ok:true});
+    } catch(e) { res.status(500).json({ok:false,error:e.message}); }
+});
+
+// ══════════════════════════════════════════════════════════════
+//  CLEAR ALL WATCHLIST  POST /app/api/watchlist/clear
+// ══════════════════════════════════════════════════════════════
+app.post('/app/api/watchlist/clear', saasAuth.requireUserAuth, async (req, res) => {
+    try {
+        const fullUser = await db.getSaasUserById(req.saasUser.userId);
+        const waJid = fullUser?.whatsappJid;
+        if (!waJid) return res.json({ok:false,error:'WhatsApp not linked'});
+        await Watchlist.findOneAndUpdate({userJid:waJid},{coins:[]},{upsert:true});
+        res.json({ok:true});
+    } catch(e) { res.status(500).json({ok:false,error:e.message}); }
+});
+
+// ══════════════════════════════════════════════════════════════
+//  RESET STATS  POST /app/api/stats/reset
+// ══════════════════════════════════════════════════════════════
+app.post('/app/api/stats/reset', saasAuth.requireUserAuth, async (req, res) => {
+    try {
+        const fullUser = await db.getSaasUserById(req.saasUser.userId);
+        const waJid = fullUser?.whatsappJid;
+        if (!waJid) return res.json({ok:false,error:'WhatsApp not linked'});
+        const wu = await db.getUser(waJid);
+        wu.totalTrades = 0; wu.wins = 0; wu.losses = 0;
+        await wu.save();
+        res.json({ok:true});
+    } catch(e) { res.status(500).json({ok:false,error:e.message}); }
+});
+
+// ══════════════════════════════════════════════════════════════
+//  SET PAPER CAPITAL  POST /app/api/paper/set-capital
+//  .papercapital command parity
+// ══════════════════════════════════════════════════════════════
+app.post('/app/api/paper/set-capital', saasAuth.requireUserAuth, async (req, res) => {
+    try {
+        const fullUser = await db.getSaasUserById(req.saasUser.userId);
+        const waJid = fullUser?.whatsappJid;
+        if (!waJid) return res.json({ok:false,error:'WhatsApp not linked'});
+        const amount = parseFloat(req.body.amount);
+        if (!amount || amount < 10 || amount > 1000000) return res.json({ok:false,error:'Amount must be $10–$1,000,000'});
+        await db.setPaperCapital(waJid, amount);
+        res.json({ok:true, amount});
+    } catch(e) { res.status(500).json({ok:false,error:e.message}); }
+});
+
+// ══════════════════════════════════════════════════════════════
+//  SYSTEM STATUS PAGE  GET /app/system
+//  .system command parity
+// ══════════════════════════════════════════════════════════════
+app.get('/app/system', saasAuth.requireUserAuth, async (req, res) => {
+    const user = req.saasUser;
+    const os   = require('os');
+
+    const uptimeSec  = process.uptime();
+    const d = Math.floor(uptimeSec/86400);
+    const h = Math.floor((uptimeSec%86400)/3600);
+    const m = Math.floor((uptimeSec%3600)/60);
+    const uptimeStr  = (d>0?d+'d ':'') + h+'h ' + m+'m';
+
+    const totalMem = (os.totalmem()/1024/1024).toFixed(0);
+    const freeMem  = (os.freemem()/1024/1024).toFixed(0);
+    const usedMem  = ((os.totalmem()-os.freemem())/1024/1024).toFixed(0);
+    const memPct   = ((1-os.freemem()/os.totalmem())*100).toFixed(0);
+    const memColor = parseInt(memPct)>80?'var(--red)':parseInt(memPct)>60?'var(--yellow)':'var(--green)';
+
+    // API health checks
+    let binanceOk=false, groqOk=false, geminiOk=false;
+    try { await axios.get('https://fapi.binance.com/fapi/v1/ping',{timeout:4000}); binanceOk=true; } catch(_){}
+    if (config.GROQ_API) {
+        try { await axios.get('https://api.groq.com/openai/v1/models',{headers:{Authorization:'Bearer '+config.GROQ_API},timeout:4000}); groqOk=true; } catch(_){}
+    }
+    if (config.GEMINI_API) {
+        try { await axios.get('https://generativelanguage.googleapis.com/v1beta/models?key='+config.GEMINI_API,{timeout:4000}); geminiOk=true; } catch(_){}
+    }
+
+    const nodeVer = process.version;
+    const platform = os.platform()+' '+os.arch();
+    const cpuCount = os.cpus().length;
+    const cpuModel = os.cpus()[0]?.model||'Unknown';
+
+    function apiRow(name, ok, extra) {
+        return `<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border)">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="font-size:1rem">${ok?'✅':'❌'}</span>
+            <div><div style="font-weight:600;font-size:.88rem">${name}</div>${extra?`<div style="font-size:.72rem;color:var(--text2)">${extra}</div>`:''}</div>
+          </div>
+          <span style="font-size:.8rem;font-weight:700;color:${ok?'var(--green)':'var(--red)'}">${ok?'ONLINE':'OFFLINE'}</span>
+        </div>`;
+    }
+
+    res.send(_html('System Status', `
+${_appNav('system', user.username)}
+<div class="wrap" style="max-width:960px">
+  <h1 class="page-title">💻 System Status <span>.system Command Parity · VPS Health Monitor</span></h1>
+
+  <div class="g-stats" style="margin-bottom:22px">
+    <div class="stat-card"><div class="stat-label">Uptime</div><div class="stat-val c-green" style="font-size:1.2rem">${uptimeStr}</div><div class="stat-sub">Since last restart</div></div>
+    <div class="stat-card"><div class="stat-label">RAM Used</div><div class="stat-val" style="color:${memColor};font-size:1.2rem">${usedMem} MB</div><div class="stat-sub">${memPct}% of ${totalMem} MB</div></div>
+    <div class="stat-card"><div class="stat-label">RAM Free</div><div class="stat-val c-cyan" style="font-size:1.2rem">${freeMem} MB</div><div class="stat-sub">Available</div></div>
+    <div class="stat-card"><div class="stat-label">CPU Cores</div><div class="stat-val c-yellow" style="font-size:1.2rem">${cpuCount}</div><div class="stat-sub" style="font-size:.65rem">${cpuModel.substring(0,30)}</div></div>
+    <div class="stat-card"><div class="stat-label">Node.js</div><div class="stat-val" style="font-size:1.1rem">${nodeVer}</div><div class="stat-sub">${platform}</div></div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title">🌐 API Status</div></div>
+      <div class="panel-body" style="padding:0 20px">
+        ${apiRow('Binance Futures', binanceOk, 'Market data + orders')}
+        ${apiRow('GROQ AI', groqOk, config.GROQ_API?'Connected':'No API key configured')}
+        ${apiRow('Gemini AI', geminiOk, config.GEMINI_API?'Connected':'No API key configured')}
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title">📊 RAM Usage</div></div>
+      <div class="panel-body">
+        <div style="height:12px;background:var(--border);border-radius:99px;overflow:hidden;margin-bottom:12px">
+          <div style="height:100%;width:${memPct}%;background:${memColor};border-radius:99px;transition:width 1s"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:.8rem;color:var(--text2)">
+          <span>Used: <b style="color:${memColor}">${usedMem} MB</b></span>
+          <span>Free: <b style="color:var(--green)">${freeMem} MB</b></span>
+          <span>Total: <b>${totalMem} MB</b></span>
+        </div>
+        <div style="margin-top:16px;padding:12px;background:var(--bg2);border-radius:var(--radius-sm)">
+          <div style="font-size:.7rem;color:var(--text2);margin-bottom:4px">Process Memory (Node.js)</div>
+          <div style="font-family:var(--font-mono);font-size:.85rem">${(process.memoryUsage().heapUsed/1024/1024).toFixed(1)} MB heap</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-top:4px">
+    <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between">
+      <div class="panel-title">⚡ Quick Actions</div>
+    </div>
+    <div class="panel-body">
+      <div style="display:flex;flex-wrap:wrap;gap:12px">
+        <button class="btn btn-ghost" onclick="location.reload()">🔄 Refresh Status</button>
+        <a href="/app/settings" class="btn btn-ghost">⚙️ Settings</a>
+        <a href="/app/stats" class="btn btn-ghost">📊 Stats</a>
+      </div>
+    </div>
+  </div>
+</div>`));
 });
 
 

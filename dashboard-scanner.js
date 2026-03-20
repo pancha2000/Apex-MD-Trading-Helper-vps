@@ -639,7 +639,8 @@ ${_appNav('scanner', user.username)}
 
   <!-- ── Scanner Tabs ── -->
   <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:24px;width:fit-content">
-    <button id="tab-live"    onclick="switchTab('live')"    style="padding:9px 22px;font-size:.82rem;font-weight:600;border:none;cursor:pointer;transition:.15s;background:var(--accent);color:#000;font-family:var(--font-mono)">⚡ Live Analysis</button>
+    <button id="tab-live"    onclick="switchTab('live')"    style="padding:9px 22px;font-size:.82rem;font-weight:600;border:none;cursor:pointer;transition:.15s;background:var(--accent);color:#000;font-family:var(--font-mono)">⚡ Deep Analysis</button>
+    <button id="tab-spot"   onclick="switchTab('spot')"   style="padding:9px 22px;font-size:.82rem;font-weight:600;border:none;cursor:pointer;transition:.15s;background:var(--card2);color:var(--text2);font-family:var(--font-mono)">🟢 Spot</button>
     <button id="tab-bt"      onclick="switchTab('bt')"      style="padding:9px 22px;font-size:.82rem;font-weight:600;border:none;cursor:pointer;transition:.15s;background:var(--card2);color:var(--text2);font-family:var(--font-mono)">📊 Backtest</button>
     <button id="tab-scanbt"  onclick="switchTab('scanbt')"  style="padding:9px 22px;font-size:.82rem;font-weight:600;border:none;cursor:pointer;transition:.15s;background:var(--card2);color:var(--text2);font-family:var(--font-mono)">🌐 Scan Backtest</button>
   </div>
@@ -716,6 +717,41 @@ ${_appNav('scanner', user.username)}
     </div>
     <div id="live-error" style="display:none;background:rgba(255,51,85,.07);border:1px solid rgba(255,51,85,.25);border-radius:var(--radius);padding:14px 18px;margin-bottom:16px;color:var(--red);font-size:.88rem"></div>
     <div id="live-results" style="display:none"></div>
+  </div>
+
+
+  <!-- ══ TAB: SPOT ANALYSIS ══ -->
+  <div id="panel-spot" style="display:none">
+    <div class="panel" style="max-width:680px;margin-bottom:22px">
+      <div class="panel-body">
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+          <div style="flex:1;min-width:130px">
+            <label class="field-label">Coin Symbol</label>
+            <input type="text" id="spot-coin" class="inp" placeholder="BTC, ETH, SOL..."
+              style="font-family:var(--font-mono);font-size:1.05rem;font-weight:700;text-transform:uppercase"
+              maxlength="12" autocomplete="off">
+          </div>
+          <div style="min-width:120px">
+            <label class="field-label">Timeframe</label>
+            <select id="spot-tf" class="inp">
+              <option value="1h">1 Hour</option>
+              <option value="4h">4 Hours</option>
+              <option value="1d" selected>1 Day</option>
+              <option value="1w">1 Week</option>
+            </select>
+          </div>
+          <button id="spot-btn" class="btn btn-success" style="padding:11px 28px;font-weight:700" onclick="runSpotScan()">🟢 Spot Analyse</button>
+        </div>
+        <div style="font-size:.7rem;color:var(--text2);margin-top:8px">No leverage · Fibonacci TPs · DCA zones · Best for swing &amp; intraday · .spot command parity</div>
+      </div>
+    </div>
+    <div id="spot-loading" style="display:none;padding:50px 0;text-align:center">
+      <div style="font-size:2.8rem;animation:spin 1s linear infinite;display:inline-block">🟢</div>
+      <div style="margin-top:14px;font-size:.95rem;color:var(--text)" id="spot-msg">Running Spot Analysis...</div>
+      <div style="margin-top:5px;font-size:.75rem;color:var(--text2)">Fibonacci TPs · DCA Zones · Sentiment · AI</div>
+    </div>
+    <div id="spot-error" style="display:none;background:rgba(255,51,85,.07);border:1px solid rgba(255,51,85,.25);border-radius:var(--radius);padding:14px 18px;margin-bottom:16px;color:var(--red);font-size:.88rem"></div>
+    <div id="spot-results" style="display:none"></div>
   </div>
 
   <!-- ══ TAB: BACKTEST ══ -->
@@ -821,7 +857,7 @@ function sigCol(s){return(s||'').includes('CONFIRMED')?'var(--green)':(s||'').in
 let _tab = 'live';
 function switchTab(t) {
   _tab = t;
-  ['live','bt','scanbt'].forEach(id => {
+  ['live','spot','bt','scanbt'].forEach(id => {
     _$('tab-'+id).style.background   = t===id ? 'var(--accent)'  : 'var(--card2)';
     _$('tab-'+id).style.color        = t===id ? '#000'           : 'var(--text2)';
     _$('panel-'+id).style.display    = t===id ? ''               : 'none';
@@ -1395,6 +1431,107 @@ async function quickMarketScan() {
 }
 
 
+
+// ── Spot Analysis ────────────────────────────────────────────
+async function runSpotScan() {
+  const coinRaw = _$('spot-coin').value.trim().toUpperCase();
+  const tf      = _$('spot-tf').value;
+  if (!coinRaw) { _$('spot-coin').focus(); return; }
+  _$('spot-results').style.display = 'none';
+  _$('spot-error').style.display   = 'none';
+  _$('spot-loading').style.display = 'block';
+  _$('spot-btn').disabled = true; _$('spot-btn').textContent = '⏳...';
+  const msgs = ['Fetching candles...','Running SMC analysis...','Calculating Fibonacci TPs...','Getting AI signal...'];
+  let mi = 0; const mt = setInterval(function(){ _$('spot-msg').textContent = msgs[mi++ % msgs.length]; }, 4000);
+  try {
+    const r = await fetch('/app/api/spot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({coin:coinRaw,timeframe:tf})});
+    const d = await r.json(); clearInterval(mt);
+    if (!r.ok||!d.ok) { _$('spot-loading').style.display='none'; _$('spot-error').style.display='block'; _$('spot-error').textContent='ERROR: '+(d.error||'Failed'); return; }
+    renderSpot(d.analysis, coinRaw, tf);
+  } catch(e) { clearInterval(mt); _$('spot-loading').style.display='none'; _$('spot-error').style.display='block'; _$('spot-error').textContent='Network error: '+e.message; }
+  finally { _$('spot-btn').disabled=false; _$('spot-btn').textContent='🟢 Spot Analyse'; }
+}
+
+function renderSpot(a, coin, tf) {
+  _$('spot-loading').style.display = 'none';
+  const isL = a.direction==='LONG', dc = isL?'var(--green)':'var(--red)';
+  const sc  = sCol(a.score||0), s = a.sentiment||{}, ai = a.ai||{}, ec = a.entryConf||{};
+  const entry = parseFloat(a.entryPrice)||0, sl = parseFloat(a.sl)||0;
+  const rrC = parseFloat(a.rrr||0)>=2?'var(--green)':parseFloat(a.rrr||0)>=1?'var(--yellow)':'var(--red)';
+  const sPct = Math.min((a.score/(a.maxScore||100))*100,100).toFixed(1);
+  const nsC = (s.newsScore||0)>0?'var(--green)':(s.newsScore||0)<0?'var(--red)':'var(--text2)';
+  const ecC = ec.strength==='STRONG'?'var(--green)':ec.strength==='MODERATE'?'var(--yellow)':'var(--text2)';
+  const reasons = (a.reasons||'').split(',').map(function(r){
+    return '<span style="background:rgba(0,200,255,.06);border-radius:3px;padding:2px 6px;font-size:.6rem;display:inline-block;margin:1px">'+r.trim()+'</span>';
+  }).join('');
+
+  _$('spot-results').innerHTML =
+    '<div class="scan-hero" style="margin-bottom:18px">'
+    +'<div style="text-align:center;min-width:90px">'
+    +'<div style="width:80px;height:80px;border-radius:50%;border:3px solid '+sc+';display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-size:1.5rem;font-weight:800;color:'+sc+';margin:0 auto">'+(a.score||0)+'</div>'
+    +'<div style="font-size:.6rem;color:var(--text2);margin-top:5px">Score</div></div>'
+    +'<div style="flex:1">'
+    +'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">'
+    +'<span style="font-family:var(--font-head);font-size:1.4rem;font-weight:800;color:#fff">'+coin.replace('USDT','')+'</span>'
+    +'<span style="background:var(--card2);padding:2px 9px;border-radius:5px;font-size:.72rem;color:var(--text2)">'+tf.toUpperCase()+' SPOT</span>'
+    +'<span style="padding:3px 12px;border-radius:99px;font-weight:700;font-size:.82rem;background:'+(isL?'rgba(0,230,118,.12)':'rgba(255,51,85,.12)')+';color:'+dc+'">'+(isL?'🟢 BUY':'🔴 SELL')+'</span>'
+    +'<span style="font-family:var(--font-mono);font-size:.8rem;color:var(--text2)">'+fmtP(a.currentPrice)+'</span>'
+    +'</div>'
+    +'<div style="margin-bottom:8px">'+reasons+'</div>'
+    +'<div style="display:flex;gap:14px;flex-wrap:wrap">'
+    +'<span style="font-size:.77rem;color:var(--text2)">ADX: <b>'+(a.adx?parseFloat(a.adx).toFixed(1):'—')+'</b></span>'
+    +'<span style="font-size:.77rem;color:var(--text2)">RSI: <b>'+(a.rsi?parseFloat(a.rsi).toFixed(1):'—')+'</b></span>'
+    +'<span style="font-size:.77rem;color:var(--text2)">4H: <b>'+(a.trend4H||'—')+'</b></span>'
+    +'<span style="font-size:.77rem;color:var(--text2)">AI: <b style="color:var(--accent)">'+(ai.confidence||'—')+'</b></span>'
+    +'</div></div></div>'
+
+    +'<div class="res-section" style="border-color:rgba(0,230,118,.2)">'
+    +'<div class="res-section-title">🟢 Spot Trade Setup</div>'
+    +'<div class="res-grid" style="margin-bottom:14px">'
+    +'<div class="res-item"><div class="res-item-label">Entry</div><div class="res-item-val" style="color:var(--accent);font-size:1rem">'+fmtP(a.entryPrice)+'</div></div>'
+    +'<div class="res-item"><div class="res-item-label">Stop Loss</div><div class="res-item-val" style="color:var(--red)">'+fmtP(a.sl)+'</div></div>'
+    +'<div class="res-item"><div class="res-item-label">RRR</div><div class="res-item-val" style="color:'+rrC+'">1:'+(a.rrr||'—')+'</div></div>'
+    +'</div>'
+    +'<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px">'
+    +'<div class="res-item"><div class="res-item-label">TP1 33% — Resistance</div><div class="res-item-val" style="color:var(--green)">'+fmtP(a.tp1)+'</div></div>'
+    +'<div class="res-item"><div class="res-item-label">TP2 33% — 1.618</div><div class="res-item-val" style="color:var(--green)">'+fmtP(a.tp2)+'</div></div>'
+    +'<div class="res-item"><div class="res-item-label">TP3 Full — 2.618</div><div class="res-item-val" style="color:var(--green)">'+fmtP(a.tp3)+'</div></div>'
+    +'</div>'
+    +'<div style="background:rgba(0,200,255,.04);border:1px solid rgba(0,200,255,.1);border-radius:var(--radius);padding:12px 14px">'
+    +'<div style="font-size:.68rem;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px">DCA Zones</div>'
+    +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px">'
+    +'<div><div style="font-size:.6rem;color:var(--text2)">Entry 50%</div><div style="font-family:var(--font-mono);font-size:.85rem;color:var(--accent)">'+fmtP(a.entryPrice)+'</div></div>'
+    +'<div><div style="font-size:.6rem;color:var(--text2)">DCA 1 35%</div><div style="font-family:var(--font-mono);font-size:.85rem;color:var(--yellow)">'+fmtP(a.dca1)+'</div></div>'
+    +'<div><div style="font-size:.6rem;color:var(--text2)">DCA 2 70%</div><div style="font-family:var(--font-mono);font-size:.85rem;color:var(--red)">'+fmtP(a.dca2)+'</div></div>'
+    +'<div><div style="font-size:.6rem;color:var(--text2)">Hard SL</div><div style="font-family:var(--font-mono);font-size:.85rem;font-weight:700;color:var(--red)">'+fmtP(a.sl)+'</div></div>'
+    +'</div></div></div>'
+
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">'
+    +'<div class="res-section" style="margin-bottom:0;border-color:rgba(124,58,237,.25)">'
+    +'<div class="res-section-title">🤖 AI · '+(ai.confidence||'—')+'</div>'
+    +'<div style="font-size:.88rem;color:var(--text);line-height:1.7">'+(ai.trend||'—')+'</div>'
+    +'<div style="font-size:.78rem;color:var(--yellow);margin-top:5px">'+(ai.spot_advice||'')+'</div></div>'
+    +'<div class="res-section" style="margin-bottom:0">'
+    +'<div class="res-section-title">📊 SMC</div>'
+    +'<div class="conf-row"><span>Sweep</span><span style="font-family:var(--font-mono);font-size:.75rem">'+(a.liquiditySweep||'None')+'</span></div>'
+    +'<div class="conf-row"><span>ChoCH</span><span style="font-family:var(--font-mono);font-size:.75rem">'+(a.choch||'None')+'</span></div>'
+    +'<div class="conf-row"><span>4H</span><span style="font-family:var(--font-mono);font-size:.75rem">'+(a.trend4H||'—')+'</span></div>'
+    +'<div class="conf-row"><span>Confirmations</span><span style="font-family:var(--font-mono);font-size:.75rem;color:'+ecC+'">'+(ec.verdict||'—')+'</span></div>'
+    +'</div></div>'
+
+    +'<div class="res-section">'
+    +'<div class="res-section-title">😱 Sentiment</div>'
+    +'<div class="res-grid">'
+    +'<div class="res-item"><div class="res-item-label">F&G</div><div class="res-item-val">'+(s.fngEmoji||'⚪')+' '+(s.fngValue||'—')+'</div></div>'
+    +'<div class="res-item"><div class="res-item-label">Market</div><div class="res-item-val" style="font-size:.78rem">'+(s.overall||'—')+'</div></div>'
+    +'<div class="res-item"><div class="res-item-label">BTC Dom</div><div class="res-item-val">'+(s.btcDom||'—')+'%</div></div>'
+    +'<div class="res-item"><div class="res-item-label">News</div><div class="res-item-val" style="color:'+nsC+'">'+(s.newsScore||0>=0?'+':'')+(s.newsScore||0)+'</div></div>'
+    +'</div></div>';
+
+  _$('spot-results').style.display = 'block';
+}
+
+
 document.addEventListener('DOMContentLoaded', () => {
   // Auto-run deep analysis if ?coin= is in URL (from market scanner links)
   var urlCoin = new URLSearchParams(window.location.search).get('coin');
@@ -1403,6 +1540,10 @@ document.addEventListener('DOMContentLoaded', () => {
     setTimeout(runLiveScan, 400);
   }
   _$('coin-input')?.addEventListener('keydown', e => { if(e.key==='Enter') runLiveScan(); });
+  _$('spot-coin')?.addEventListener('keydown', e => { if(e.key==='Enter') runSpotScan(); });
+  _$('spot-coin')?.addEventListener('input', e => { e.target.value=e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,''); });
+  _$('spot-coin')?.addEventListener('keydown', e => { if(e.key==='Enter') runSpotScan(); });
+  _$('spot-coin')?.addEventListener('input', e => { e.target.value=e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,''); });
   _$('coin-input')?.addEventListener('input',   e => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,''); });
   _$('bt-coin')?.addEventListener('keydown',    e => { if(e.key==='Enter') runBacktest(); });
   _$('bt-coin')?.addEventListener('input',      e => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,''); });
@@ -1910,6 +2051,102 @@ async function loadFunding() {
 
 document.addEventListener('DOMContentLoaded', function() { loadFunding(); });
 </script>`));
+});
+
+
+// ══════════════════════════════════════════════════════════════
+//  SPOT ANALYSIS API  POST /app/api/spot
+//  Full parity with .spot WhatsApp command
+// ══════════════════════════════════════════════════════════════
+app.post('/app/api/spot', saasAuth.requireUserAuth, async (req, res) => {
+    try {
+        let { coin='', timeframe='1d' } = req.body;
+        coin = cleanCoin(coin);
+        if (!coin || coin==='USDT') return res.status(400).json({ok:false,error:'Coin required'});
+        if (STABLES.has(coin)) return res.status(400).json({ok:false,error:'Stablecoin'});
+        if (!VALID_TF.includes(timeframe)) timeframe='1d';
+
+        const analyzer      = require('./lib/analyzer');
+        const binance       = require('./lib/binance');
+        const confirmations = require('./lib/confirmations_lib');
+
+        const aData = await analyzer.run14FactorAnalysis(coin, timeframe);
+
+        // Spot TPs from Fibonacci / resistance levels
+        const mSMC = aData.marketSMC || {};
+        const tp1  = mSMC.resistance   ? parseFloat(mSMC.resistance).toFixed(6)  : aData.tp1;
+        const tp2  = mSMC.ext1618      ? parseFloat(mSMC.ext1618).toFixed(6)     : aData.tp2;
+        const tp3  = mSMC.ext2618      ? parseFloat(mSMC.ext2618).toFixed(6)     : aData.tp3;
+
+        const entry = parseFloat(aData.entryPrice)||0;
+        const sl    = parseFloat(aData.sl)||0;
+        const tp2n  = parseFloat(tp2)||0;
+        const risk  = Math.abs(entry - sl);
+        const rrr   = risk>0 ? (Math.abs(tp2n-entry)/risk).toFixed(2) : '0';
+
+        // DCA levels
+        const dca1 = (entry - risk*0.35).toFixed(6);
+        const dca2 = (entry - risk*0.70).toFixed(6);
+
+        // Confirmations + sentiment in parallel
+        const fallSent = {fngValue:'N/A',fngEmoji:'\u26aa',overallSentiment:'NEUTRAL',tradingBias:'Neutral',btcDominance:'N/A',newsSentimentScore:0};
+        const [entryConf, sentiment] = await Promise.all([
+            withTimeout(confirmations.runAllConfirmations(coin,'LONG',null,aData),18000,{totalScore:0,confirmationStrength:'WEAK',verdict:'\u26aa NEUTRAL',verdictDetail:'Timeout'}),
+            withTimeout(binance.getMarketSentiment(coin).catch(()=>fallSent),8000,fallSent),
+        ]);
+
+        // GROQ AI
+        let aiResult = null;
+        if (config.GROQ_API) {
+            try {
+                const prompt = `Analyze ${coin} SPOT trade. Score:${aData.score}/${aData.maxScore}. Dir:${aData.direction}. Entry:${entry} SL:${sl} RRR:${rrr}. 4H:${aData.trend4H} 1H:${aData.trend1H}. F&G:${sentiment.fngValue}. Confluences:${aData.reasons}. Return ONLY JSON: {"confidence":"65%","trend":"short text","smc_summary":"short text","spot_advice":"short text"}`;
+                const gr = await withTimeout(axios.post('https://api.groq.com/openai/v1/chat/completions',
+                    {model:'llama-3.3-70b-versatile',messages:[{role:'user',content:prompt}],max_tokens:200,temperature:0.3},
+                    {headers:{Authorization:`Bearer ${config.GROQ_API}`},timeout:22000}),23000,null);
+                if (gr?.data?.choices?.[0]?.message?.content) {
+                    let raw = gr.data.choices[0].message.content.replace(/```json|```/g,'').trim();
+                    aiResult = JSON.parse(raw.slice(raw.indexOf('{'),raw.lastIndexOf('}')+1));
+                }
+            } catch(_) {}
+        }
+
+        res.json({ok:true, analysis:{
+            coin: coin.replace('USDT',''), direction: aData.direction,
+            score: aData.score, maxScore: aData.maxScore||100,
+            currentPrice: aData.currentPrice, priceStr: aData.priceStr,
+            entryPrice: entry, sl, tp1, tp2, tp3, rrr,
+            dca1, dca2,
+            slLabel: aData.slLabel, tp1Label: 'Resistance', tp2Label: '1.618 Ext', tp3Label: '2.618 Ext',
+            reasons: aData.reasons,
+            adx: aData.adxData?.value, rsi: aData.rsi,
+            marketState: aData.marketState, mainTrend: aData.mainTrend,
+            trend4H: aData.trend4H, trend1H: aData.trend1H,
+            dailyTrend: aData.dailyTrend, dailyAligned: aData.dailyAligned,
+            vwapDisplay: vwapDisplay(aData.vwap),
+            liquiditySweep: aData.liquiditySweep||'None',
+            choch: aData.choch||'None',
+            orderSuggestion: aData.orderSuggestion,
+            tradeCategory: aData.tradeCategory?.label,
+            sentiment:{
+                fngValue:sentiment.fngValue, fngEmoji:sentiment.fngEmoji,
+                overall:sentiment.overallSentiment, tradingBias:sentiment.tradingBias,
+                btcDom:sentiment.btcDominance, newsScore:sentiment.newsSentimentScore,
+            },
+            entryConf:{
+                totalScore:entryConf.totalScore, strength:entryConf.confirmationStrength,
+                verdict:entryConf.verdict, verdictDetail:entryConf.verdictDetail,
+            },
+            ai: aiResult||{
+                confidence: Math.min(95,Math.round(40+aData.score*0.5))+'%',
+                trend: aData.mainTrend||'See technical data',
+                smc_summary: 'Technical data only (AI unavailable)',
+                spot_advice: 'Buy at entry, DCA at zone 1/2, SL below support',
+            },
+        }});
+    } catch(e) {
+        console.error('[Spot API]', e.message);
+        res.status(500).json({ok:false, error:e.message});
+    }
 });
 
 

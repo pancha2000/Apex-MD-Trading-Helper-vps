@@ -485,6 +485,7 @@ function _appNav(active, username) {
     <a href="/app/grid"     class="nav-link ${active==='grid'     ?'active':''}">🕸 Grid</a>
     <a href="/app/funding"  class="nav-link ${active==='funding'  ?'active':''}">💸 Rates</a>
     <a href="/app/tracks"   class="nav-link ${active==='tracks'   ?'active':''}">🎯 Tracks</a>
+    <a href="/app/system"  class="nav-link ${active==='system'  ?'active':''}">💻 System</a>
     <a href="/app/trades"    class="nav-link ${active==='trades'    ?'active':''}">Trades</a>
     <a href="/app/settings"  class="nav-link ${active==='settings'  ?'active':''}">⚙️</a>
     <span style="font-size:.78rem;color:var(--text2);padding:0 5px;font-family:var(--font-mono)">👤 ${username||''}</span>

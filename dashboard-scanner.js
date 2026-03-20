@@ -1612,4 +1612,305 @@ app.get('/app/analyzer', saasAuth.requireUserAuth, (req, res) => {
 });
 
 
+// ══════════════════════════════════════════════════════════════
+//  GRID ZONES API  POST /app/api/grid
+// ══════════════════════════════════════════════════════════════
+app.post('/app/api/grid', saasAuth.requireUserAuth, async (req, res) => {
+    try {
+        let { coin = '', timeframe = '15m' } = req.body;
+        coin = cleanCoin(coin);
+        if (!coin || coin === 'USDT') return res.status(400).json({ok:false, error:'Coin required'});
+        if (STABLES.has(coin)) return res.status(400).json({ok:false, error:'Stablecoin'});
+        if (!VALID_TF.includes(timeframe)) timeframe = '15m';
+
+        const binance    = require('./lib/binance');
+        const indicators = require('./lib/indicators');
+
+        const candles = await binance.getKlineData(coin, timeframe, 100);
+        if (!candles || candles.length < 50)
+            return res.status(500).json({ok:false, error:'Insufficient candle data'});
+
+        const cp  = parseFloat(candles[candles.length - 1][4]);
+        const adx = indicators.calculateADX(candles.slice(-50));
+        const atr = parseFloat(indicators.calculateATR(candles.slice(-50), 14));
+
+        const highs = candles.slice(-50).map(c => parseFloat(c[2]));
+        const lows  = candles.slice(-50).map(c => parseFloat(c[3]));
+        const resistance = Math.max(...highs);
+        const support    = Math.min(...lows);
+        const step       = (resistance - support) / 5;
+
+        const gridLevels = Array.from({length:6}, (_, i) => (support + step * i).toFixed(4));
+        const isTrending = adx.isStrong || (adx.value || 0) > 25;
+
+        res.json({ok:true, result:{
+            coin: coin.replace('USDT',''), timeframe,
+            currentPrice: cp,
+            adx: adx.value, adxStatus: adx.status || '',
+            isTrending,
+            resistance: resistance.toFixed(4), support: support.toFixed(4),
+            gridLevels, gridStep: step.toFixed(4), atr: atr.toFixed(4),
+            dcaZone1: (support + step * 0.5).toFixed(4),
+            dcaZone2: support.toFixed(4),
+            warning: isTrending ? 'ADX ' + (adx.value||0).toFixed(1) + ' — Market is TRENDING. Grid trading risky!' : null,
+            advice: isTrending
+                ? 'Avoid grid in trending markets — use Deep Scanner instead.'
+                : 'Choppy/sideways market detected. Grid strategy is suitable.',
+        }});
+    } catch(e) {
+        console.error('[Grid API]', e.message);
+        res.status(500).json({ok:false, error: e.message});
+    }
+});
+
+// ══════════════════════════════════════════════════════════════
+//  FUNDING RATES API  GET /app/api/funding
+// ══════════════════════════════════════════════════════════════
+app.get('/app/api/funding', saasAuth.requireUserAuth, async (req, res) => {
+    try {
+        const COINS = [
+            'BTCUSDT','ETHUSDT','SOLUSDT','BNBUSDT','XRPUSDT','ADAUSDT',
+            'AVAXUSDT','DOTUSDT','LINKUSDT','MATICUSDT','ATOMUSDT','NEARUSDT',
+            'LTCUSDT','DOGEUSDT','UNIUSDT','INJUSDT','APTUSDT','ARBUSDT',
+            'OPUSDT','SUIUSDT','TIAUSDT','FETUSDT','RENDERUSDT','WLDUSDT','RUNEUSDT',
+        ];
+        const data = await withTimeout(
+            axios.get('https://fapi.binance.com/fapi/v1/premiumIndex', {timeout:8000})
+                 .then(r => r.data),
+            10000, null
+        );
+        if (!data) return res.status(500).json({ok:false, error:'Binance unavailable'});
+
+        const results = COINS.map(sym => {
+            const d = data.find(x => x.symbol === sym);
+            if (!d) return null;
+            const rate  = parseFloat(d.lastFundingRate) * 100;
+            const name  = sym.replace('USDT','');
+            const tier  = Math.abs(rate) >= 0.1 ? 'extreme' : Math.abs(rate) >= 0.05 ? 'elevated' : 'normal';
+            return {
+                symbol: sym, name, rate: parseFloat(rate.toFixed(4)),
+                tier, dir: rate > 0 ? 'SHORT' : 'LONG',
+                emoji: rate > 0.1 ? '\ud83d\udd34' : rate < -0.1 ? '\ud83d\udfe2' : rate > 0.05 ? '\ud83d\udfe1' : rate < -0.05 ? '\ud83d\udfe1' : '\u26aa',
+                label: rate > 0.1  ? 'Longs overloaded \u2192 SHORT squeeze!'
+                     : rate < -0.1 ? 'Shorts overloaded \u2192 LONG squeeze!'
+                     : 'Normal range',
+            };
+        }).filter(Boolean).sort((a, b) => Math.abs(b.rate) - Math.abs(a.rate));
+
+        res.json({ok:true, rates:results, ts:Date.now()});
+    } catch(e) {
+        console.error('[Funding API]', e.message);
+        res.status(500).json({ok:false, error: e.message});
+    }
+});
+
+// ══════════════════════════════════════════════════════════════
+//  GRID ZONES PAGE  GET /app/grid
+// ══════════════════════════════════════════════════════════════
+app.get('/app/grid', saasAuth.requireUserAuth, (req, res) => {
+    const user = req.saasUser;
+    res.send(_html('Grid Zones', `
+${_appNav('grid', user.username)}
+<div class="wrap" style="max-width:960px">
+  <h1 class="page-title">🕸 Grid & DCA Zones <span>.grid Command Parity · Sideways Market Strategy</span></h1>
+
+  <div class="panel" style="margin-bottom:20px">
+    <div class="panel-body">
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+        <div style="flex:1;min-width:130px">
+          <label class="field-label">Coin Symbol</label>
+          <input type="text" id="g-coin" class="inp" placeholder="BTC, ETH, SOL..."
+            style="font-family:var(--font-mono);font-size:1.05rem;font-weight:700;text-transform:uppercase"
+            maxlength="12" autocomplete="off">
+        </div>
+        <div style="min-width:120px">
+          <label class="field-label">Timeframe</label>
+          <select id="g-tf" class="inp">
+            <option value="5m">5 Minutes</option>
+            <option value="15m" selected>15 Minutes</option>
+            <option value="1h">1 Hour</option>
+            <option value="4h">4 Hours</option>
+          </select>
+        </div>
+        <button id="g-btn" class="btn btn-warn" style="padding:11px 28px;font-weight:700" onclick="calcGrid()">🕸 Get Grid Zones</button>
+      </div>
+      <div style="font-size:.72rem;color:var(--text2);margin-top:9px">ADX market-type detection · 5 grid levels · DCA zones · Suitable for sideways markets only</div>
+    </div>
+  </div>
+
+  <div id="g-loading" style="display:none;padding:50px 0;text-align:center">
+    <div style="font-size:2.5rem;animation:spin 1s linear infinite;display:inline-block">🕸</div>
+    <div style="margin-top:12px;font-size:.92rem;color:var(--text)">Calculating grid levels...</div>
+  </div>
+  <div id="g-error" style="display:none;background:rgba(255,51,85,.07);border:1px solid rgba(255,51,85,.25);border-radius:var(--radius);padding:14px 18px;margin-bottom:16px;color:var(--red);font-size:.88rem"></div>
+  <div id="g-results" style="display:none"></div>
+</div>
+
+<script>
+document.getElementById('g-coin').addEventListener('keydown', function(e){ if(e.key==='Enter') calcGrid(); });
+document.getElementById('g-coin').addEventListener('input', function(e){ e.target.value=e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,''); });
+
+function fmtP(n){if(n==null||isNaN(Number(n)))return'—';var p=parseFloat(n);if(isNaN(p))return'—';if(p>=10000)return'$'+p.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});if(p>=1)return'$'+p.toFixed(4);return'$'+p.toFixed(6);}
+
+async function calcGrid() {
+  var coin = document.getElementById('g-coin').value.trim().toUpperCase();
+  var tf   = document.getElementById('g-tf').value;
+  if (!coin) { document.getElementById('g-coin').focus(); return; }
+  document.getElementById('g-results').style.display = 'none';
+  document.getElementById('g-error').style.display   = 'none';
+  document.getElementById('g-loading').style.display = 'block';
+  document.getElementById('g-btn').disabled = true;
+  document.getElementById('g-btn').textContent = '...';
+  try {
+    var r = await fetch('/app/api/grid', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({coin, timeframe:tf})});
+    var d = await r.json();
+    document.getElementById('g-loading').style.display = 'none';
+    if (!r.ok || !d.ok) { document.getElementById('g-error').style.display='block'; document.getElementById('g-error').textContent='Error: '+(d.error||'Failed'); return; }
+    renderGrid(d.result);
+  } catch(e) { document.getElementById('g-loading').style.display='none'; document.getElementById('g-error').style.display='block'; document.getElementById('g-error').textContent='Network error: '+e.message; }
+  finally { document.getElementById('g-btn').disabled=false; document.getElementById('g-btn').textContent='🕸 Get Grid Zones'; }
+}
+
+function renderGrid(r) {
+  var adxC = r.isTrending ? 'var(--red)' : 'var(--green)';
+  var grids = r.gridLevels || [];
+  var labels = ['🔵 Support — Strong Buy / DCA 2', '🟢 Grid 1 — DCA Zone', '🟢 Grid 2 — Buy Zone', '🟡 Grid 3 — Neutral', '🟠 Grid 4 — Take Profit', '🔴 Resistance — Strong Sell / Short'];
+  var colors = ['var(--green)','var(--green)','#66bb6a','var(--text2)','var(--yellow)','var(--red)'];
+  
+  var gridRows = grids.map(function(g, i) {
+    var isCurrentZone = Math.abs(parseFloat(g) - r.currentPrice) / r.currentPrice < 0.015;
+    return '<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--bg2);border-radius:var(--radius-sm);border-left:3px solid '+(colors[i]||'var(--border)')+(isCurrentZone?';box-shadow:0 0 12px rgba(0,200,255,.15);border-color:var(--accent)!important':'')+';">'
+    + '<div><div style="font-size:.72rem;color:'+(colors[i]||'var(--text2)')+'">'+labels[i]+'</div>'
+    + (isCurrentZone?'<div style="font-size:.6rem;color:var(--accent);margin-top:2px">← Current Price Zone</div>':'')
+    + '</div>'
+    + '<div style="font-family:var(--font-mono);font-size:1rem;font-weight:700;color:'+(colors[i]||'var(--text)')+'">'+fmtP(g)+'</div>'
+    + '</div>';
+  }).join('');
+
+  document.getElementById('g-results').innerHTML =
+    (r.warning ? '<div style="background:rgba(255,51,85,.08);border:1px solid rgba(255,51,85,.2);border-radius:var(--radius);padding:12px 16px;margin-bottom:16px;font-size:.85rem;color:var(--red)">⚠️ '+r.warning+'</div>' : '')
+    + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px">'
+    + '<div class="stat-card"><div class="stat-label">Current Price</div><div class="stat-val c-cyan" style="font-size:1.2rem">'+fmtP(r.currentPrice)+'</div></div>'
+    + '<div class="stat-card"><div class="stat-label">ADX</div><div class="stat-val" style="color:'+adxC+';font-size:1.2rem">'+(r.adx?parseFloat(r.adx).toFixed(1):'—')+'</div><div class="stat-sub">'+r.adxStatus+'</div></div>'
+    + '<div class="stat-card"><div class="stat-label">Market Type</div><div class="stat-val" style="color:'+adxC+';font-size:.9rem">'+(r.isTrending?'⚡ Trending':'✅ Sideways')+'</div></div>'
+    + '<div class="stat-card"><div class="stat-label">Grid Step</div><div class="stat-val c-yellow" style="font-size:1rem">'+fmtP(r.gridStep)+'</div></div>'
+    + '</div>'
+    + '<div class="panel"><div class="panel-head"><div class="panel-title">🕸 Grid Levels — '+r.coin+' · '+r.timeframe.toUpperCase()+'</div></div>'
+    + '<div style="padding:16px;display:grid;gap:8px">'+gridRows+'</div></div>'
+    + '<div class="panel"><div class="panel-head"><div class="panel-title">📉 DCA Points</div></div><div class="panel-body">'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
+    + '<div style="background:var(--bg2);border-radius:var(--radius-sm);padding:12px"><div style="font-size:.65rem;color:var(--text2)">Entry (50% size)</div><div style="font-family:var(--font-mono);font-size:.95rem;color:var(--accent)">'+fmtP(r.currentPrice)+'</div></div>'
+    + '<div style="background:var(--bg2);border-radius:var(--radius-sm);padding:12px"><div style="font-size:.65rem;color:var(--text2)">DCA 1 (35% toward SL)</div><div style="font-family:var(--font-mono);font-size:.95rem;color:var(--yellow)">'+fmtP(r.dcaZone1)+'</div></div>'
+    + '<div style="background:var(--bg2);border-radius:var(--radius-sm);padding:12px"><div style="font-size:.65rem;color:var(--text2)">DCA 2 (Strong Support)</div><div style="font-family:var(--font-mono);font-size:.95rem;color:var(--red)">'+fmtP(r.dcaZone2)+'</div></div>'
+    + '<div style="background:var(--bg2);border-radius:var(--radius-sm);padding:12px"><div style="font-size:.65rem;color:var(--text2)">ATR (Volatility)</div><div style="font-family:var(--font-mono);font-size:.95rem;color:var(--text)">'+fmtP(r.atr)+'</div></div>'
+    + '</div>'
+    + '<div style="margin-top:14px;padding:12px 14px;background:rgba(0,200,255,.04);border:1px solid rgba(0,200,255,.1);border-radius:var(--radius-sm);font-size:.8rem;color:var(--text2);line-height:1.7">'
+    + '<b style="color:var(--text)">Strategy:</b> ' + r.advice + '<br>'
+    + '💡 Buy at support/grid 2, sell at grid 4/resistance. Only use in sideways markets (ADX &lt; 25).'
+    + '</div></div></div>';
+
+  document.getElementById('g-results').style.display = 'block';
+}
+</script>`));
+});
+
+// ══════════════════════════════════════════════════════════════
+//  FUNDING RATES PAGE  GET /app/funding
+// ══════════════════════════════════════════════════════════════
+app.get('/app/funding', saasAuth.requireUserAuth, (req, res) => {
+    const user = req.saasUser;
+    res.send(_html('Funding Rates', `
+${_appNav('funding', user.username)}
+<div class="wrap" style="max-width:900px">
+  <h1 class="page-title">💸 Funding Rate Scanner <span>.fundingalert Command Parity · Squeeze Setups</span></h1>
+
+  <div class="panel" style="margin-bottom:20px;border-color:rgba(255,171,0,.2)">
+    <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between">
+      <div>
+        <div class="panel-title">💸 Extreme Funding Rate Scanner</div>
+        <div style="font-size:.7rem;color:var(--text2);margin-top:2px">Extreme rates = squeeze setups · >0.1% = SHORT · &lt;-0.1% = LONG</div>
+      </div>
+      <button id="f-btn" onclick="loadFunding()" class="btn btn-warn" style="padding:9px 24px;font-weight:700">💸 Scan Rates</button>
+    </div>
+    <div id="f-loading" style="display:none;padding:40px 20px;text-align:center">
+      <div style="font-size:2.5rem;animation:spin 1.2s linear infinite;display:inline-block">💸</div>
+      <div style="margin-top:10px;font-size:.9rem;color:var(--text)">Fetching funding rates...</div>
+    </div>
+    <div id="f-error" style="display:none;color:var(--red);padding:14px 20px;font-size:.88rem"></div>
+    <div id="f-results" style="display:none;padding:16px 20px 20px"></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><div class="panel-title">📚 Funding Rate Guide</div></div>
+    <div class="panel-body">
+      <div style="display:grid;gap:10px">
+        <div style="display:flex;justify-content:space-between;padding:10px 14px;background:var(--bg2);border-radius:var(--radius-sm)"><span>+0.1%+</span><span style="color:var(--red)">Longs crowded → SHORT squeeze risk</span></div>
+        <div style="display:flex;justify-content:space-between;padding:10px 14px;background:var(--bg2);border-radius:var(--radius-sm)"><span>-0.1%+</span><span style="color:var(--green)">Shorts crowded → LONG squeeze risk</span></div>
+        <div style="display:flex;justify-content:space-between;padding:10px 14px;background:var(--bg2);border-radius:var(--radius-sm)"><span>0.01%</span><span style="color:var(--text2)">Neutral — balanced market</span></div>
+      </div>
+      <div style="margin-top:12px;font-size:.78rem;color:var(--text2)">Funding resets every 8 hours. Extreme rates often precede sharp reversals.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+function fmtR(r) { return (r>=0?'+':'')+r.toFixed(4)+'%'; }
+
+async function loadFunding() {
+  var btn = document.getElementById('f-btn');
+  btn.disabled=true; btn.textContent='⏳...';
+  document.getElementById('f-loading').style.display='block';
+  document.getElementById('f-results').style.display='none';
+  document.getElementById('f-error').style.display='none';
+  try {
+    var r = await fetch('/app/api/funding');
+    var d = await r.json();
+    document.getElementById('f-loading').style.display='none';
+    if (!r.ok||!d.ok) { document.getElementById('f-error').style.display='block'; document.getElementById('f-error').textContent='Error: '+(d.error||'Failed'); return; }
+    
+    var extreme  = d.rates.filter(function(x){return x.tier==='extreme';});
+    var elevated = d.rates.filter(function(x){return x.tier==='elevated';});
+    var normal   = d.rates.filter(function(x){return x.tier==='normal';});
+
+    function row(x, big) {
+      var rCol = x.rate>0?'var(--red)':'var(--green)';
+      return '<div style="display:flex;align-items:center;gap:14px;padding:'+(big?'14px':'10px')+' 16px;border-bottom:1px solid var(--border)">'
+        +'<div style="font-size:1.2rem">'+x.emoji+'</div>'
+        +'<div style="min-width:65px"><div style="font-family:var(--font-head);font-size:'+(big?'1rem':'.88rem')+';font-weight:700;color:#fff">'+x.name+'</div></div>'
+        +'<div style="flex:1"><div style="font-size:.72rem;color:var(--text2)">'+x.label+'</div></div>'
+        +'<div style="font-family:var(--font-mono);font-size:'+(big?'.92rem':'.8rem')+';font-weight:700;color:'+rCol+'">'+fmtR(x.rate)+'</div>'
+        +(big?'<a href="/app/scanner?coin='+x.name+'" class="btn btn-primary btn-sm">⚡ Analyse</a>':'')
+        +'</div>';
+    }
+
+    var html = '';
+    if (extreme.length) {
+      html += '<div style="padding:10px 16px 6px;font-size:.72rem;font-weight:700;color:var(--red);text-transform:uppercase;letter-spacing:.08em">🚨 Extreme (>0.1%) — Squeeze Risk!</div>';
+      html += extreme.map(function(x){return row(x,true);}).join('');
+    } else {
+      html += '<div style="padding:20px 16px;color:var(--text2);font-size:.85rem">⚪ No extreme funding rates. All within normal range.</div>';
+    }
+    if (elevated.length) {
+      html += '<div style="padding:12px 16px 6px;font-size:.72rem;font-weight:700;color:var(--yellow);text-transform:uppercase;letter-spacing:.08em">⚠️ Elevated (0.05-0.1%) — Watch</div>';
+      html += elevated.map(function(x){return row(x,false);}).join('');
+    }
+    if (normal.length) {
+      html += '<div style="padding:12px 16px 6px;font-size:.72rem;color:var(--text2);text-transform:uppercase;letter-spacing:.08em">Normal Range</div>';
+      html += normal.map(function(x){return row(x,false);}).join('');
+    }
+    html += '<div style="padding:12px 16px;font-size:.7rem;color:var(--text2)">Updated: '+new Date(d.ts).toLocaleTimeString()+'</div>';
+    document.getElementById('f-results').innerHTML = html;
+    document.getElementById('f-results').style.display = 'block';
+  } catch(e) {
+    document.getElementById('f-loading').style.display='none';
+    document.getElementById('f-error').style.display='block';
+    document.getElementById('f-error').textContent='Network error: '+e.message;
+  } finally { btn.disabled=false; btn.textContent='💸 Scan Rates'; }
+}
+
+document.addEventListener('DOMContentLoaded', function() { loadFunding(); });
+</script>`));
+});
+
+
 }; // end module.exports

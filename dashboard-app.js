@@ -1352,4 +1352,125 @@ app.post('/app/api/ai-chat', saasAuth.requireUserAuth, async (req, res) => {
 });
 
 
+// ══════════════════════════════════════════════════════════════
+//  MANUAL TRACKS PAGE  GET /app/tracks
+//  Mirrors .track .mytrades .deltrade WhatsApp commands
+// ══════════════════════════════════════════════════════════════
+app.get('/app/tracks', saasAuth.requireUserAuth, async (req, res) => {
+    const user = req.saasUser;
+    let activeTrades = [], closedTrades = [];
+    try {
+        const fullUser = await db.getSaasUserById(user.userId);
+        const waJid = fullUser && fullUser.whatsappJid ? fullUser.whatsappJid : null;
+        if (waJid) {
+            activeTrades = await db.getActiveTrades(waJid).catch(() => []);
+            const hist   = await db.getSaasUserTradeHistory(user.userId, 50);
+            closedTrades = hist.filter(t => !t.isPaper);
+        }
+    } catch(_) {}
+
+    function fmtAgo(d) {
+        if (!d) return '—';
+        const hrs = Math.floor((Date.now() - new Date(d)) / 3600000);
+        return hrs < 1 ? '<1h' : hrs < 24 ? hrs + 'h' : Math.floor(hrs/24) + 'd';
+    }
+
+    const activeRows = activeTrades.map(t => {
+        const dir = t.direction === 'LONG'
+            ? '<span class="pill pill-long">▲ LONG</span>'
+            : '<span class="pill pill-short">▼ SHORT</span>';
+        const st = t.status === 'pending'
+            ? '<span class="pill pill-pending">PENDING</span>'
+            : '<span class="pill pill-active">ACTIVE</span>';
+        return `<tr>
+          <td style="font-family:var(--font-mono);font-weight:700">${(t.coin||'').replace('USDT','')}</td>
+          <td>${dir}</td>
+          <td style="font-family:var(--font-mono)">${fmtPrice(t.entry)}</td>
+          <td style="font-family:var(--font-mono);color:var(--green)">${fmtPrice(t.tp1||t.tp)}</td>
+          <td style="font-family:var(--font-mono);color:var(--green)">${fmtPrice(t.tp2||t.tp)}</td>
+          <td style="font-family:var(--font-mono);color:var(--red)">${fmtPrice(t.sl)}</td>
+          <td>${st}</td>
+          <td style="color:var(--text2)">${fmtAgo(t.openTime)}</td>
+          <td><a href="/app/api/tracks/delete/${t._id}" onclick="return confirm('Delete this trade?')" class="btn btn-danger btn-sm" style="padding:4px 10px;font-size:.72rem">✕</a></td>
+        </tr>`;
+    }).join('');
+
+    const closedRows = closedTrades.map(t => {
+        const dir = t.direction === 'LONG'
+            ? '<span class="pill pill-long">▲ LONG</span>'
+            : '<span class="pill pill-short">▼ SHORT</span>';
+        const res = t.result === 'WIN' ? '<span class="pill pill-win">WIN</span>'
+                  : t.result === 'LOSS' ? '<span class="pill pill-loss">LOSS</span>'
+                  : `<span class="pill pill-be">${t.result||'—'}</span>`;
+        const pnl = t.pnlPct != null
+            ? `<span style="color:${t.pnlPct>=0?'var(--green)':'var(--red)'}">${t.pnlPct>=0?'+':''}${parseFloat(t.pnlPct).toFixed(2)}%</span>`
+            : '—';
+        return `<tr>
+          <td style="font-family:var(--font-mono);font-weight:700">${(t.coin||'').replace('USDT','')}</td>
+          <td>${dir}</td>
+          <td style="font-family:var(--font-mono)">${fmtPrice(t.entry)}</td>
+          <td style="font-family:var(--font-mono)">${fmtPrice(t.tp2||t.tp)}</td>
+          <td style="font-family:var(--font-mono)">${fmtPrice(t.sl)}</td>
+          <td>${res}</td>
+          <td style="font-family:var(--font-mono)">${pnl}</td>
+          <td style="color:var(--text2)">${t.closedAt?new Date(t.closedAt).toLocaleDateString():'—'}</td>
+        </tr>`;
+    }).join('');
+
+    res.send(_html('Trade Tracker', `
+${_appNav('tracks', user.username)}
+<div class="wrap">
+  <h1 class="page-title">🎯 Trade Tracker <span>.track Command Parity · Manual Trade Management</span></h1>
+
+  <div class="panel" style="margin-bottom:20px">
+    <div class="panel-head"><div class="panel-title">📌 Active & Pending Trades (${activeTrades.length})</div></div>
+    ${activeTrades.length === 0
+      ? '<div style="padding:32px 20px;text-align:center;color:var(--text2)">No active tracked trades.<br><small style="font-size:.78rem;margin-top:6px;display:block">WhatsApp හිදී analysis reply ලෙස <b>.track</b> send කරලා trades track කරන්න.</small></div>'
+      : `<div class="tbl-wrap"><table>
+        <thead><tr>
+          <th>Coin</th><th>Dir</th><th>Entry</th><th>TP1</th><th>TP2</th><th>SL</th><th>Status</th><th>Age</th><th></th>
+        </tr></thead>
+        <tbody>${activeRows}</tbody>
+      </table></div>`}
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><div class="panel-title">📋 Trade History (${closedTrades.length})</div></div>
+    ${closedTrades.length === 0
+      ? '<div style="padding:32px 20px;text-align:center;color:var(--text2)">No closed trades yet.</div>'
+      : `<div class="tbl-wrap"><table>
+        <thead><tr>
+          <th>Coin</th><th>Dir</th><th>Entry</th><th>TP</th><th>SL</th><th>Result</th><th>P&amp;L</th><th>Date</th>
+        </tr></thead>
+        <tbody>${closedRows}</tbody>
+      </table></div>`}
+  </div>
+
+  ${!activeTrades.length && !closedTrades.length ? `
+  <div class="panel">
+    <div class="panel-body">
+      <div style="font-size:.88rem;color:var(--text2);line-height:1.8">
+        <b style="color:var(--accent)">WhatsApp හිදී trade track කරන ආකාරය:</b><br>
+        1. <code>.future BTC 15m</code> හෝ <code>.spot ETH</code> ලෙස analysis ගන්න<br>
+        2. Analysis reply ලෙස <code>.track</code> send කරන්න<br>
+        3. Bot automatically entry/TP/SL parse කර track කරනවා<br>
+        4. <code>.mytrades</code> ලෙස active trades check<br>
+        5. <code>.deltrade BTC</code> ලෙස trade delete
+      </div>
+    </div>
+  </div>` : ''}
+</div>`));
+});
+
+// DELETE track  GET /app/api/tracks/delete/:id
+app.get('/app/api/tracks/delete/:id', saasAuth.requireUserAuth, async (req, res) => {
+    try {
+        await db.deleteTrade(req.params.id);
+        res.redirect('/app/tracks?deleted=1');
+    } catch(e) {
+        res.redirect('/app/tracks?error=1');
+    }
+});
+
+
 }; // end module.exports

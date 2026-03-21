@@ -108,7 +108,7 @@ function renderUserNav(active) {
     document.getElementById('nav-root').innerHTML = `
     <nav class="nav">
         <div class="nav-logo">
-            <span>⚡</span> Apex-MD
+            <img src="/logo.svg" height="28" alt="Apex-MD" style="display:block;max-width:140px">
             <span class="nav-logo-badge" style="background:linear-gradient(135deg,#1a3349,#254560);color:var(--text3)">PORTAL</span>
         </div>
         <button class="nav-hamburger" id="nav-hbg" onclick="_navToggle()" aria-label="Menu">

@@ -170,3 +170,10 @@ function timeAgo(ts) {
     if (s < 86400) return Math.floor(s/3600) + 'h ago';
     return Math.floor(s/86400) + 'd ago';
 }
+
+/* ── API Fetch Helper ─────────────────────────────────────── */
+async function apiFetch(url, opts = {}) {
+    const r = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...opts });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+}

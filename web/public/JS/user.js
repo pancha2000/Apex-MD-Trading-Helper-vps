@@ -4,28 +4,34 @@
 
 /* ── Nav Render ───────────────────────────────────────────── */
 function renderUserNav(active) {
+    // Nav grouped by category — separators shown as dividers in mobile menu
     const links = [
-        { href: '/app/',          key: 'home',      label: 'Dashboard' },
-        { href: '/app/market',    key: 'market',    label: '🔍 Scan' },
+        // ── Main ──
+        { href: '/app/',          key: 'home',      label: '🏠 Dashboard' },
+        // ── Analysis ──
         { href: '/app/scanner',   key: 'scanner',   label: '⚡ Scanner' },
-        { href: '/app/paper',     key: 'paper',     label: '📄 Paper' },
-        { href: '/app/watchlist', key: 'watchlist', label: '👁 Watch' },
-        { href: '/app/alerts',    key: 'alerts',    label: '🔔 Alerts' },
+        { href: '/app/market',    key: 'market',    label: '🔍 Market Scan' },
+        { href: '/app/heatmap',   key: 'heatmap',   label: '🌡️ Heatmap' },
+        { href: '/app/compare',   key: 'compare',   label: '⚖️ Compare' },
+        { href: '/app/funding',   key: 'funding',   label: '💸 Funding' },
         { href: '/app/news',      key: 'news',      label: '📰 Intel' },
-        { href: '/app/calc',      key: 'calc',      label: '🧮 Calc' },
-        { href: '/app/stats',     key: 'stats',     label: '📊 Stats' },
-        { href: '/app/ai',        key: 'ai',        label: '🤖 AI' },
-        { href: '/app/grid',      key: 'grid',      label: '🕸 Grid' },
-        { href: '/app/funding',   key: 'funding',   label: '💸 Rates' },
+        // ── Trading ──
+        { href: '/app/trades',    key: 'trades',    label: '📋 Trades' },
+        { href: '/app/paper',     key: 'paper',     label: '📄 Paper' },
         { href: '/app/tracks',    key: 'tracks',    label: '🎯 Tracks' },
+        { href: '/app/alerts',    key: 'alerts',    label: '🔔 Alerts' },
+        { href: '/app/watchlist', key: 'watchlist', label: '👁 Watchlist' },
+        { href: '/app/portfolio', key: 'portfolio', label: '💼 Portfolio' },
+        // ── Tools ──
+        { href: '/app/backtest',  key: 'backtest',  label: '🧪 Backtest' },
+        { href: '/app/journal',   key: 'journal',   label: '📓 Journal' },
+        { href: '/app/stats',     key: 'stats',     label: '📊 Stats' },
+        { href: '/app/calc',      key: 'calc',      label: '🧮 Calc' },
+        { href: '/app/grid',      key: 'grid',      label: '🕸 Grid' },
+        { href: '/app/ai',        key: 'ai',        label: '🤖 AI Chat' },
+        // ── Account ──
+        { href: '/app/settings',  key: 'settings',  label: '⚙️ Settings' },
         { href: '/app/system',    key: 'system',    label: '💻 System' },
-        { href: '/app/trades',    key: 'trades',    label: 'Trades' },
-        { href: '/app/settings',  key: 'settings',  label: '⚙️' },
-        { href: '/app/journal',    key: 'journal',   label: '📓 Journal' },
-        { href: '/app/backtest',   key: 'backtest',  label: '🧪 Backtest' },
-        { href: '/app/heatmap',    key: 'heatmap',   label: '🌡️ Heatmap' },
-        { href: '/app/portfolio',  key: 'portfolio', label: '💼 Portfolio' },
-        { href: '/app/compare',    key: 'compare',   label: '⚖️ Compare' },
     ];
     const user = window._apexUser || {};
     const linkHtml = links.map(l => `

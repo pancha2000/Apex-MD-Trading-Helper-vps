@@ -445,3 +445,42 @@ cmd({
         await m.react('✅');
     } catch(e) { await reply('❌ Error: ' + e.message); }
 });
+
+
+// ─── Web API Exports ──────────────────────────────────────────
+module.exports = {
+    async runBacktest(coin, timeframe='15m', days=30) {
+        const binance = require('../lib/binance');
+        days = Math.max(5, Math.min(parseInt(days)||30, 90));
+        // 1 day ≈ 96 candles on 15m
+        const candleCount = Math.min(days * 96 + 200, 1500);
+        const [candles, candles1H] = await Promise.all([
+            binance.getKlineData(coin, timeframe, candleCount),
+            binance.getKlineData(coin, '1h', 250).catch(()=>null),
+        ]);
+        if (!candles || candles.length < 300) throw new Error('Insufficient data — need 300+ candles');
+        const r = runBacktest(candles, 12, candles1H);
+        // Format for web UI
+        const tradeLog = (r.trades||[]).slice(0,30).map(t => ({
+            direction: t.dir==='L'?'LONG':'SHORT',
+            entry:     parseFloat(t.entry||0).toFixed(4),
+            result:    t.result,
+            pnlPct:    parseFloat(t.pnlR||0).toFixed(2),
+        }));
+        return {
+            coin: coin.replace('USDT',''), timeframe, days,
+            total:     r.total,
+            wins:      r.wins,
+            losses:    r.losses,
+            winRate:   parseFloat(r.winRate),
+            totalPnl:  parseFloat(r.netR),
+            avgPnl:    r.total>0 ? (parseFloat(r.netR)/r.total).toFixed(2) : '0.00',
+            maxDrawdown: parseFloat(r.maxDD),
+            bestTrade:  r.best  ? parseFloat(r.best.pnlR).toFixed(2)  : null,
+            worstTrade: r.worst ? parseFloat(r.worst.pnlR).toFixed(2) : null,
+            profitFactor: r.pf,
+            maxConsecLoss: r.maxCL,
+            trades: tradeLog,
+        };
+    }
+};

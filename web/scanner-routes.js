@@ -282,20 +282,26 @@ app.post('/app/api/compare', saasAuth.requireUserAuth, async (req, res) => {
             withTimeout(analyzer.run14FactorAnalysis(coin1, timeframe), 25000, null),
             withTimeout(analyzer.run14FactorAnalysis(coin2, timeframe), 25000, null),
         ]);
-        const fmt = a => a ? {
-            coin: a.entryPrice ? coin1.replace('USDT','') : coin2.replace('USDT',''),
-            direction: a.direction, score: a.score,
-            entryPrice: a.entryPrice, tp1: a.tp1, tp2: a.tp2, sl: a.sl,
-            trend4H: a.trend4H, trend1H: a.trend1H,
-            rsi: a.rsi, adx: a.adxData?.value,
-            fundingRate: a.fundingRate,
+        const safeStr = v => (v && typeof v === 'string') ? v : (v ? String(v) : '—');
+        const fmtCoin = (a, coinStr) => a ? {
+            coin:        coinStr.replace('USDT',''),
+            direction:   a.direction || '—',
+            score:       a.score || 0,
+            entryPrice:  a.entryPrice,
+            tp1: a.tp1, tp2: a.tp2, sl: a.sl,
+            trend4H:     safeStr(a.trend4H),
+            trend1H:     safeStr(a.trend1H),
+            dailyTrend:  safeStr(a.dailyTrend),
+            rsi:         a.rsi ? parseFloat(a.rsi).toFixed(1) : '—',
+            adx:         a.adxData?.value ? parseFloat(a.adxData.value).toFixed(1) : '—',
+            fundingRate: a.fundingRate ?? null,
             dailyAligned: a.dailyAligned,
-            reasons: a.reasons,
-            rrr: calcFutures(a).rrr,
+            reasons:     a.reasons,
+            rrr:         calcFutures(a).rrr,
         } : null;
         res.json({ok:true,
-            coin1: a1 ? {...fmt(a1), coin: coin1.replace('USDT','')} : null,
-            coin2: a2 ? {...fmt(a2), coin: coin2.replace('USDT','')} : null,
+            coin1: fmtCoin(a1, coin1),
+            coin2: fmtCoin(a2, coin2),
         });
     } catch(e) { res.status(500).json({ok:false,error:e.message}); }
 });

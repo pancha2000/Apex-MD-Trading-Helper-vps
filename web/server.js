@@ -181,21 +181,31 @@ function start() {
     // ─── Static Files ──────────────────────────────────────────────────
     app.use(express.static(path.join(__dirname, 'public')));
 
-    // ─── Public pages (no auth required) ──────────────────────────────
-    app.get('/', (req, res) => {
-        res.send(renderView('public/landing', {}));
+    // ─── Public pages (no auth required — never redirect) ─────────────
+    // optionalAuth: reads cookie if present but NEVER redirects
+    function optionalAuth(req, res, next) {
+        try {
+            const cookies = saasAuth.parseCookies(req.headers.cookie || '');
+            const payload  = saasAuth.verifyUserToken(cookies[saasAuth.USER_COOKIE_NAME]);
+            req.saasUser   = payload || null;
+        } catch(_) { req.saasUser = null; }
+        next();
+    }
+
+    app.get('/', optionalAuth, (req, res) => {
+        res.send(renderView('public/landing', { loggedIn: Boolean(req.saasUser), username: req.saasUser?.username || '' }));
     });
 
-    app.get('/about', (req, res) => {
-        res.send(renderView('public/landing', {}));
+    app.get('/about', optionalAuth, (req, res) => {
+        res.send(renderView('public/landing', { loggedIn: Boolean(req.saasUser), username: req.saasUser?.username || '' }));
     });
 
-    app.get('/privacy', (req, res) => {
-        res.send(renderView('public/privacy', {}));
+    app.get('/privacy', optionalAuth, (req, res) => {
+        res.send(renderView('public/privacy', { loggedIn: Boolean(req.saasUser), username: req.saasUser?.username || '' }));
     });
 
-    app.get('/terms', (req, res) => {
-        res.send(renderView('public/terms', {}));
+    app.get('/terms', optionalAuth, (req, res) => {
+        res.send(renderView('public/terms', { loggedIn: Boolean(req.saasUser), username: req.saasUser?.username || '' }));
     });
 
     app.get('/robots.txt', (req, res) => {

@@ -4,199 +4,133 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Apex-MD — AI-Powered Crypto Trading Platform</title>
+<meta name="coinzilla" content="4f9f08278a0d676e0d533b586eceb40f" />
 <meta name="description" content="Apex-MD is an advanced AI crypto trading platform offering real-time market analysis, 70-factor signal scanning, paper trading, and automated alerts for cryptocurrency futures traders.">
 <meta name="keywords" content="crypto trading, AI trading bot, Bitcoin signals, crypto scanner, futures trading, market analysis, cryptocurrency alerts">
 <meta property="og:title" content="Apex-MD — AI Crypto Trading Platform">
-<meta property="og:description" content="Real-time AI-powered crypto market scanner with 70-factor analysis, funding rates, and smart money concepts.">
 <meta property="og:type" content="website">
-<link rel="canonical" href="https://apexmd.trade/">
-<link rel="stylesheet" href="/css/main.css">
 <style>
-  .hero{text-align:center;padding:80px 20px 60px;max-width:800px;margin:0 auto}
-  .hero-title{font-family:var(--font-head);font-size:clamp(2rem,5vw,3.2rem);font-weight:800;line-height:1.15;margin-bottom:18px}
-  .hero-sub{font-size:1.05rem;color:var(--text2);max-width:580px;margin:0 auto 36px;line-height:1.7}
-  .hero-btns{display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
-  .features{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:20px;max-width:1100px;margin:0 auto 60px;padding:0 20px}
-  .feat-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:24px;transition:.2s}
-  .feat-card:hover{border-color:rgba(0,200,255,.3);transform:translateY(-2px)}
-  .feat-icon{font-size:1.8rem;margin-bottom:12px}
-  .feat-title{font-family:var(--font-head);font-weight:700;font-size:.95rem;color:#fff;margin-bottom:6px}
-  .feat-desc{font-size:.82rem;color:var(--text2);line-height:1.6}
-  .stats-bar{display:flex;justify-content:center;gap:40px;flex-wrap:wrap;padding:40px 20px;background:rgba(0,200,255,.03);border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin-bottom:60px}
-  .stat-num{font-family:var(--font-mono);font-size:1.8rem;font-weight:800;color:var(--accent)}
-  .stat-lbl{font-size:.78rem;color:var(--text2);margin-top:4px}
-  .section-title{text-align:center;font-family:var(--font-head);font-size:1.5rem;font-weight:700;margin-bottom:30px}
-  .how-steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:20px;max-width:900px;margin:0 auto 60px;padding:0 20px}
-  .step{text-align:center;padding:24px 16px}
-  .step-num{width:44px;height:44px;border-radius:50%;background:rgba(0,200,255,.15);border:2px solid rgba(0,200,255,.4);display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-weight:700;color:var(--accent);font-size:1.1rem;margin:0 auto 14px}
-  .step-title{font-weight:700;font-size:.9rem;color:#fff;margin-bottom:6px}
-  .step-desc{font-size:.8rem;color:var(--text2);line-height:1.6}
-  .disclaimer{max-width:760px;margin:0 auto 40px;padding:16px 20px;background:rgba(255,171,0,.05);border:1px solid rgba(255,171,0,.2);border-radius:8px;font-size:.78rem;color:var(--text2);line-height:1.7;text-align:center}
-  footer{border-top:1px solid var(--border);padding:28px 20px;text-align:center;font-size:.78rem;color:var(--text2)}
-  footer a{color:var(--accent);margin:0 10px}
-  .nav-pub{display:flex;align-items:center;justify-content:space-between;padding:0 24px;height:60px;background:rgba(6,13,23,.92);backdrop-filter:blur(20px);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:200}
-  .nav-pub-logo{font-family:var(--font-head);font-weight:800;font-size:1.1rem;color:#fff;display:flex;align-items:center;gap:8px}
-  .badge-live{display:inline-flex;align-items:center;gap:5px;background:rgba(0,230,118,.1);border:1px solid rgba(0,230,118,.3);border-radius:99px;padding:3px 10px;font-size:.72rem;color:var(--green);font-weight:600}
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@300;400;500;600&display=swap');
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#060d17;--bg2:#0b1828;--card:#0d1f30;--card2:#112436;--border:#1c3349;--border2:#254560;--accent:#00c8ff;--green:#00e676;--yellow:#ffab00;--red:#ff3355;--text:#d6eeff;--text2:#5c87a8;--text3:#8ab0cc;--radius:10px;--font-head:'Syne',sans-serif;--font-body:'DM Sans',sans-serif}
+body{background:var(--bg);color:var(--text);font-family:var(--font-body);min-height:100vh;line-height:1.6}
+a{color:var(--accent);text-decoration:none}a:hover{color:#33d6ff}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:9px 18px;border-radius:var(--radius);font-weight:600;font-size:.88rem;cursor:pointer;border:1px solid transparent;transition:.2s;text-decoration:none}
+.btn-primary{background:rgba(0,200,255,.15);border-color:rgba(0,200,255,.4);color:var(--accent)}.btn-primary:hover{background:rgba(0,200,255,.25);color:#fff}
+.btn-ghost{background:transparent;border-color:var(--border);color:var(--text2)}.btn-ghost:hover{border-color:var(--border2);color:var(--text)}
+.btn-sm{padding:6px 12px;font-size:.78rem}
+.nav{display:flex;align-items:center;justify-content:space-between;padding:0 24px;height:60px;background:rgba(6,13,23,.95);backdrop-filter:blur(20px);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:200}
+.nav-logo{font-family:var(--font-head);font-weight:800;font-size:1.1rem;color:#fff;display:flex;align-items:center;gap:8px}
+.badge-live{display:inline-flex;align-items:center;gap:5px;background:rgba(0,230,118,.1);border:1px solid rgba(0,230,118,.3);border-radius:99px;padding:3px 10px;font-size:.7rem;color:var(--green);font-weight:600}
+.dot-green{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.hero{text-align:center;padding:80px 20px 60px;max-width:800px;margin:0 auto}
+.hero-title{font-family:var(--font-head);font-size:clamp(1.8rem,5vw,3rem);font-weight:800;line-height:1.2;margin-bottom:18px}
+.hero-sub{font-size:1rem;color:var(--text2);max-width:560px;margin:0 auto 36px;line-height:1.7}
+.hero-btns{display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
+.features{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px;max-width:1100px;margin:0 auto 60px;padding:0 20px}
+.feat{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:22px;transition:.2s}
+.feat:hover{border-color:rgba(0,200,255,.3);transform:translateY(-2px)}
+.feat-icon{font-size:1.6rem;margin-bottom:10px}
+.feat-title{font-family:var(--font-head);font-weight:700;font-size:.92rem;color:#fff;margin-bottom:6px}
+.feat-desc{font-size:.8rem;color:var(--text2);line-height:1.6}
+.stats{display:flex;justify-content:center;gap:40px;flex-wrap:wrap;padding:36px 20px;background:rgba(0,200,255,.03);border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin-bottom:60px}
+.stat-n{font-size:1.8rem;font-weight:800;color:var(--accent);font-family:var(--font-head)}
+.stat-l{font-size:.75rem;color:var(--text2);margin-top:4px}
+.sec-title{text-align:center;font-family:var(--font-head);font-size:1.4rem;font-weight:800;margin-bottom:28px}
+.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:18px;max-width:860px;margin:0 auto 60px;padding:0 20px}
+.step{text-align:center;padding:20px 12px}
+.step-n{width:42px;height:42px;border-radius:50%;background:rgba(0,200,255,.12);border:2px solid rgba(0,200,255,.35);display:flex;align-items:center;justify-content:center;font-weight:800;color:var(--accent);font-size:1rem;margin:0 auto 12px}
+.step-t{font-weight:700;font-size:.88rem;color:#fff;margin-bottom:5px}
+.step-d{font-size:.78rem;color:var(--text2);line-height:1.6}
+.disclaimer{max-width:720px;margin:0 auto 40px;padding:14px 18px;background:rgba(255,171,0,.05);border:1px solid rgba(255,171,0,.2);border-radius:8px;font-size:.76rem;color:var(--text2);line-height:1.7;text-align:center}
+footer{border-top:1px solid var(--border);padding:26px 20px;text-align:center;font-size:.76rem;color:var(--text2)}
+footer a{color:var(--accent);margin:0 8px}
 </style>
 </head>
 <body>
-
-<!-- Nav -->
-<nav class="nav-pub">
-  <div class="nav-pub-logo">⚡ Apex-MD <span class="badge-live"><span class="dot dot-green pulse" style="width:6px;height:6px"></span>Live</span></div>
-  <div style="display:flex;gap:10px">
-    <a href="/auth/login" class="btn btn-ghost btn-sm">Sign In</a>
-    <a href="/auth/register" class="btn btn-primary btn-sm">Get Started</a>
-  </div>
+<nav class="nav">
+  <div class="nav-logo">⚡ Apex-MD <span class="badge-live"><span class="dot-green"></span>Live</span></div>
+  <div id="pub-nav-btns"></div>
+<script>
+(function(){
+  var D=window.__DATA__||{};
+  var el=document.getElementById('pub-nav-btns');
+  if(!el)return;
+  if(D.loggedIn){
+    el.innerHTML='<a href="/app/" class="btn btn-primary btn-sm">⚡ Dashboard</a>';
+  } else {
+    el.innerHTML='<a href="/auth/login" class="btn btn-ghost btn-sm">Sign In</a><a href="/auth/register" class="btn btn-primary btn-sm">Get Started</a>';
+  }
+})();
+</script>
 </nav>
 
-<!-- Hero -->
 <div class="hero">
-  <div style="display:inline-flex;align-items:center;gap:8px;background:rgba(0,200,255,.08);border:1px solid rgba(0,200,255,.2);border-radius:99px;padding:6px 16px;font-size:.78rem;color:var(--accent);font-weight:600;margin-bottom:22px">
-    ⚡ 70-Factor AI Analysis · Real-Time Signals
-  </div>
-  <h1 class="hero-title">
-    The AI-Powered<br>
-    <span style="color:var(--accent)">Crypto Trading Platform</span>
-  </h1>
-  <p class="hero-sub">
-    Advanced market scanning with 70+ technical indicators, Smart Money Concepts, funding rate analysis, and AI-generated trade summaries. Built for serious crypto futures traders.
-  </p>
+  <div style="display:inline-flex;align-items:center;gap:7px;background:rgba(0,200,255,.08);border:1px solid rgba(0,200,255,.2);border-radius:99px;padding:5px 14px;font-size:.75rem;color:var(--accent);font-weight:600;margin-bottom:22px">⚡ 70-Factor AI Analysis · Real-Time Signals</div>
+  <h1 class="hero-title">The AI-Powered<br><span style="color:var(--accent)">Crypto Trading Platform</span></h1>
+  <p class="hero-sub">Advanced market scanning with 70+ technical indicators, Smart Money Concepts, funding rate analysis, and AI-generated trade summaries. Built for serious crypto futures traders.</p>
   <div class="hero-btns">
     <a href="/auth/register" class="btn btn-primary" style="padding:12px 28px;font-size:.95rem">⚡ Start Free</a>
     <a href="#features" class="btn btn-ghost" style="padding:12px 28px;font-size:.95rem">Learn More →</a>
   </div>
 </div>
 
-<!-- Stats bar -->
-<div class="stats-bar">
-  <div style="text-align:center"><div class="stat-num">70+</div><div class="stat-lbl">Technical Indicators</div></div>
-  <div style="text-align:center"><div class="stat-num">15m</div><div class="stat-lbl">Real-Time Analysis</div></div>
-  <div style="text-align:center"><div class="stat-num">50+</div><div class="stat-lbl">Coins Scanned</div></div>
-  <div style="text-align:center"><div class="stat-num">AI</div><div class="stat-lbl">Groq-Powered Summary</div></div>
+<div class="stats">
+  <div style="text-align:center"><div class="stat-n">70+</div><div class="stat-l">Technical Indicators</div></div>
+  <div style="text-align:center"><div class="stat-n">15m</div><div class="stat-l">Real-Time Analysis</div></div>
+  <div style="text-align:center"><div class="stat-n">50+</div><div class="stat-l">Coins Scanned</div></div>
+  <div style="text-align:center"><div class="stat-n">AI</div><div class="stat-l">Groq-Powered Summary</div></div>
 </div>
 
-
-  <!-- A-ADS 2431249 -->
-  <div style="max-width:960px;margin:0 auto 40px;padding:0 20px;text-align:center">
-    <div id="frame" style="width:100%;margin:auto;position:relative;z-index:99998">
-      <iframe data-aa='2431249' src='//acceptable.a-ads.com/2431249/?size=Adaptive'
-        style='border:0;padding:0;width:100%;height:auto;overflow:hidden;display:block;margin:auto'></iframe>
-    </div>
+<!-- A-ADS 2431249 -->
+<div style="max-width:960px;margin:0 auto 40px;padding:0 20px;text-align:center">
+  <div id="frame" style="width:100%;margin:auto;position:relative;z-index:99998">
+    <iframe data-aa='2431249' src='//acceptable.a-ads.com/2431249/?size=Adaptive'
+      style='border:0;padding:0;width:100%;height:auto;overflow:hidden;display:block;margin:auto'></iframe>
   </div>
+</div>
 
-<!-- Features -->
 <div id="features" style="padding:0 0 20px">
-  <h2 class="section-title">Everything You Need to Trade Smarter</h2>
+  <h2 class="sec-title">Everything You Need to Trade Smarter</h2>
   <div class="features">
-    <div class="feat-card">
-      <div class="feat-icon">⚡</div>
-      <div class="feat-title">AI Deep Scanner</div>
-      <div class="feat-desc">70-factor analysis combining SMC, EMA ribbons, RSI, MACD, Bollinger Bands, Ichimoku, Supertrend, Wyckoff phases, and more — all in one score.</div>
-    </div>
-    <div class="feat-card">
-      <div class="feat-icon">💸</div>
-      <div class="feat-title">Funding Rate Monitor</div>
-      <div class="feat-desc">Real-time Binance perpetual funding rates. Detect squeeze setups before they happen. Extreme funding = contrarian signal.</div>
-    </div>
-    <div class="feat-card">
-      <div class="feat-icon">📄</div>
-      <div class="feat-title">Paper Trading</div>
-      <div class="feat-desc">Test strategies with virtual capital. Full TP1/TP2/TP3 targets, live P&L tracking, and performance analytics — zero risk.</div>
-    </div>
-    <div class="feat-card">
-      <div class="feat-icon">🌡️</div>
-      <div class="feat-title">Market Heatmap</div>
-      <div class="feat-desc">Visual 24h performance grid of top 50 crypto assets. Instantly see market-wide sentiment and spot outliers.</div>
-    </div>
-    <div class="feat-card">
-      <div class="feat-icon">🧪</div>
-      <div class="feat-title">Backtesting</div>
-      <div class="feat-desc">Historical signal accuracy testing for any coin and timeframe. Win rate, profit factor, max drawdown — all calculated automatically.</div>
-    </div>
-    <div class="feat-card">
-      <div class="feat-icon">🔔</div>
-      <div class="feat-title">Price Alerts</div>
-      <div class="feat-desc">Set price level alerts for any coin. Get notified via WhatsApp when your target is hit. Up to 20 simultaneous alerts.</div>
-    </div>
-    <div class="feat-card">
-      <div class="feat-icon">⚖️</div>
-      <div class="feat-title">Coin Comparison</div>
-      <div class="feat-desc">Side-by-side deep analysis of two coins. Compare scores, trends, funding rates, and trade setups to find the best opportunity.</div>
-    </div>
-    <div class="feat-card">
-      <div class="feat-icon">🤖</div>
-      <div class="feat-title">AI Chat Assistant</div>
-      <div class="feat-desc">Ask market questions and get AI-powered insights. Powered by Groq LLaMA. Supports your own API key for unlimited usage.</div>
-    </div>
-    <div class="feat-card">
-      <div class="feat-icon">📱</div>
-      <div class="feat-title">WhatsApp Integration</div>
-      <div class="feat-desc">Link your WhatsApp to receive trading signals, TP/SL hit notifications, and daily P&L reports directly in your chat.</div>
-    </div>
+    <div class="feat"><div class="feat-icon">⚡</div><div class="feat-title">AI Deep Scanner</div><div class="feat-desc">70-factor analysis combining SMC, EMA ribbons, RSI, MACD, Bollinger Bands, Ichimoku, Supertrend, Wyckoff phases, and more — all in one score.</div></div>
+    <div class="feat"><div class="feat-icon">💸</div><div class="feat-title">Funding Rate Monitor</div><div class="feat-desc">Real-time Binance perpetual funding rates. Detect squeeze setups before they happen. Extreme funding = contrarian signal.</div></div>
+    <div class="feat"><div class="feat-icon">📄</div><div class="feat-title">Paper Trading</div><div class="feat-desc">Test strategies with virtual capital. Full TP1/TP2/TP3 targets, live P&L tracking, and performance analytics — zero risk.</div></div>
+    <div class="feat"><div class="feat-icon">🌡️</div><div class="feat-title">Market Heatmap</div><div class="feat-desc">Visual 24h performance grid of top 50 crypto assets. Instantly see market-wide sentiment and spot outliers.</div></div>
+    <div class="feat"><div class="feat-icon">🧪</div><div class="feat-title">Backtesting</div><div class="feat-desc">Historical signal accuracy testing. Win rate, profit factor, max drawdown — all calculated automatically.</div></div>
+    <div class="feat"><div class="feat-icon">🔔</div><div class="feat-title">Price Alerts</div><div class="feat-desc">Set price level alerts for any coin. Get notified via WhatsApp when your target is hit. Up to 20 simultaneous alerts.</div></div>
+    <div class="feat"><div class="feat-icon">⚖️</div><div class="feat-title">Coin Comparison</div><div class="feat-desc">Side-by-side deep analysis of two coins. Compare scores, trends, funding rates, and trade setups.</div></div>
+    <div class="feat"><div class="feat-icon">🤖</div><div class="feat-title">AI Chat Assistant</div><div class="feat-desc">Ask market questions and get AI-powered insights. Powered by Groq LLaMA. Supports your own API key.</div></div>
+    <div class="feat"><div class="feat-icon">📱</div><div class="feat-title">WhatsApp Integration</div><div class="feat-desc">Link your WhatsApp to receive trading signals, TP/SL hit notifications, and daily P&L reports directly in chat.</div></div>
   </div>
 </div>
 
-<!-- How it works -->
 <div style="padding:20px 0 60px">
-  <h2 class="section-title">How It Works</h2>
-  <div class="how-steps">
-    <div class="step">
-      <div class="step-num">1</div>
-      <div class="step-title">Create Account</div>
-      <div class="step-desc">Sign up free. No credit card required. Start exploring the platform immediately.</div>
-    </div>
-    <div class="step">
-      <div class="step-num">2</div>
-      <div class="step-title">Scan Markets</div>
-      <div class="step-desc">Run the AI scanner on any coin. Get a complete analysis with entry, TP, and SL levels.</div>
-    </div>
-    <div class="step">
-      <div class="step-num">3</div>
-      <div class="step-title">Paper Trade</div>
-      <div class="step-desc">Test setups with virtual funds first. Build confidence before risking real capital.</div>
-    </div>
-    <div class="step">
-      <div class="step-num">4</div>
-      <div class="step-title">Trade Smarter</div>
-      <div class="step-desc">Use real data to make informed decisions. Track your performance with detailed stats.</div>
-    </div>
+  <h2 class="sec-title">How It Works</h2>
+  <div class="steps">
+    <div class="step"><div class="step-n">1</div><div class="step-t">Create Account</div><div class="step-d">Sign up free. No credit card required. Start exploring immediately.</div></div>
+    <div class="step"><div class="step-n">2</div><div class="step-t">Scan Markets</div><div class="step-d">Run the AI scanner on any coin. Get complete analysis with entry, TP, and SL levels.</div></div>
+    <div class="step"><div class="step-n">3</div><div class="step-t">Paper Trade</div><div class="step-d">Test setups with virtual funds first. Build confidence before risking real capital.</div></div>
+    <div class="step"><div class="step-n">4</div><div class="step-t">Trade Smarter</div><div class="step-d">Use real data to make informed decisions. Track your performance with detailed stats.</div></div>
   </div>
 </div>
 
-<!-- CTA -->
 <div style="text-align:center;padding:20px 20px 60px">
-  <div style="background:linear-gradient(135deg,rgba(0,200,255,.08),rgba(0,200,255,.02));border:1px solid rgba(0,200,255,.2);border-radius:16px;max-width:560px;margin:0 auto;padding:40px 30px">
-    <div style="font-size:1.8rem;margin-bottom:14px">⚡</div>
-    <h2 style="font-family:var(--font-head);font-size:1.4rem;font-weight:800;margin-bottom:12px">Ready to trade smarter?</h2>
-    <p style="font-size:.88rem;color:var(--text2);margin-bottom:24px;line-height:1.6">Join traders already using Apex-MD to find high-probability crypto setups.</p>
-    <a href="/auth/register" class="btn btn-primary" style="padding:13px 32px;font-size:.95rem;font-weight:700">Create Free Account →</a>
+  <div style="background:linear-gradient(135deg,rgba(0,200,255,.08),rgba(0,200,255,.02));border:1px solid rgba(0,200,255,.2);border-radius:14px;max-width:520px;margin:0 auto;padding:36px 28px">
+    <div style="font-size:1.6rem;margin-bottom:12px">⚡</div>
+    <h2 style="font-family:var(--font-head);font-size:1.3rem;font-weight:800;margin-bottom:10px">Ready to trade smarter?</h2>
+    <p style="font-size:.85rem;color:var(--text2);margin-bottom:22px;line-height:1.6">Join traders already using Apex-MD to find high-probability crypto setups.</p>
+    <a href="/auth/register" class="btn btn-primary" style="padding:12px 28px;font-size:.9rem">Create Free Account →</a>
   </div>
 </div>
 
-<!-- Disclaimer -->
-<div style="padding:0 20px">
-  <div class="disclaimer">
-    ⚠️ <strong>Risk Disclaimer:</strong> Cryptocurrency trading involves substantial risk of loss and is not suitable for all investors. The information provided by Apex-MD is for educational and informational purposes only and does not constitute financial, investment, or trading advice. Past performance is not indicative of future results. Never trade with money you cannot afford to lose. Always do your own research.
-  </div>
-</div>
+<div style="padding:0 20px"><div class="disclaimer">⚠️ <strong>Risk Disclaimer:</strong> Cryptocurrency trading involves substantial risk of loss and is not suitable for all investors. The information provided by Apex-MD is for educational and informational purposes only and does not constitute financial, investment, or trading advice. Past performance is not indicative of future results. Never trade with money you cannot afford to lose.</div></div>
 
-<!-- Footer -->
 <footer>
-  <div style="margin-bottom:12px">
-    <strong style="color:#fff;font-family:var(--font-head)">⚡ Apex-MD</strong>
-    <span style="color:var(--text2);margin-left:8px">AI-Powered Crypto Trading Platform</span>
-  </div>
-  <div>
-    <a href="/privacy">Privacy Policy</a>
-    <a href="/terms">Terms of Service</a>
-    <a href="/auth/login">Sign In</a>
-    <a href="/auth/register">Register</a>
-  </div>
-  <div style="margin-top:14px;font-size:.72rem">
-    © 2025 Apex-MD. All rights reserved. Crypto trading involves risk. Trade responsibly.
-  </div>
+  <div style="margin-bottom:10px"><strong style="color:#fff;font-family:var(--font-head)">⚡ Apex-MD</strong> <span style="margin-left:6px">AI-Powered Crypto Trading Platform</span></div>
+  <div><a href="/privacy">Privacy Policy</a><a href="/terms">Terms of Service</a></div>
+  <div style="margin-top:12px;font-size:.7rem">© 2025 Apex-MD. All rights reserved. Crypto trading involves risk.</div>
 </footer>
-
 </body>
 </html>

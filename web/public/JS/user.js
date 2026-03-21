@@ -48,23 +48,54 @@ function renderUserNav(active) {
         { href: '/terms',   label: '📄 Terms of Service' },
     ];
 
+    // Track which groups are open (all open by default if active page is in group)
+    const _openGroups = new Set();
+    GROUPS.forEach(g => { if (g.keys.includes(active)) _openGroups.add(g.label); });
+    // About always closed by default
+    const ALL_GROUPS = [...GROUPS, { label: 'About', keys: [] }];
+
+    function toggleGroup(label) {
+        if (_openGroups.has(label)) _openGroups.delete(label);
+        else _openGroups.add(label);
+        // Re-render drawer content only
+        const d = document.getElementById('nav-links');
+        if (d) d.innerHTML = buildDrawerHTML();
+    }
+
     function buildDrawerHTML() {
         let html = '';
-        const sep = (label, extra='') => `<div style="font-size:.62rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.1em;padding:10px 20px 3px;margin-top:6px${extra}">${label}</div>`;
-        // Home first
+        // Home always first — no group
         const home = links.find(l => l.key === 'home');
         if (home) html += `<a href="${home.href}" onclick="_navClose()" class="nav-link${active===home.key?' active':''}">${home.label}</a>`;
-        // Category groups
+
+        // Category groups — collapsible
         GROUPS.forEach(g => {
             const gl = links.filter(l => g.keys.includes(l.key));
             if (!gl.length) return;
-            html += sep(g.label);
-            gl.forEach(l => { html += `<a href="${l.href}" onclick="_navClose()" class="nav-link${active===l.key?' active':''}">${l.label}</a>`; });
+            const isOpen = _openGroups.has(g.label);
+            const hasActive = gl.some(l => l.key === active);
+            html += `<div onclick="toggleGroup('${g.label}')" style="display:flex;align-items:center;justify-content:space-between;padding:9px 20px 6px;cursor:pointer;user-select:none;background:${hasActive?'rgba(0,200,255,.05)':'transparent'}">
+              <span style="font-size:.65rem;font-weight:700;color:${hasActive?'var(--accent)':'var(--text2)'};text-transform:uppercase;letter-spacing:.1em">${g.label}</span>
+              <span style="font-size:.65rem;color:var(--text2);transition:.2s;transform:rotate(${isOpen?'90':'0'}deg)">▶</span>
+            </div>`;
+            if (isOpen) {
+                gl.forEach(l => {
+                    html += `<a href="${l.href}" onclick="_navClose()" class="nav-link${active===l.key?' active':''}" style="padding-left:28px">${l.label}</a>`;
+                });
+            }
         });
-        // About section
-        html += sep('About', ';border-top:1px solid rgba(255,255,255,.07);margin-top:10px');
-        aboutLinks.forEach(l => { html += `<a href="${l.href}" onclick="_navClose()" class="nav-link" style="font-size:.82rem;opacity:.8">${l.label}</a>`; });
-        // Footer
+
+        // About — collapsible
+        const aboutOpen = _openGroups.has('About');
+        html += `<div onclick="toggleGroup('About')" style="display:flex;align-items:center;justify-content:space-between;padding:9px 20px 6px;cursor:pointer;user-select:none;border-top:1px solid rgba(255,255,255,.07);margin-top:6px">
+          <span style="font-size:.65rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.1em">About</span>
+          <span style="font-size:.65rem;color:var(--text2);transition:.2s;transform:rotate(${aboutOpen?'90':'0'}deg)">▶</span>
+        </div>`;
+        if (aboutOpen) {
+            aboutLinks.forEach(l => { html += `<a href="${l.href}" onclick="_navClose()" class="nav-link" style="padding-left:28px;font-size:.82rem;opacity:.8">${l.label}</a>`; });
+        }
+
+        // User + logout
         html += `<div style="padding:10px 16px 4px;margin-top:4px;border-top:1px solid rgba(255,255,255,.07)">`;
         if (user.username) html += `<div style="font-size:.75rem;color:var(--text2);padding:2px 0 8px;font-family:var(--font-mono)">👤 ${user.username}</div>`;
         html += `<a href="/auth/logout" class="nav-btn" style="justify-content:center">Logout →</a></div>`;

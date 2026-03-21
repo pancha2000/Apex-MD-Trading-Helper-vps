@@ -251,7 +251,8 @@ function start() {
         try { saasUserCount = await db.SaasUser.countDocuments(); } catch(_){}
         const uptime = Math.floor((Date.now() - _botState.startTime) / 60000);
         res.send(renderView('admin/dashboard', {
-            waConnected:    _botState.waConnected,
+            waConnected:        _botState.waConnected,
+            waCommandsEnabled:  _botState.waCommandsEnabled !== false,
             scannerActive,
             tradeCount:     trades.length,
             signalsToday:   _signalBuffer.filter(s => Date.now()-s.ts < 86400000).length,
@@ -510,6 +511,8 @@ function start() {
         try {
             const { status } = req.body;
             if (!['active','suspended'].includes(status)) return res.status(400).json({ok:false,error:'Invalid status'});
+            const u = await db.getSaasUserById(req.params.id);
+            if (u && PROTECTED_EMAILS.includes(u.email)) return res.status(403).json({ok:false,error:'This account is protected.'});
             await db.setSaasUserStatus(req.params.id, status);
             res.json({ok:true,status});
         } catch(e){ res.status(500).json({ok:false,error:e.message}); }
@@ -540,8 +543,11 @@ function start() {
     });
 
     // ── User delete ──────────────────────────────────────────────
+    const PROTECTED_EMAILS = ['cdilrukshi52@gmail.com'];
     app.delete('/admin/api/users/:id', requireAdminAuth, async (req, res) => {
         try {
+            const u = await db.getSaasUserById(req.params.id);
+            if (u && PROTECTED_EMAILS.includes(u.email)) return res.status(403).json({ok:false,error:'This account is protected and cannot be deleted.'});
             await db.deleteSaasUser(req.params.id);
             res.json({ok:true});
         } catch(e){ res.status(500).json({ok:false,error:e.message}); }
@@ -571,6 +577,18 @@ function start() {
         if (!global._featureFlags[tier]) return res.status(400).json({ok:false,error:'Invalid tier'});
         global._featureFlags[tier][feature] = Boolean(enabled);
         res.json({ok:true, tier, feature, enabled: Boolean(enabled)});
+    });
+
+    // ── WA Commands mode toggle ─────────────────────────────────
+    if (!_botState.hasOwnProperty('waCommandsEnabled')) _botState.waCommandsEnabled = true;
+
+    app.post('/admin/api/wa/mode', requireAdminAuth, (req, res) => {
+        const { enabled } = req.body;
+        if (typeof enabled !== 'boolean') return res.status(400).json({ok:false, error:'enabled must be boolean'});
+        _botState.waCommandsEnabled = enabled;
+        global._waCommandsEnabled  = enabled;
+        _pushLog(`[ADMIN] ${enabled ? '🟢' : '🔴'} WA Commands → ${enabled ? 'ONLINE' : 'OFFLINE'}`);
+        res.json({ ok: true, waCommandsEnabled: enabled });
     });
 
     // ── Bot restart / stop ───────────────────────────────────────

@@ -137,15 +137,19 @@ document.getElementById('users-body').innerHTML = users.length === 0
       const tierBtn    = u.tier==='vip'
         ? `<button class="btn btn-sm" onclick="setTier('${u.id}','free')" style="background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.2);color:var(--text2)">→ Free</button>`
         : `<button class="btn btn-sm" onclick="setTier('${u.id}','vip')" style="background:rgba(255,215,0,.12);border-color:rgba(255,215,0,.4);color:gold">→ VIP 👑</button>`;
-      const statusBtn  = u.status==='active'
+      const statusBtn  = isProtected ? '<span style="font-size:.7rem;color:var(--text2)">Admin</span>' :
+        u.status==='active'
         ? `<button class="btn btn-danger btn-sm" onclick="setStatus('${u.id}','suspended')">Suspend</button>`
         : `<button class="btn btn-success btn-sm" onclick="setStatus('${u.id}','active')">Activate</button>`;
       const roleBtn    = u.role==='admin'
         ? `<button class="btn btn-sm" onclick="setRole('${u.id}','user')" style="background:rgba(255,171,0,.1);border-color:rgba(255,171,0,.3);color:var(--yellow)">→ User</button>`
         : `<button class="btn btn-sm" onclick="setRole('${u.id}','admin')" style="background:rgba(255,51,85,.1);border-color:rgba(255,51,85,.3);color:#ff6b6b">→ Admin</button>`;
-      const deleteBtn  = u.role!=='admin'
-        ? `<button class="btn btn-sm" onclick="deleteUser('${u.id}','${u.username}')" style="background:rgba(255,51,85,.15);border-color:rgba(255,51,85,.4);color:var(--red)">🗑️</button>`
-        : '';
+      const isProtected = u.email === 'cdilrukshi52@gmail.com';
+      const deleteBtn  = isProtected
+        ? '<span style="font-size:.7rem;color:var(--accent)">🔒 Protected</span>'
+        : u.role!=='admin'
+          ? `<button class="btn btn-sm" onclick="deleteUser('${u.id}','${u.username}')" style="background:rgba(255,51,85,.15);border-color:rgba(255,51,85,.4);color:var(--red)">🗑️</button>`
+          : '';
       return `<tr>
         <td><strong>${u.username}</strong></td>
         <td style="color:var(--text2);font-size:.8rem">${u.email}</td>

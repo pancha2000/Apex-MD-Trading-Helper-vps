@@ -3,7 +3,8 @@
    ═══════════════════════════════════════════════════════════ */
 
 /* ── Nav group toggle — global so onclick in drawer can reach it ── */
-window._navToggleGroup = function(label) {
+window._navToggleGroup = function(label, event) {
+    if (event) { event.stopPropagation(); event.preventDefault(); }
     if (!window._navOpenGroups) window._navOpenGroups = new Set();
     if (window._navOpenGroups.has(label)) window._navOpenGroups.delete(label);
     else window._navOpenGroups.add(label);
@@ -75,7 +76,7 @@ function renderUserNav(active) {
             if (!gl.length) return;
             const isOpen = _openGroups.has(g.label);
             const hasActive = gl.some(l => l.key === active);
-            html += `<div onclick="window._navToggleGroup('${g.label}')" style="display:flex;align-items:center;justify-content:space-between;padding:9px 20px 6px;cursor:pointer;user-select:none;background:${hasActive?'rgba(0,200,255,.05)':'transparent'}">
+            html += `<div onclick=\"window._navToggleGroup('${g.label}', event)\" style="display:flex;align-items:center;justify-content:space-between;padding:9px 20px 6px;cursor:pointer;user-select:none;background:${hasActive?'rgba(0,200,255,.05)':'transparent'}">
               <span style="font-size:.65rem;font-weight:700;color:${hasActive?'var(--accent)':'var(--text2)'};text-transform:uppercase;letter-spacing:.1em">${g.label}</span>
               <span style="font-size:.65rem;color:var(--text2);transition:.2s;transform:rotate(${isOpen?'90':'0'}deg)">▶</span>
             </div>`;
@@ -88,7 +89,7 @@ function renderUserNav(active) {
 
         // About — collapsible
         const aboutOpen = _openGroups.has('About');
-        html += `<div onclick="window._navToggleGroup('About')" style="display:flex;align-items:center;justify-content:space-between;padding:9px 20px 6px;cursor:pointer;user-select:none;border-top:1px solid rgba(255,255,255,.07);margin-top:6px">
+        html += `<div onclick=\"window._navToggleGroup('About', event)\" style="display:flex;align-items:center;justify-content:space-between;padding:9px 20px 6px;cursor:pointer;user-select:none;border-top:1px solid rgba(255,255,255,.07);margin-top:6px">
           <span style="font-size:.65rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.1em">About</span>
           <span style="font-size:.65rem;color:var(--text2);transition:.2s;transform:rotate(${aboutOpen?'90':'0'}deg)">▶</span>
         </div>`;
@@ -122,6 +123,7 @@ function renderUserNav(active) {
     const drawer = document.createElement('div');
     drawer.id = 'nav-links';
     drawer.className = 'nav-links';
+    drawer.style.zIndex = '99999'; // above ad iframes (99998)
     drawer.innerHTML = window._navBuildDrawer();
     document.body.appendChild(drawer);
 
@@ -130,6 +132,7 @@ function renderUserNav(active) {
     if (!ov) {
         ov = document.createElement('div');
         ov.id = 'nav-overlay';
+        ov.style.zIndex = '99998';
         ov.onclick = _navClose;
         document.body.appendChild(ov);
     }

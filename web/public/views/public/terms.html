@@ -4,99 +4,79 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Terms of Service · Apex-MD</title>
-<meta name="description" content="Terms of Service for Apex-MD crypto trading platform.">
-<link rel="stylesheet" href="/css/main.css">
 <style>
-.doc-wrap{max-width:760px;margin:0 auto;padding:40px 20px}
-.doc-wrap h1{font-family:var(--font-head);font-size:1.8rem;font-weight:800;margin-bottom:8px}
-.doc-wrap h2{font-family:var(--font-head);font-size:1.1rem;font-weight:700;color:var(--accent);margin:28px 0 10px}
-.doc-wrap p,.doc-wrap li{font-size:.88rem;color:var(--text2);line-height:1.8;margin-bottom:10px}
-.doc-wrap ul{padding-left:20px}
-.updated{font-size:.8rem;color:var(--text2);margin-bottom:32px}
-.nav-pub{display:flex;align-items:center;justify-content:space-between;padding:0 24px;height:60px;background:rgba(6,13,23,.92);backdrop-filter:blur(20px);border-bottom:1px solid var(--border)}
-.nav-pub-logo{font-family:var(--font-head);font-weight:800;font-size:1.1rem;color:#fff;display:flex;align-items:center;gap:8px}
-.warn-box{background:rgba(255,51,85,.06);border:1px solid rgba(255,51,85,.25);border-radius:8px;padding:16px 18px;margin-bottom:24px;font-size:.85rem;color:var(--text2);line-height:1.7}
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@300;400;500&display=swap');
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#060d17;--card:#0d1f30;--border:#1c3349;--accent:#00c8ff;--text:#d6eeff;--text2:#5c87a8;--radius:10px;--font-head:'Syne',sans-serif;--font-body:'DM Sans',sans-serif}
+body{background:var(--bg);color:var(--text);font-family:var(--font-body);min-height:100vh;line-height:1.6}
+a{color:var(--accent);text-decoration:none}a:hover{color:#33d6ff}
+.btn{display:inline-flex;align-items:center;padding:6px 14px;border-radius:var(--radius);font-weight:600;font-size:.8rem;cursor:pointer;border:1px solid var(--border);color:var(--text2);background:transparent;text-decoration:none;transition:.2s}
+.btn:hover{border-color:#254560;color:var(--text)}
+.nav{display:flex;align-items:center;justify-content:space-between;padding:0 24px;height:60px;background:rgba(6,13,23,.95);backdrop-filter:blur(20px);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:200}
+.nav-logo{font-family:var(--font-head);font-weight:800;font-size:1.05rem;color:#fff}
+.doc{max-width:740px;margin:0 auto;padding:40px 20px}
+.doc h1{font-family:var(--font-head);font-size:1.7rem;font-weight:800;margin-bottom:6px}
+.doc h2{font-family:var(--font-head);font-size:1rem;font-weight:700;color:var(--accent);margin:28px 0 10px}
+.doc p,.doc li{font-size:.86rem;color:var(--text2);line-height:1.8;margin-bottom:8px}
+.doc ul{padding-left:18px}
+.upd{font-size:.78rem;color:var(--text2);margin-bottom:30px}
+.warn{background:rgba(255,51,85,.05);border:1px solid rgba(255,51,85,.2);border-radius:8px;padding:14px 16px;margin-bottom:22px;font-size:.83rem;color:var(--text2);line-height:1.7}
 </style>
 </head>
 <body>
-<nav class="nav-pub">
-  <a href="/" class="nav-pub-logo" style="text-decoration:none">⚡ Apex-MD</a>
-  <div style="display:flex;gap:10px">
-    <a href="/auth/login" class="btn btn-ghost btn-sm">Sign In</a>
-    <a href="/auth/register" class="btn btn-primary btn-sm">Register</a>
-  </div>
+<nav class="nav">
+  <a href="/" class="nav-logo" style="text-decoration:none">⚡ Apex-MD</a>
+  <div id="pub-nav-btns"></div>
+<script>
+(function(){
+  var D=window.__DATA__||{};
+  var el=document.getElementById('pub-nav-btns');
+  if(!el)return;
+  if(D.loggedIn){el.innerHTML='<a href="/app/" class="btn btn-primary btn-sm">⚡ Dashboard</a>';}
+  else{el.innerHTML='<a href="/auth/login" class="btn btn-ghost btn-sm">Sign In</a>';}
+})();
+</script>
 </nav>
-
-<div class="doc-wrap">
+<div class="doc">
   <h1>Terms of Service</h1>
-  <div class="updated">Last updated: January 1, 2025</div>
-
-  <div class="warn-box">
-    ⚠️ <strong>Important:</strong> Apex-MD provides market analysis tools for informational purposes only. Nothing on this platform constitutes financial advice. Cryptocurrency trading carries substantial risk. You may lose all of your invested capital.
-  </div>
-
-  <p>By accessing or using the Apex-MD platform ("Service"), you agree to be bound by these Terms of Service. If you do not agree, do not use the Service.</p>
-
+  <div class="upd">Last updated: January 1, 2025</div>
+  <div class="warn">⚠️ <strong>Important:</strong> Apex-MD provides market analysis tools for informational purposes only. Nothing on this platform constitutes financial advice. Cryptocurrency trading carries substantial risk. You may lose all of your invested capital.</div>
+  <p>By accessing or using the Apex-MD platform ("Service"), you agree to be bound by these Terms of Service.</p>
   <h2>1. Service Description</h2>
-  <p>Apex-MD is a cryptocurrency market analysis platform providing tools including AI-powered technical analysis, market scanning, paper trading simulation, price alerts, and educational resources for cryptocurrency traders.</p>
-
+  <p>Apex-MD is a cryptocurrency market analysis platform providing AI-powered technical analysis, market scanning, paper trading simulation, price alerts, and educational resources for cryptocurrency traders.</p>
   <h2>2. Not Financial Advice</h2>
-  <p>All content, signals, analysis, and information provided by Apex-MD is strictly for educational and informational purposes only. Apex-MD does not provide financial, investment, tax, or legal advice. No content on the platform should be construed as a recommendation to buy, sell, or hold any financial instrument. Always consult a qualified financial advisor before making investment decisions.</p>
-
+  <p>All content, signals, analysis, and information provided by Apex-MD is strictly for educational and informational purposes only. Apex-MD does not provide financial, investment, tax, or legal advice. Always consult a qualified financial advisor before making investment decisions.</p>
   <h2>3. Risk Disclosure</h2>
-  <p>Cryptocurrency markets are highly volatile and unpredictable. Trading cryptocurrencies involves substantial risk of financial loss. Past performance of any analysis, signal, or strategy does not guarantee future results. You acknowledge that:</p>
   <ul>
     <li>You may lose some or all of your invested capital.</li>
     <li>AI-generated signals and analysis can be incorrect.</li>
     <li>Market conditions can change rapidly and without warning.</li>
     <li>Leverage amplifies both gains and losses.</li>
   </ul>
-
   <h2>4. Eligibility</h2>
-  <p>You must be at least 18 years old to use this Service. By using the platform, you represent that you meet this requirement and that your use of the Service complies with all applicable laws in your jurisdiction.</p>
-
+  <p>You must be at least 18 years old to use this Service. By using the platform, you represent that you meet this requirement and that your use complies with all applicable laws in your jurisdiction.</p>
   <h2>5. Account Responsibilities</h2>
-  <p>You are responsible for:</p>
   <ul>
     <li>Maintaining the confidentiality of your account credentials.</li>
     <li>All activities that occur under your account.</li>
-    <li>Ensuring your account information is accurate and up to date.</li>
     <li>Notifying us immediately of any unauthorised use of your account.</li>
   </ul>
-
   <h2>6. API Keys and Exchange Integration</h2>
-  <p>If you connect exchange API keys, you do so at your own risk. We recommend using read-only API keys. You are responsible for the permissions you grant. We are not liable for any losses arising from API key misuse, exchange outages, or API errors.</p>
-
+  <p>If you connect exchange API keys, you do so at your own risk. We recommend using read-only API keys. We are not liable for any losses arising from API key misuse or exchange outages.</p>
   <h2>7. Prohibited Uses</h2>
-  <p>You agree not to:</p>
   <ul>
     <li>Use the platform for any illegal purpose or in violation of any laws.</li>
     <li>Attempt to reverse-engineer, hack, or compromise the platform's security.</li>
-    <li>Use automated bots to scrape or abuse the platform's APIs beyond normal use.</li>
     <li>Share your account credentials with others or resell access.</li>
-    <li>Attempt to manipulate market data displayed on the platform.</li>
   </ul>
-
-  <h2>8. Intellectual Property</h2>
-  <p>All content, code, design, and materials on the Apex-MD platform are the exclusive property of Apex-MD. You may not reproduce, distribute, or create derivative works without express written permission.</p>
-
-  <h2>9. Limitation of Liability</h2>
-  <p>To the maximum extent permitted by law, Apex-MD shall not be liable for any direct, indirect, incidental, special, or consequential damages arising from your use of the Service, including but not limited to trading losses, lost profits, or data loss. The platform is provided "as is" without warranties of any kind.</p>
-
-  <h2>10. Indemnification</h2>
-  <p>You agree to indemnify and hold Apex-MD harmless from any claims, damages, or expenses arising from your use of the Service, your violation of these Terms, or your trading activities.</p>
-
-  <h2>11. Service Availability</h2>
+  <h2>8. Limitation of Liability</h2>
+  <p>To the maximum extent permitted by law, Apex-MD shall not be liable for any direct, indirect, incidental, or consequential damages arising from your use of the Service, including trading losses. The platform is provided "as is" without warranties of any kind.</p>
+  <h2>9. Service Availability</h2>
   <p>We do not guarantee uninterrupted or error-free operation of the Service. We may modify, suspend, or discontinue any part of the Service at any time without notice.</p>
-
-  <h2>12. Modifications to Terms</h2>
+  <h2>10. Modifications to Terms</h2>
   <p>We reserve the right to update these Terms at any time. Continued use of the Service after changes constitutes acceptance of the revised Terms.</p>
-
-  <h2>13. Governing Law</h2>
-  <p>These Terms shall be governed by applicable law. Any disputes shall be resolved through good-faith negotiation or appropriate legal proceedings.</p>
-
-  <div style="margin-top:40px;padding-top:20px;border-top:1px solid var(--border)">
-    <a href="/">← Back to Home</a> &nbsp;·&nbsp; <a href="/privacy">Privacy Policy</a>
+  <div style="margin-top:36px;padding-top:18px;border-top:1px solid var(--border);font-size:.8rem;color:var(--text2)">
+    <a href="/">← Home</a> &nbsp;·&nbsp; <a href="/privacy">Privacy Policy</a>
   </div>
 </div>
 </body>

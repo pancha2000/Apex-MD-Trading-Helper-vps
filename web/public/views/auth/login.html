@@ -3,50 +3,99 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Sign In · Apex-MD</title>
+<title>Sign In · Apex-MD — AI Crypto Trading Platform</title>
+<meta name="description" content="Sign in to your Apex-MD account — AI-powered crypto trading platform.">
+<meta name="robots" content="noindex, nofollow">
 <link rel="stylesheet" href="/css/main.css">
 <link rel="stylesheet" href="/css/auth.css">
 </head>
 <body>
 <div class="auth-wrap">
-  <div class="auth-box fade-up">
+  <div class="auth-box">
+
+    <!-- Branding -->
     <div class="auth-logo">
       <div class="auth-logo-icon">⚡</div>
-      <div class="auth-title">Sign In</div>
-      <div class="auth-sub">Apex-MD Trading Portal</div>
+      <div class="auth-title">Apex-MD</div>
+      <div class="auth-sub" style="font-size:.8rem;color:var(--text2)">AI Crypto Trading Platform</div>
     </div>
+
+    <!-- Site identity — helps Google verify legitimacy -->
+    <div style="text-align:center;margin-bottom:16px">
+      <a href="/" style="font-size:.75rem;color:var(--accent);text-decoration:none">
+        🏠 apextradingfree.duckdns.org
+      </a>
+    </div>
+
     <div id="msg"></div>
-    <form method="POST" action="/auth/login">
-      <input type="hidden" id="next-input" name="next" value="">
-      <div class="field">
-        <label class="field-label">Email Address</label>
-        <input class="inp" type="email" name="email" placeholder="you@example.com" autocomplete="email" autofocus required>
-      </div>
-      <div class="field">
-        <label class="field-label">Password</label>
-        <input class="inp" type="password" name="password" placeholder="Your password" autocomplete="current-password" required>
-      </div>
-      <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;font-size:.95rem;margin-top:6px">
-        Sign In →
-      </button>
-    </form>
-    <div class="auth-footer">New here? <a href="/auth/register">Create account →</a></div>
+
+    <div class="field">
+      <label class="field-label">Username</label>
+      <input class="inp" id="uname" type="text" autocomplete="username" placeholder="your username">
+    </div>
+    <div class="field">
+      <label class="field-label">Password</label>
+      <input class="inp" id="pwd" type="password" autocomplete="current-password" placeholder="••••••••">
+    </div>
+
+    <button class="btn btn-primary" style="width:100%;justify-content:center;padding:11px" id="login-btn" onclick="doLogin()">
+      Sign In →
+    </button>
+
+    <div class="auth-footer">
+      No account? <a href="/auth/register">Register here</a>
+    </div>
+
+    <!-- Trust signals -->
+    <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border);text-align:center;font-size:.72rem;color:var(--text2);line-height:1.7">
+      🔒 Secure login · Passwords hashed · No card required<br>
+      <a href="/privacy" style="color:var(--text2)">Privacy Policy</a>
+      &nbsp;·&nbsp;
+      <a href="/terms" style="color:var(--text2)">Terms of Service</a>
+      &nbsp;·&nbsp;
+      <a href="/" style="color:var(--text2)">About</a>
+    </div>
+
   </div>
 </div>
 
 <script>
-const D = window.__DATA__ || {};
-if (D.registered) {
-  document.getElementById('msg').innerHTML = '<div class="auth-alert-ok">✅ Account created! Please sign in.</div>';
+const params = new URLSearchParams(location.search);
+if (params.get('registered')) {
+  document.getElementById('msg').innerHTML = '<div class="auth-alert-ok">✅ Account created — please log in.</div>';
 }
-if (D.suspended) {
-  document.getElementById('msg').innerHTML = '<div style="background:rgba(255,171,0,.08);border:1px solid rgba(255,171,0,.25);border-radius:6px;padding:11px 14px;margin-bottom:16px;font-size:.83rem;color:var(--yellow)">⚠️ Your account has been suspended.</div>';
+if (params.get('error')) {
+  document.getElementById('msg').innerHTML = '<div class="auth-alert-err">❌ ' + decodeURIComponent(params.get('error')) + '</div>';
 }
-if (D.errMsg) {
-  document.getElementById('msg').innerHTML = '<div class="auth-alert-err">'+D.errMsg+'</div>';
-}
-if (D.nextUrl) {
-  document.getElementById('next-input').value = D.nextUrl;
+
+document.getElementById('pwd').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+
+async function doLogin() {
+  const btn = document.getElementById('login-btn');
+  btn.disabled = true; btn.textContent = 'Signing in…';
+  const uname = document.getElementById('uname').value.trim();
+  const pwd   = document.getElementById('pwd').value;
+  if (!uname || !pwd) {
+    document.getElementById('msg').innerHTML = '<div class="auth-alert-err">Please fill in all fields.</div>';
+    btn.disabled = false; btn.textContent = 'Sign In →'; return;
+  }
+  try {
+    const r = await fetch('/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: uname, password: pwd })
+    });
+    const d = await r.json();
+    if (d.ok) {
+      location.href = d.redirect || '/app/';
+    } else {
+      document.getElementById('msg').innerHTML = '<div class="auth-alert-err">❌ ' + (d.error || 'Login failed') + '</div>';
+      btn.disabled = false; btn.textContent = 'Sign In →';
+    }
+  } catch(e) {
+    document.getElementById('msg').innerHTML = '<div class="auth-alert-err">❌ Network error</div>';
+    btn.disabled = false; btn.textContent = 'Sign In →';
+  }
 }
 </script>
 </body>

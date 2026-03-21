@@ -2,6 +2,15 @@
    APEX-MD  ·  user.js  ·  User Portal Shared Logic
    ═══════════════════════════════════════════════════════════ */
 
+/* ── Nav group toggle — global so onclick in drawer can reach it ── */
+window._navToggleGroup = function(label) {
+    if (!window._navOpenGroups) window._navOpenGroups = new Set();
+    if (window._navOpenGroups.has(label)) window._navOpenGroups.delete(label);
+    else window._navOpenGroups.add(label);
+    const d = document.getElementById('nav-links');
+    if (d && window._navBuildDrawer) d.innerHTML = window._navBuildDrawer();
+};
+
 /* ── Nav Render ───────────────────────────────────────────── */
 function renderUserNav(active) {
     // Nav grouped by category — separators shown as dividers in mobile menu
@@ -48,21 +57,13 @@ function renderUserNav(active) {
         { href: '/terms',   label: '📄 Terms of Service' },
     ];
 
-    // Track which groups are open (all open by default if active page is in group)
-    const _openGroups = new Set();
+    // Track open groups — window scope so onclick can reach it
+    if (!window._navOpenGroups) window._navOpenGroups = new Set();
+    const _openGroups = window._navOpenGroups;
+    // Auto-open the group that contains the active page
     GROUPS.forEach(g => { if (g.keys.includes(active)) _openGroups.add(g.label); });
-    // About always closed by default
-    const ALL_GROUPS = [...GROUPS, { label: 'About', keys: [] }];
 
-    function toggleGroup(label) {
-        if (_openGroups.has(label)) _openGroups.delete(label);
-        else _openGroups.add(label);
-        // Re-render drawer content only
-        const d = document.getElementById('nav-links');
-        if (d) d.innerHTML = buildDrawerHTML();
-    }
-
-    function buildDrawerHTML() {
+    window._navBuildDrawer = function buildDrawerHTML() {
         let html = '';
         // Home always first — no group
         const home = links.find(l => l.key === 'home');
@@ -74,7 +75,7 @@ function renderUserNav(active) {
             if (!gl.length) return;
             const isOpen = _openGroups.has(g.label);
             const hasActive = gl.some(l => l.key === active);
-            html += `<div onclick="toggleGroup('${g.label}')" style="display:flex;align-items:center;justify-content:space-between;padding:9px 20px 6px;cursor:pointer;user-select:none;background:${hasActive?'rgba(0,200,255,.05)':'transparent'}">
+            html += `<div onclick="window._navToggleGroup('${g.label}')" style="display:flex;align-items:center;justify-content:space-between;padding:9px 20px 6px;cursor:pointer;user-select:none;background:${hasActive?'rgba(0,200,255,.05)':'transparent'}">
               <span style="font-size:.65rem;font-weight:700;color:${hasActive?'var(--accent)':'var(--text2)'};text-transform:uppercase;letter-spacing:.1em">${g.label}</span>
               <span style="font-size:.65rem;color:var(--text2);transition:.2s;transform:rotate(${isOpen?'90':'0'}deg)">▶</span>
             </div>`;
@@ -87,7 +88,7 @@ function renderUserNav(active) {
 
         // About — collapsible
         const aboutOpen = _openGroups.has('About');
-        html += `<div onclick="toggleGroup('About')" style="display:flex;align-items:center;justify-content:space-between;padding:9px 20px 6px;cursor:pointer;user-select:none;border-top:1px solid rgba(255,255,255,.07);margin-top:6px">
+        html += `<div onclick="window._navToggleGroup('About')" style="display:flex;align-items:center;justify-content:space-between;padding:9px 20px 6px;cursor:pointer;user-select:none;border-top:1px solid rgba(255,255,255,.07);margin-top:6px">
           <span style="font-size:.65rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.1em">About</span>
           <span style="font-size:.65rem;color:var(--text2);transition:.2s;transform:rotate(${aboutOpen?'90':'0'}deg)">▶</span>
         </div>`;
@@ -121,7 +122,7 @@ function renderUserNav(active) {
     const drawer = document.createElement('div');
     drawer.id = 'nav-links';
     drawer.className = 'nav-links';
-    drawer.innerHTML = buildDrawerHTML();
+    drawer.innerHTML = window._navBuildDrawer();
     document.body.appendChild(drawer);
 
     // ── Dim overlay ───────────────────────────────────────

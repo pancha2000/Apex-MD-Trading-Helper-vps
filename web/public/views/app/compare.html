@@ -68,7 +68,7 @@ function renderCompare(a, b, tf) {
     const col=Math.abs(r)>0.1?(r>0?'var(--red)':'var(--green)'):'var(--text2)';
     return `<span style="color:${col}">${r>0?'+':''}${parseFloat(r).toFixed(3)}%</span>`;
   };
-  const dayTag = (aligned, trend) => !trend||trend.includes('Unknown') ? '—' : aligned ? '<span style="color:var(--green)">✅ Aligned</span>' : '<span style="color:var(--yellow)">⚠️ Against</span>';
+  const dayTag = (aligned) => aligned === true ? '<span style="color:var(--green)">✅ Daily OK</span>' : aligned === false ? '<span style="color:var(--yellow)">⚠️ Against Daily</span>' : '—';
 
   const rows = [
     { label:'Direction',    va: a?col(a):null,                           vb: b?col(b):null },
@@ -77,9 +77,9 @@ function renderCompare(a, b, tf) {
     { label:'TP2',          va: a?`<span style="color:var(--green)">${fmtP(a.tp2)}</span>`:null, vb: b?`<span style="color:var(--green)">${fmtP(b.tp2)}</span>`:null },
     { label:'SL',           va: a?`<span style="color:var(--red)">${fmtP(a.sl)}</span>`:null, vb: b?`<span style="color:var(--red)">${fmtP(b.sl)}</span>`:null },
     { label:'RRR',          va: a?`${a.rrr}:1`:null,                      vb: b?`${b.rrr}:1`:null },
-    { label:'4H Trend',     va: a?a.trend4H:null,                        vb: b?b.trend4H:null },
-    { label:'1H Trend',     va: a?a.trend1H:null,                        vb: b?b.trend1H:null },
-    { label:'Daily Trend',  va: a?dayTag(a.dailyAligned,a.dailyAligned):null, vb: b?dayTag(b.dailyAligned,b.dailyAligned):null },
+    { label:'4H Trend',     va: a?(typeof a.trend4H==='string'?a.trend4H:String(a.trend4H||'—')):null, vb: b?(typeof b.trend4H==='string'?b.trend4H:String(b.trend4H||'—')):null },
+    { label:'1H Trend',     va: a?(typeof a.trend1H==='string'?a.trend1H:String(a.trend1H||'—')):null, vb: b?(typeof b.trend1H==='string'?b.trend1H:String(b.trend1H||'—')):null },
+    { label:'Daily Trend',  va: a!==null?dayTag(a?.dailyAligned):null, vb: b!==null?dayTag(b?.dailyAligned):null },
     { label:'Funding Rate', va: a?fundTag(a.fundingRate):null,           vb: b?fundTag(b.fundingRate):null },
   ];
 

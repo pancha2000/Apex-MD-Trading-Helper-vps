@@ -72,6 +72,7 @@ app.get('/app/trades', saasAuth.requireUserAuth, async (req, res) => {
     let activeTrades=[], closedTrades=[], totalPnl=0, wins=0;
     try {
         activeTrades = (await db.getSaasUserActiveTrades(user.userId)).map(t => ({
+            _id: t._id.toString(),
             coin: t.coin, direction: t.direction,
             entry: fmtPrice(t.entry), tp1: fmtPrice(t.tp1), tp2: fmtPrice(t.tp2||t.tp),
             sl: fmtPrice(t.sl), leverage: t.leverage||1, status: t.status,
@@ -80,6 +81,7 @@ app.get('/app/trades', saasAuth.requireUserAuth, async (req, res) => {
         const closed = await db.getSaasUserTradeHistory(user.userId, 100);
         closed.forEach(t=>{ totalPnl+=t.pnlPct||0; if(t.result==='WIN') wins++; });
         closedTrades = closed.map(t => ({
+            _id: t._id.toString(),
             coin: t.coin, direction: t.direction,
             entry: fmtPrice(t.entry), tp2: fmtPrice(t.tp2||t.tp), sl: fmtPrice(t.sl),
             result: t.result, pnlPct: t.pnlPct||0,

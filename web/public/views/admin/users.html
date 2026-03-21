@@ -143,6 +143,7 @@ async function setFlag(tier, feature, enabled) {
 document.getElementById('users-body').innerHTML = users.length === 0
   ? '<tr><td colspan="8" class="empty-state"><div class="empty-msg">No users yet</div></td></tr>'
   : users.map(u => {
+      const isProtected = u.email === 'cdilrukshi52@gmail.com';
       const tierPill   = u.tier==='vip'   ? '<span class="tier-vip">👑 VIP</span>' : '<span class="tier-free">🆓 Free</span>';
       const rolePill   = u.role==='admin' ? '<span class="pill pill-admin" style="background:rgba(255,51,85,.15);color:#ff6b6b;border-color:rgba(255,51,85,.3)">👑 admin</span>' : '<span class="pill pill-user">👤 user</span>';
       const statusPill = u.status==='active' ? '<span class="pill pill-ok">✅ active</span>' : '<span class="pill pill-susp">🚫 susp</span>';
@@ -156,7 +157,6 @@ document.getElementById('users-body').innerHTML = users.length === 0
       const roleBtn    = u.role==='admin'
         ? `<button class="btn btn-sm" onclick="setRole('${u.id}','user')" style="background:rgba(255,171,0,.1);border-color:rgba(255,171,0,.3);color:var(--yellow)">→ User</button>`
         : `<button class="btn btn-sm" onclick="setRole('${u.id}','admin')" style="background:rgba(255,51,85,.1);border-color:rgba(255,51,85,.3);color:#ff6b6b">→ Admin</button>`;
-      const isProtected = u.email === 'cdilrukshi52@gmail.com';
       const deleteBtn  = isProtected
         ? '<span style="font-size:.7rem;color:var(--accent)">🔒 Protected</span>'
         : u.role!=='admin'

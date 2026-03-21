@@ -258,10 +258,13 @@ app.get('/app/settings', saasAuth.requireUserAuth, async (req, res) => {
             if (wu) { paperBalance=wu.paperBalance||0; margin=wu.margin||0; }
         }
     } catch(_){}
+    let minScoreThreshold = 20;
+    try { const fu2 = await db.getSaasUserById(user.userId); minScoreThreshold = fu2?.minScoreThreshold ?? 20; } catch(_) {}
     res.send(renderView('app/settings', {
         user: { username: user.username, role: user.role },
         apiKeys, waLinked, waJid: waJid.replace('@s.whatsapp.net',''), waLinkedAt,
         tradingMode, paperBalance: parseFloat(paperBalance).toFixed(2), margin: parseFloat(margin).toFixed(2),
+        minScoreThreshold,
         msg: req.query.added?'added':req.query.removed?'removed':req.query.unlinked?'unlinked':req.query.keyerr||'',
     }));
 });
@@ -538,5 +541,38 @@ app.post('/app/api/stats/reset', saasAuth.requireUserAuth, async (req, res) => {
         res.json({ok:true});
     } catch(e){ res.status(500).json({ok:false,error:e.message}); }
 });
+
+// ── Pro Mode API (user-level access) ──────────────────────────────────
+app.post('/app/api/promode', saasAuth.requireUserAuth, async (req, res) => {
+    try { config.setProMode(Boolean(req.body.enabled)); res.json({ok:true,enabled:Boolean(req.body.enabled)}); }
+    catch(e){ res.json({ok:false,error:e.message}); }
+});
+app.post('/app/api/indicators/:key', saasAuth.requireUserAuth, async (req, res) => {
+    try { const val=parseFloat(req.body.value); if(isNaN(val))throw new Error('Invalid number'); config.setIndicatorParam(req.params.key,val); res.json({ok:true,key:req.params.key,value:val}); }
+    catch(e){ res.json({ok:false,error:e.message}); }
+});
+app.post('/app/api/smc/:key', saasAuth.requireUserAuth, async (req, res) => {
+    try { const val=parseFloat(req.body.value); if(isNaN(val))throw new Error('Invalid number'); config.setSMCParam(req.params.key,val); res.json({ok:true,key:req.params.key,value:val}); }
+    catch(e){ res.json({ok:false,error:e.message}); }
+});
+app.post('/app/api/targets/:key', saasAuth.requireUserAuth, async (req, res) => {
+    try { const val=parseFloat(req.body.value); if(isNaN(val))throw new Error('Invalid number'); config.setTargetParam(req.params.key,val); res.json({ok:true,key:req.params.key,value:val}); }
+    catch(e){ res.json({ok:false,error:e.message}); }
+});
+app.post('/app/api/params/:key', saasAuth.requireUserAuth, async (req, res) => {
+    try { const val=parseFloat(req.body.value); if(isNaN(val))throw new Error('Invalid number'); config.setTradingParam(req.params.key,val); res.json({ok:true,key:req.params.key,value:val}); }
+    catch(e){ res.json({ok:false,error:e.message}); }
+});
+
+// ── Per-user Signal Score Threshold ────────────────────────────
+app.post('/app/api/user-settings/min-score', saasAuth.requireUserAuth, async (req, res) => {
+    try {
+        const score = parseInt(req.body.score);
+        if (isNaN(score) || score < 10 || score > 90) return res.status(400).json({ok:false,error:'Score must be 10–90'});
+        await db.setUserMinScore(req.saasUser.userId, score);
+        res.json({ok:true, minScoreThreshold: score});
+    } catch(e) { res.status(500).json({ok:false,error:e.message}); }
+});
+
 
 }; // end registerApp

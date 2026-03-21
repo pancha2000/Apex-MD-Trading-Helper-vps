@@ -9,11 +9,14 @@
 <body>
 <div id="nav-root"></div>
 <div class="wrap">
+
   <h1 class="page-title">⚡ AI Deep Scanner</h1>
+
+  <!-- ── Deep Analysis Hero ── -->
   <div class="scan-hero" style="margin-bottom:20px">
     <div style="flex:1">
       <div style="font-family:var(--font-head);font-size:1.15rem;font-weight:700;color:#fff;margin-bottom:6px">Single Coin Deep Analysis</div>
-      <div style="font-size:.82rem;color:var(--text2)">70-Factor SMC · Funding · Confirmations · AI Summary</div>
+      <div style="font-size:.82rem;color:var(--text2)">70-Factor SMC · Funding Rate · Daily Trend · AI Summary · Min RRR 1.5:1</div>
     </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
       <div><label class="field-label">Coin</label><input type="text" id="s-coin" class="inp" placeholder="BTC, ETH..." maxlength="12" style="width:130px;font-family:var(--font-mono);font-size:1.05rem;font-weight:700;text-transform:uppercase" autocomplete="off"></div>
@@ -21,26 +24,55 @@
       <button id="scan-btn" class="btn btn-primary" style="padding:11px 24px;font-weight:700" onclick="doScan()">⚡ Analyze</button>
     </div>
   </div>
+
+  <!-- ── Loading / Error / Result ── -->
   <div id="scan-loading" style="display:none" class="loading-center"><div class="spinner"></div><div style="margin-top:12px;color:var(--text2)">Deep analysis running...</div></div>
   <div id="scan-error" style="display:none" class="panel"><div class="panel-body" style="color:var(--red)"></div></div>
   <div id="scan-result" style="display:none"></div>
 
+  <!-- ── Auto Market Scan ── -->
   <div class="panel" style="margin-top:24px">
     <div class="panel-head">
-      <div class="panel-title">🔍 Auto Market Scan <span style="font-size:.75rem;color:var(--text2);margin-left:8px">Top 5 setups</span></div>
-      <button class="btn btn-ghost btn-sm" onclick="loadMarketScan()">↺ Scan Now</button>
+      <div class="panel-title">🔍 Auto Market Scan
+        <span style="font-size:.75rem;color:var(--text2);margin-left:8px">Top 5 setups</span>
+        <span id="user-threshold-badge" style="font-size:.72rem;margin-left:10px;padding:2px 8px;border-radius:99px;background:rgba(0,200,255,.1);color:var(--accent);border:1px solid rgba(0,200,255,.2)"></span>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn btn-ghost btn-sm" onclick="loadMarketScan()">↺ Scan Now</button>
+        <a href="/app/settings" class="btn btn-ghost btn-sm" style="font-size:.72rem">⚙️ Threshold</a>
+      </div>
     </div>
     <div class="panel-body" id="market-scan-body"><div class="loading-center"><div class="spinner"></div></div></div>
   </div>
+
 </div>
 
 <script src="/js/user.js"></script>
 <script>
+const D = window.__DATA__ || {};
 renderUserNav('scanner');
+
+const userMinScore = D.minScore || 20;
 document.getElementById('s-coin').addEventListener('keydown', e=>{if(e.key==='Enter')doScan();});
 document.getElementById('s-coin').addEventListener('input', e=>{e.target.value=e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,'');});
 
 function fmtP(n){if(!n||isNaN(n))return'—';const p=parseFloat(n);if(p>=1000)return'$'+p.toFixed(2);if(p>=1)return'$'+p.toFixed(4);return'$'+p.toFixed(6);}
+
+function fundingTag(rate) {
+  if (rate === null || rate === undefined) return '';
+  const r = parseFloat(rate);
+  if (isNaN(r)) return '';
+  const col = r > 0.1 ? 'var(--red)' : r < -0.1 ? 'var(--green)' : 'var(--text2)';
+  const warn = Math.abs(r) > 0.1 ? ' ⚠️' : '';
+  return `<span style="font-size:.7rem;color:${col};background:rgba(0,0,0,.3);padding:2px 6px;border-radius:4px;font-family:var(--font-mono)">Funding: ${r>0?'+':''}${r.toFixed(3)}%${warn}</span>`;
+}
+
+function dailyTag(aligned, trend) {
+  if (!trend || trend === 'Unknown ⚪') return '';
+  return aligned
+    ? `<span style="font-size:.7rem;color:var(--green);background:rgba(0,230,118,.1);padding:2px 6px;border-radius:4px">✅ Daily OK</span>`
+    : `<span style="font-size:.7rem;color:var(--yellow);background:rgba(255,171,0,.1);padding:2px 6px;border-radius:4px">⚠️ Against Daily</span>`;
+}
 
 async function doScan() {
   const coin=document.getElementById('s-coin').value.trim();
@@ -63,38 +95,53 @@ function renderScanResult(a) {
   const isLong=a.direction==='LONG';
   const sc=a.score>=70?'var(--green)':a.score>=45?'var(--yellow)':'var(--red)';
   const sent=a.sentiment||{}, conf=a.confirmation||{}, ai=a.ai||null;
+  const scoreBar = `<div style="background:var(--bg2);border-radius:99px;height:6px;margin-top:8px;overflow:hidden"><div style="width:${Math.min(a.score,100)}%;height:100%;background:${sc};border-radius:99px;transition:.5s"></div></div>`;
+  const belowThreshold = a.score < userMinScore;
+  const thresholdWarn  = belowThreshold ? `<div style="background:rgba(255,171,0,.08);border:1px solid rgba(255,171,0,.25);border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:.82rem;color:var(--yellow)">⚠️ Score ${a.score} is below your threshold (${userMinScore}). This setup may not meet your quality standard. <a href="/app/settings" style="color:var(--accent)">Adjust →</a></div>` : '';
+
   document.getElementById('scan-result').style.display='block';
   document.getElementById('scan-result').innerHTML = `
+    ${thresholdWarn}
     <div class="signal-card ${isLong?'long-card':'short-card'}" style="margin-bottom:16px">
       <div style="display:flex;align-items:flex-start;gap:16px;margin-bottom:14px">
         <div class="score-ring-lg" style="border-color:${sc};color:${sc}">${a.score}</div>
         <div style="flex:1">
-          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">
             <span style="font-family:var(--font-head);font-size:1.3rem;font-weight:800;color:#fff">${a.coin}</span>
             <span class="pill ${isLong?'pill-long':'pill-short'}">${isLong?'▲':'▼'} ${a.direction}</span>
             <span class="pill pill-${(a.orderType||'MARKET')==='LIMIT'?'pending':'active'}" style="font-size:.65rem">${a.orderType||'MARKET'}</span>
-            <span style="font-size:.78rem;color:var(--text2);font-family:var(--font-mono)">${a.timeframe} · ${a.trend4H||'—'} 4H · ${a.trend1H||'—'} 1H</span>
           </div>
-          <div style="font-size:.82rem;color:var(--text2);margin-top:6px;font-family:var(--font-mono)">
-            Current: <span style="color:var(--accent)">${fmtP(a.currentPrice)}</span> · Entry: <span style="color:#fff">${fmtP(a.entryPrice)}</span> · Lev: <span style="color:var(--yellow)">${a.leverage||1}x</span> · RRR: <span style="color:var(--green)">${a.rrr||'—'}:1</span>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
+            ${fundingTag(a.fundingRate)}
+            ${dailyTag(a.dailyAligned, a.dailyTrend)}
+            <span style="font-size:.7rem;color:var(--text2);background:rgba(0,0,0,.3);padding:2px 6px;border-radius:4px">${a.timeframe} · 4H:${a.trend4H||'—'} · 1H:${a.trend1H||'—'}</span>
+          </div>
+          ${scoreBar}
+          <div style="font-size:.78rem;color:var(--text2);margin-top:6px;font-family:var(--font-mono)">
+            Entry: <span style="color:#fff">${fmtP(a.entryPrice)}</span> · Lev: <span style="color:var(--yellow)">${a.leverage||1}x</span> · RRR: <span style="color:var(--green)">${a.rrr||'—'}:1</span> · <span style="color:var(--text2)">${conf.strength||'—'}</span>
           </div>
         </div>
       </div>
       <div class="signal-levels">
+        <div class="sig-level"><div class="sig-level-label">Entry</div><div class="sig-level-val c-cyan">${fmtP(a.entryPrice)}</div></div>
         <div class="sig-level"><div class="sig-level-label">TP 1</div><div class="sig-level-val c-green">${fmtP(a.tp1)}</div></div>
         <div class="sig-level"><div class="sig-level-label">TP 2</div><div class="sig-level-val c-green">${fmtP(a.tp2)}</div></div>
         <div class="sig-level"><div class="sig-level-label">TP 3</div><div class="sig-level-val c-green">${fmtP(a.tp3)}</div></div>
         <div class="sig-level"><div class="sig-level-label">Stop Loss</div><div class="sig-level-val c-red">${fmtP(a.sl)}</div></div>
         <div class="sig-level"><div class="sig-level-label">DCA 1</div><div class="sig-level-val c-yellow">${fmtP(a.dca1)}</div></div>
         <div class="sig-level"><div class="sig-level-label">DCA 2</div><div class="sig-level-val c-yellow">${fmtP(a.dca2)}</div></div>
-        <div class="sig-level"><div class="sig-level-label">Confirm</div><div class="sig-level-val" style="font-size:.72rem">${conf.strength||'—'}</div></div>
-        <div class="sig-level"><div class="sig-level-label">F&G</div><div class="sig-level-val">${sent.fng||'N/A'}</div></div>
+        <div class="sig-level"><div class="sig-level-label">F&G</div><div class="sig-level-val">${sent.fngEmoji||''} ${sent.fng||'N/A'}</div></div>
       </div>
       ${a.reasons?`<div style="font-size:.75rem;color:var(--text2);margin-top:12px;line-height:1.6">${String(a.reasons).replace(/,/g,' · ')}</div>`:''}
-      ${ai?`<div style="margin-top:12px;background:rgba(0,200,255,.05);border:1px solid rgba(0,200,255,.15);border-radius:8px;padding:12px 14px"><div style="font-size:.7rem;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">🤖 AI Analysis</div><div style="font-size:.82rem;color:var(--text);line-height:1.6">${ai.summary||''}</div>${ai.confidence?`<div style="font-size:.75rem;color:var(--text2);margin-top:6px">Confidence: <strong style="color:var(--accent)">${ai.confidence}</strong> · Risk: ${ai.risk||'—'}</div>`:''}</div>`:''}
+      ${conf.verdict?`<div style="margin-top:10px;font-size:.78rem;padding:8px 12px;background:rgba(0,0,0,.2);border-radius:6px;border-left:3px solid var(--accent)">${conf.verdict} — ${conf.detail||''}</div>`:''}
+      ${ai?`<div style="margin-top:12px;background:rgba(0,200,255,.05);border:1px solid rgba(0,200,255,.15);border-radius:8px;padding:12px 14px">
+        <div style="font-size:.7rem;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">🤖 AI Analysis</div>
+        <div style="font-size:.82rem;color:var(--text);line-height:1.6">${ai.summary||''}</div>
+        ${ai.confidence?`<div style="font-size:.75rem;color:var(--text2);margin-top:6px">Confidence: <strong style="color:var(--accent)">${ai.confidence}</strong> · Risk: <strong style="color:${ai.risk==='high'?'var(--red)':ai.risk==='low'?'var(--green)':'var(--yellow)'}">${ai.risk||'—'}</strong>${ai.keyLevel?` · Key: <strong style="color:var(--text)">${ai.keyLevel}</strong>`:''}</div>`:''}</div>`:''}
     </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap">
       <button class="btn btn-warn" onclick="openPaperFromScan()">📄 Open Paper Trade</button>
+      <button class="btn btn-ghost" onclick="document.getElementById('scan-result').style.display='none'">✕ Clear</button>
     </div>`;
   window._lastScan = a;
 }
@@ -103,7 +150,7 @@ async function openPaperFromScan() {
   if(!window._lastScan){showToast('❌ No scan result','err');return;}
   const a=window._lastScan;
   const d=await apiFetch('/app/api/paper/open',{method:'POST',body:JSON.stringify({coin:a.coin,direction:a.direction,entry:a.entryPrice,tp2:a.tp2,sl:a.sl,leverage:a.leverage||10})});
-  if(d.ok)showToast('✅ Paper trade opened');else showToast('❌ '+(d.error||'Failed'),'err');
+  if(d.ok)showToast('✅ Paper trade opened! View in Paper tab.');else showToast('❌ '+(d.error||'Failed'),'err');
 }
 
 async function loadMarketScan() {
@@ -113,27 +160,32 @@ async function loadMarketScan() {
     const d=await apiFetch('/app/api/market-scan');
     if(!d.ok){body.innerHTML='<div style="color:var(--red);padding:20px">❌ '+(d.error||'')+'</div>';return;}
     const setups=d.setups||[];
+    // Update threshold badge
+    const badge=document.getElementById('user-threshold-badge');
+    if(badge){const t=d.userMinScore||userMinScore;badge.textContent='Min Score: '+t;}
     body.innerHTML = setups.length===0
-      ? '<div class="empty-state"><div class="empty-icon">🔍</div><div class="empty-msg">No high-probability setups found right now — try again soon.</div></div>'
+      ? '<div class="empty-state"><div class="empty-icon">🔍</div><div class="empty-msg">No high-probability setups right now — try again soon.</div></div>'
       : setups.map(s=>{
           const isL=s.direction==='LONG';const sc=s.score>=70?'var(--green)':s.score>=45?'var(--yellow)':'var(--red)';
           return `<div class="signal-card ${isL?'long-card':'short-card'}" style="margin-bottom:12px">
             <div style="display:flex;align-items:center;gap:14px">
               <div class="score-ring" style="border-color:${sc};color:${sc}">${s.score}</div>
               <div style="flex:1">
-                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
                   <strong style="font-family:var(--font-head);font-size:1rem">${s.coin}</strong>
                   <span class="pill ${isL?'pill-long':'pill-short'}">${isL?'▲':'▼'} ${s.direction}</span>
                   <span style="font-size:.72rem;color:var(--text2);font-family:var(--font-mono)">Lev:${s.leverage}x · RRR:${s.rrr}:1</span>
+                  ${s.dailyAligned===false?'<span style="font-size:.65rem;color:var(--yellow)">⚠️Daily</span>':''}
+                  ${s.fundingRate!==null&&s.fundingRate!==undefined&&Math.abs(parseFloat(s.fundingRate))>0.1?`<span style="font-size:.65rem;color:${parseFloat(s.fundingRate)>0?'var(--red)':'var(--green)'}">F:${parseFloat(s.fundingRate).toFixed(3)}%</span>`:''}
                 </div>
-                <div style="font-size:.78rem;color:var(--text2);margin-top:4px;font-family:var(--font-mono)">
+                <div style="font-size:.78rem;color:var(--text2);font-family:var(--font-mono)">
                   Entry:${fmtP(s.entryPrice)} · TP2:${fmtP(s.tp2)} · SL:${fmtP(s.sl)}
                 </div>
               </div>
               <button class="btn btn-ghost btn-sm" onclick="document.getElementById('s-coin').value='${s.coin}';doScan()">Deep Scan →</button>
             </div>
           </div>`;
-        }).join('') + `<div style="font-size:.75rem;color:var(--text2);margin-top:10px;text-align:right">Scanned ${d.scanned||0} coins</div>`;
+        }).join('') + `<div style="font-size:.75rem;color:var(--text2);margin-top:10px;text-align:right">Scanned ${d.scanned||0} coins · Min Score: ${d.userMinScore||userMinScore}</div>`;
   } catch(e){body.innerHTML='<div style="color:var(--red);padding:20px">❌ '+e.message+'</div>';}
 }
 loadMarketScan();

@@ -36,8 +36,13 @@ function calcFutures(a) {
 //  PAGE ROUTES
 // ════════════════════════════════════════════════════════════════════════
 
-app.get('/app/scanner', saasAuth.requireUserAuth, (req, res) => {
-    res.send(renderView('app/scanner', { username: req.saasUser.username }));
+app.get('/app/scanner', saasAuth.requireUserAuth, async (req, res) => {
+    let minScore = 20;
+    try {
+        const u = await db.getSaasUserById(req.saasUser.userId);
+        minScore = u?.minScoreThreshold ?? 20;
+    } catch(_) {}
+    res.send(renderView('app/scanner', { username: req.saasUser.username, minScore }));
 });
 
 app.get('/app/market', saasAuth.requireUserAuth, (req, res) => {
@@ -65,6 +70,9 @@ app.get('/app/api/market-scan', saasAuth.requireUserAuth, async (req, res) => {
     try {
         const binance  = require('../lib/binance');
         const analyzer = require('../lib/analyzer');
+        // Get user's personal min score threshold
+        let userMinScore = 20;
+        try { const u = await db.getSaasUserById(req.saasUser.userId); userMinScore = u?.minScoreThreshold ?? 20; } catch(_) {}
 
         const allCoins = binance.isReady()
             ? binance.getWatchedCoins()
@@ -102,9 +110,17 @@ app.get('/app/api/market-scan', saasAuth.requireUserAuth, async (req, res) => {
                     a.choch5m        && a.choch5m.includes(a.direction === 'LONG' ? 'Bullish' : 'Bearish'),
                     a.sweep5m        && a.sweep5m.includes(a.direction === 'LONG' ? 'Bullish' : 'Bearish'),
                 ].filter(Boolean).length;
+                // ── User threshold gate ──────────────────────────────────────────
+                if (adjustedScore < userMinScore) continue;
+                // ── RRR check — minimum 1:1.5 ────────────────────────────────────
+                const entry = parseFloat(a.entryPrice)||0, sl = parseFloat(a.sl)||0, tp2 = parseFloat(a.tp2)||0;
+                const riskDist = Math.abs(entry-sl), rewardDist = Math.abs(tp2-entry);
+                const rrr = riskDist > 0 ? rewardDist/riskDist : 0;
+                if (rrr < 1.5 && rrr > 0) continue; // below minimum RRR
+                // ── Confirmation gate ─────────────────────────────────────────────
                 const qualityPass =
                     adjustedScore >= 30 ? (confScore >= 1 || coreConf >= 1) :
-                    adjustedScore >= 20 ? (confGate  || coreConf >= 1) : false;
+                    adjustedScore >= userMinScore ? (confGate || coreConf >= 1) : false;
                 if (!qualityPass) continue;
                 const f = calcFutures(a);
                 results.push({
@@ -113,11 +129,13 @@ app.get('/app/api/market-scan', saasAuth.requireUserAuth, async (req, res) => {
                     entryPrice:  a.entryPrice, sl: a.sl, tp1: a.tp1, tp2: a.tp2, tp3: a.tp3,
                     leverage:    f.leverage, rrr: f.rrr,
                     reasons:     a.reasons,
+                    fundingRate: a.fundingRate ?? null,
+                    dailyAligned: a.dailyAligned,
                 });
             } catch(_) { continue; }
         }
         results.sort((a,b) => b.score - a.score);
-        res.json({ ok:true, setups: results.slice(0,5), scanned: Math.min(coins.length,30) });
+        res.json({ ok:true, setups: results.slice(0,5), scanned: Math.min(coins.length,30), userMinScore });
     } catch(e) { console.error('[Market Scan]', e.message); res.status(500).json({ok:false,error:e.message}); }
 });
 
@@ -175,6 +193,9 @@ app.post('/app/api/scan', saasAuth.requireUserAuth, async (req, res) => {
             trend4H: a.trend4H, trend1H: a.trend1H,
             rsi: a.rsi, macd: a.macd, adx: a.adx, bb: a.bb, atr: a.atr,
             choch: a.choch, liquiditySweep: a.liquiditySweep,
+            fundingRate: a.fundingRate ?? null,
+            dailyAligned: a.dailyAligned,
+            dailyTrend: a.dailyTrend,
             reasons: a.reasons,
             confirmation: { strength: conf.confirmationStrength, verdict: conf.verdict, detail: conf.verdictDetail },
             sentiment: { fng: sent.fngValue, fngEmoji: sent.fngEmoji, overall: sent.overallSentiment, bias: sent.tradingBias, btcDom: sent.btcDominance },

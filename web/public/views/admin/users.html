@@ -60,16 +60,18 @@ document.getElementById('user-count').textContent = (D.totalUsers||0) + ' total'
 const vips  = users.filter(u=>u.tier==='vip').length;
 const frees = users.filter(u=>u.tier==='free').length;
 document.getElementById('user-stats').innerHTML = [
-  {label:'Total Users', val: D.totalUsers||0, cls:'c-cyan'},
-  {label:'VIP',         val: vips,            cls:'c-yellow'},
-  {label:'Free',        val: frees,           cls:''},
-  {label:'Admins',      val: users.filter(u=>u.role==='admin').length, cls:'c-red'},
+  {label:'Total Users', val: D.totalUsers||0,                              cls:'c-cyan'},
+  {label:'VIP',         val: vips,                                         cls:'c-yellow'},
+  {label:'Free',        val: frees,                                        cls:''},
+  {label:'Admins',      val: users.filter(u=>u.role==='admin').length,     cls:'c-red'},
 ].map(s=>`<div class="stat-card"><div class="stat-label">${s.label}</div><div class="stat-val ${s.cls}">${s.val}</div></div>`).join('');
 
 // Feature flags
 const FEATURES = [
   {key:'scanner',   label:'⚡ Scanner'},
   {key:'paper',     label:'📄 Paper Trade'},
+  {key:'trades',    label:'📋 Trades'},
+  {key:'tracks',    label:'🎯 Tracks'},
   {key:'alerts',    label:'🔔 Alerts'},
   {key:'watchlist', label:'👁 Watchlist'},
   {key:'news',      label:'📰 Intel'},

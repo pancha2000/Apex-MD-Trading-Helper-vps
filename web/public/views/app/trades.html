@@ -3,70 +3,184 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>My Trades · Apex-MD</title>
+<title>Trades · Apex-MD</title>
 <link rel="stylesheet" href="/css/main.css">
+<style>
+.modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:10001;display:flex;align-items:center;justify-content:center;padding:16px}
+.modal-box{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);width:100%;max-width:480px;max-height:90vh;overflow-y:auto}
+.modal-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border)}
+.modal-body{padding:20px}
+.detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
+.detail-item{background:var(--bg2);border-radius:8px;padding:10px 12px}
+.detail-label{font-size:.7rem;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px}
+.detail-val{font-family:var(--font-mono);font-size:.9rem;font-weight:700;color:var(--text)}
+</style>
 </head>
 <body>
 <div id="nav-root"></div>
 <div class="wrap">
-  <h1 class="page-title">📋 My Trades</h1>
-  <div class="g-stats" style="margin-bottom:24px" id="summary-grid"></div>
+
+  <h1 class="page-title">📋 My Trades
+    <span style="font-size:.78rem;color:var(--text2);font-weight:400;margin-left:8px">Auto-deleted after 7 days</span>
+  </h1>
+
+  <!-- ── Summary ── -->
+  <div class="g-stats" id="summary-grid" style="margin-bottom:20px"></div>
+
+  <!-- ── Active Trades ── -->
   <div class="panel" style="margin-bottom:20px">
     <div class="panel-head"><div class="panel-title">⚡ Active &amp; Pending</div></div>
     <div class="panel-body" style="padding:0">
       <div class="tbl-wrap">
         <table>
-          <thead><tr><th>Coin</th><th>Dir</th><th>Entry</th><th>TP1</th><th>TP2</th><th>SL</th><th>Lev</th><th>Status</th></tr></thead>
+          <thead><tr><th>Coin</th><th>Dir</th><th>Entry</th><th>TP2</th><th>SL</th><th>Lev</th><th>Status</th><th></th></tr></thead>
           <tbody id="active-body"></tbody>
         </table>
       </div>
     </div>
   </div>
+
+  <!-- ── Closed Trades ── -->
   <div class="panel">
-    <div class="panel-head"><div class="panel-title">📜 Trade History <span style="font-size:.78rem;color:var(--text2);margin-left:6px">(Last 100)</span></div></div>
+    <div class="panel-head">
+      <div class="panel-title">📜 Closed Trades <span style="font-size:.78rem;color:var(--text2);margin-left:6px">(Last 7 days)</span></div>
+    </div>
     <div class="panel-body" style="padding:0">
       <div class="tbl-wrap">
         <table>
-          <thead><tr><th>Coin</th><th>Dir</th><th>Entry</th><th>TP2</th><th>SL</th><th>Result</th><th>PnL %</th><th>Date</th></tr></thead>
+          <thead><tr><th>Coin</th><th>Dir</th><th>Entry</th><th>TP2</th><th>SL</th><th>Result</th><th>PnL %</th><th>Date</th><th></th></tr></thead>
           <tbody id="closed-body"></tbody>
         </table>
       </div>
     </div>
   </div>
+
 </div>
+
+<!-- ── Trade Detail Modal ── -->
+<div id="trade-modal" style="display:none" class="modal-backdrop" onclick="if(event.target===this)closeModal()">
+  <div class="modal-box">
+    <div class="modal-head">
+      <div id="modal-title" style="font-family:var(--font-head);font-weight:700;font-size:1rem"></div>
+      <button onclick="closeModal()" style="background:none;border:none;color:var(--text2);font-size:1.2rem;cursor:pointer;padding:4px">✕</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
 <script src="/js/user.js"></script>
 <script>
 const D = window.__DATA__ || {};
-window._apexUser = { username: '' };
 renderUserNav('trades');
 
+function fmtP(n){if(!n||isNaN(n))return'—';const p=parseFloat(n);if(p>=1000)return'$'+p.toFixed(2);if(p>=1)return'$'+p.toFixed(4);return'$'+p.toFixed(6);}
+function fmtPct(n){if(n===null||n===undefined||isNaN(n))return'—';const p=parseFloat(n);return(p>=0?'+':'')+p.toFixed(2)+'%';}
+
+// ── Summary cards ────────────────────────────────────────────
 const s = D.summary || {};
-const pnlNum = parseFloat(s.totalPnl||0);
 document.getElementById('summary-grid').innerHTML = [
-  { label:'Closed Trades', val: s.totalClosed||0,  cls:'c-cyan' },
-  { label:'Win Rate',      val: s.winRate||'—',     cls:'c-green' },
-  { label:'Total PnL',     val: (pnlNum>=0?'+':'')+pnlNum.toFixed(2)+'%', cls: pnlNum>=0?'c-green':'c-red' },
-].map(c => `<div class="stat-card"><div class="stat-label">${c.label}</div><div class="stat-val ${c.cls}">${c.val}</div></div>`).join('');
+  { label:'Total Closed', val: s.totalClosed||0,   cls:'c-cyan' },
+  { label:'Win Rate',     val: s.winRate||'—',      cls:'c-green' },
+  { label:'Total PnL',    val: (parseFloat(s.totalPnl||0)>=0?'+':'')+parseFloat(s.totalPnl||0).toFixed(2)+'%',
+    cls: parseFloat(s.totalPnl||0)>=0?'c-green':'c-red' },
+  { label:'Active',       val: (D.activeTrades||[]).length, cls:'c-yellow' },
+].map(c=>`<div class="stat-card"><div class="stat-label">${c.label}</div><div class="stat-val ${c.cls}">${c.val}</div></div>`).join('');
 
+// ── Active trades ────────────────────────────────────────────
 const active = D.activeTrades || [];
-document.getElementById('active-body').innerHTML = active.length === 0
+document.getElementById('active-body').innerHTML = active.length===0
   ? '<tr><td colspan="8" class="empty-state"><div class="empty-msg">No active trades</div></td></tr>'
-  : active.map(t => {
-      const dir = t.direction==='LONG'?'<span class="pill pill-long">▲ LONG</span>':'<span class="pill pill-short">▼ SHORT</span>';
-      const st  = t.status==='pending'?'<span class="pill pill-pending">PENDING</span>':'<span class="pill pill-active">ACTIVE</span>';
-      return `<tr><td><strong style="font-family:var(--font-mono)">${t.coin}</strong></td><td>${dir}</td><td style="font-family:var(--font-mono)">${t.entry}</td><td style="font-family:var(--font-mono);color:var(--text3)">${t.tp1}</td><td style="font-family:var(--font-mono);color:var(--green)">${t.tp2}</td><td style="font-family:var(--font-mono);color:var(--red)">${t.sl}</td><td style="font-family:var(--font-mono)">${t.leverage}x</td><td>${st} <span style="color:var(--text2);font-size:.72rem">${t.ageHrs}h</span></td></tr>`;
+  : active.map(t=>{
+      const dir=t.direction==='LONG'?'<span class="pill pill-long">▲ LONG</span>':'<span class="pill pill-short">▼ SHORT</span>';
+      const st=t.status==='pending'?'<span class="pill pill-pending">PENDING</span>':'<span class="pill pill-active">ACTIVE</span>';
+      return `<tr>
+        <td><strong style="font-family:var(--font-mono)">${t.coin}</strong></td>
+        <td>${dir}</td>
+        <td style="font-family:var(--font-mono)">${t.entry}</td>
+        <td style="font-family:var(--font-mono);color:var(--green)">${t.tp2}</td>
+        <td style="font-family:var(--font-mono);color:var(--red)">${t.sl}</td>
+        <td style="font-family:var(--font-mono)">${t.leverage}x</td>
+        <td>${st} <span style="color:var(--text2);font-size:.72rem">${t.ageHrs}h</span></td>
+        <td><button class="btn btn-ghost btn-sm" onclick="openDetail('${t._id||''}','${t.coin}')">Details</button></td>
+      </tr>`;
     }).join('');
 
+// ── Closed trades ────────────────────────────────────────────
 const closed = D.closedTrades || [];
-document.getElementById('closed-body').innerHTML = closed.length === 0
-  ? '<tr><td colspan="8" class="empty-state"><div class="empty-msg">No trade history yet</div></td></tr>'
-  : closed.map(t => {
-      const dir    = t.direction==='LONG'?'<span class="pill pill-long">▲ LONG</span>':'<span class="pill pill-short">▼ SHORT</span>';
-      const result = t.result==='WIN'?'<span class="pill pill-win">WIN</span>':t.result==='LOSS'?'<span class="pill pill-loss">LOSS</span>':'<span class="pill pill-be">B/E</span>';
-      const pnl    = t.pnlPct?(t.pnlPct>=0?'+':'')+parseFloat(t.pnlPct).toFixed(2)+'%':'—';
-      const col    = t.pnlPct>0?'var(--green)':t.pnlPct<0?'var(--red)':'var(--text2)';
-      return `<tr><td><strong style="font-family:var(--font-mono)">${t.coin}</strong></td><td>${dir}</td><td style="font-family:var(--font-mono)">${t.entry}</td><td style="font-family:var(--font-mono);color:var(--green)">${t.tp2}</td><td style="font-family:var(--font-mono);color:var(--red)">${t.sl}</td><td>${result}</td><td style="font-family:var(--font-mono);font-weight:700;color:${col}">${pnl}</td><td style="font-size:.8rem;color:var(--text2)">${t.closedAt}</td></tr>`;
+document.getElementById('closed-body').innerHTML = closed.length===0
+  ? '<tr><td colspan="9" class="empty-state"><div class="empty-msg">No closed trades</div></td></tr>'
+  : closed.map(t=>{
+      const dir=t.direction==='LONG'?'<span class="pill pill-long">▲ LONG</span>':'<span class="pill pill-short">▼ SHORT</span>';
+      const res=t.result==='WIN'?'<span class="pill pill-win">WIN</span>':t.result==='LOSS'?'<span class="pill pill-loss">LOSS</span>':'<span class="pill pill-be">B/E</span>';
+      const pnl=(parseFloat(t.pnlPct||0)>=0?'+':'')+parseFloat(t.pnlPct||0).toFixed(2)+'%';
+      const col=t.pnlPct>0?'var(--green)':t.pnlPct<0?'var(--red)':'var(--text2)';
+      return `<tr>
+        <td><strong style="font-family:var(--font-mono)">${t.coin}</strong></td>
+        <td>${dir}</td>
+        <td style="font-family:var(--font-mono)">${t.entry}</td>
+        <td style="font-family:var(--font-mono);color:var(--green)">${t.tp2}</td>
+        <td style="font-family:var(--font-mono);color:var(--red)">${t.sl}</td>
+        <td>${res}</td>
+        <td style="font-family:var(--font-mono);font-weight:700;color:${col}">${pnl}</td>
+        <td style="font-size:.8rem;color:var(--text2)">${t.closedAt}</td>
+        <td><button class="btn btn-ghost btn-sm" onclick="openDetail('${t._id||''}','${t.coin}')">Details</button></td>
+      </tr>`;
     }).join('');
+
+// ── Trade detail modal ───────────────────────────────────────
+async function openDetail(id, coin) {
+  if (!id) { showToast('❌ No trade ID','err'); return; }
+  document.getElementById('modal-title').textContent = '📊 ' + coin + ' — Trade Details';
+  document.getElementById('modal-body').innerHTML = '<div class="loading-center" style="padding:30px"><div class="spinner"></div></div>';
+  document.getElementById('trade-modal').style.display = 'flex';
+  try {
+    const d = await apiFetch('/app/api/trades/' + id);
+    if (!d.ok) { document.getElementById('modal-body').innerHTML = '<div style="color:var(--red);padding:20px">❌ '+(d.error||'Failed')+'</div>'; return; }
+    const t = d.trade;
+    const isLong = t.direction === 'LONG';
+    const pnlCol = t.pnlPct > 0 ? 'var(--green)' : t.pnlPct < 0 ? 'var(--red)' : 'var(--text2)';
+    const openDate  = t.openTime  ? new Date(t.openTime).toLocaleString()  : '—';
+    const closeDate = t.closedAt  ? new Date(t.closedAt).toLocaleString()  : '—';
+    const holdTime  = (t.openTime && t.closedAt)
+      ? (() => { const h=Math.floor((new Date(t.closedAt)-new Date(t.openTime))/3600000); return h<24?h+'h':Math.floor(h/24)+'d '+h%24+'h'; })()
+      : t.openTime ? ((Date.now()-new Date(t.openTime))/3600000).toFixed(1)+'h (open)' : '—';
+
+    document.getElementById('modal-body').innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
+        <span class="pill ${isLong?'pill-long':'pill-short'}" style="font-size:.85rem">${isLong?'▲':'▼'} ${t.direction}</span>
+        ${t.result ? `<span class="pill ${t.result==='WIN'?'pill-win':t.result==='LOSS'?'pill-loss':'pill-be'}">${t.result}</span>` : '<span class="pill pill-active">ACTIVE</span>'}
+        ${t.isPaper ? '<span class="pill" style="background:rgba(0,200,255,.1);color:var(--accent)">📄 Paper</span>' : ''}
+        ${t.score ? `<span class="pill" style="background:rgba(0,0,0,.3);color:var(--text2)">Score: ${t.score}</span>` : ''}
+      </div>
+      <div class="detail-grid">
+        <div class="detail-item"><div class="detail-label">Entry</div><div class="detail-val c-cyan">${fmtP(t.entry)}</div></div>
+        <div class="detail-item"><div class="detail-label">Stop Loss</div><div class="detail-val c-red">${fmtP(t.sl)}</div></div>
+        <div class="detail-item"><div class="detail-label">TP 1</div><div class="detail-val c-green">${fmtP(t.tp1)} ${t.tp1Hit?'✅':''}</div></div>
+        <div class="detail-item"><div class="detail-label">TP 2</div><div class="detail-val c-green">${fmtP(t.tp2)} ${t.tp2Hit?'✅':''}</div></div>
+        <div class="detail-item"><div class="detail-label">TP 3</div><div class="detail-val c-green">${fmtP(t.tp3)||'—'}</div></div>
+        <div class="detail-item"><div class="detail-label">Leverage</div><div class="detail-val c-yellow">${t.leverage||1}x</div></div>
+        <div class="detail-item"><div class="detail-label">RRR</div><div class="detail-val">${t.rrr||'—'}</div></div>
+        <div class="detail-item"><div class="detail-label">Timeframe</div><div class="detail-val">${t.timeframe||'15m'}</div></div>
+        <div class="detail-item"><div class="detail-label">Order Type</div><div class="detail-val">${t.orderType||'MARKET'}</div></div>
+        <div class="detail-item"><div class="detail-label">Hold Time</div><div class="detail-val">${holdTime}</div></div>
+      </div>
+      ${t.pnlPct !== null && t.pnlPct !== undefined ? `
+      <div style="background:var(--bg2);border-radius:8px;padding:14px 16px;margin-bottom:16px;text-align:center">
+        <div style="font-size:.75rem;color:var(--text2);margin-bottom:4px">PnL</div>
+        <div style="font-size:2rem;font-weight:800;font-family:var(--font-mono);color:${pnlCol}">${fmtPct(t.pnlPct)}</div>
+      </div>` : ''}
+      <div class="stat-row"><span>Opened</span><span class="stat-row-val" style="font-size:.78rem">${openDate}</span></div>
+      ${t.closedAt ? `<div class="stat-row"><span>Closed</span><span class="stat-row-val" style="font-size:.78rem">${closeDate}</span></div>` : ''}
+    `;
+  } catch(e) {
+    document.getElementById('modal-body').innerHTML = '<div style="color:var(--red);padding:20px">❌ '+e.message+'</div>';
+  }
+}
+
+function closeModal() {
+  document.getElementById('trade-modal').style.display = 'none';
+}
+document.addEventListener('keydown', e => { if(e.key==='Escape') closeModal(); });
 </script>
 </body>
 </html>

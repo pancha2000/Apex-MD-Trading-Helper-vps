@@ -87,6 +87,11 @@ app.get('/app/trades', saasAuth.requireUserAuth, async (req, res) => {
         }));
     } catch(_){}
     const totalClosed = closedTrades.length;
+    // Auto-cleanup: delete closed trades older than 7 days
+    try {
+        const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        await db.Trade.deleteMany({ userId: user.userId, status: 'closed', closedAt: { $lt: cutoff } });
+    } catch(_) {}
     res.send(renderView('app/trades', {
         activeTrades, closedTrades,
         summary: {
@@ -571,6 +576,49 @@ app.post('/app/api/user-settings/min-score', saasAuth.requireUserAuth, async (re
         if (isNaN(score) || score < 10 || score > 90) return res.status(400).json({ok:false,error:'Score must be 10–90'});
         await db.setUserMinScore(req.saasUser.userId, score);
         res.json({ok:true, minScoreThreshold: score});
+    } catch(e) { res.status(500).json({ok:false,error:e.message}); }
+});
+
+// ── Trade Detail ─────────────────────────────────────────────
+app.get('/app/api/trades/:id', saasAuth.requireUserAuth, async (req, res) => {
+    try {
+        const trade = await db.Trade.findById(req.params.id).lean();
+        if (!trade) return res.status(404).json({ok:false,error:'Trade not found'});
+        // verify ownership
+        if (String(trade.userId) !== req.saasUser.userId) {
+            const fu = await db.getSaasUserById(req.saasUser.userId);
+            if (!fu?.whatsappJid || trade.userJid !== fu.whatsappJid)
+                return res.status(403).json({ok:false,error:'Not your trade'});
+        }
+        res.json({ok:true, trade:{
+            _id:       trade._id.toString(),
+            coin:      (trade.coin||'').replace('USDT',''),
+            direction: trade.direction,
+            entry:     trade.entry,   tp1: trade.tp1,
+            tp2:       trade.tp2||trade.tp, tp3: trade.tp3,
+            sl:        trade.sl,      leverage: trade.leverage||1,
+            status:    trade.status,  result: trade.result,
+            pnlPct:    trade.pnlPct,  score: trade.score,
+            timeframe: trade.timeframe, orderType: trade.orderType,
+            isPaper:   trade.isPaper,
+            openTime:  trade.openTime,
+            closedAt:  trade.closedAt,
+            rrr:       trade.rrr,
+            tp1Hit:    trade.tp1Hit,  tp2Hit: trade.tp2Hit,
+        }});
+    } catch(e) { res.status(500).json({ok:false,error:e.message}); }
+});
+
+// ── Auto-cleanup old closed trades (>7 days) ─────────────────
+app.post('/app/api/trades/cleanup', saasAuth.requireUserAuth, async (req, res) => {
+    try {
+        const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        const result = await db.Trade.deleteMany({
+            userId: req.saasUser.userId,
+            status: 'closed',
+            closedAt: { $lt: cutoff },
+        });
+        res.json({ok:true, deleted: result.deletedCount});
     } catch(e) { res.status(500).json({ok:false,error:e.message}); }
 });
 

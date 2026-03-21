@@ -53,9 +53,10 @@ function renderUserNav(active) {
         { label: 'Account',  keys: ['settings','system'] },
     ];
     const aboutLinks = [
-        { href: '/',        label: '🏠 About Us' },
-        { href: '/privacy', label: '🔒 Privacy Policy' },
-        { href: '/terms',   label: '📄 Terms of Service' },
+        { href: '/app/guide', label: '📖 User Guide' },
+        { href: '/',          label: '🏠 About Us' },
+        { href: '/privacy',   label: '🔒 Privacy Policy' },
+        { href: '/terms',     label: '📄 Terms of Service' },
     ];
 
     // Track open groups — window scope so onclick can reach it

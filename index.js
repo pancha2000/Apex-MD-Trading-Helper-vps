@@ -201,10 +201,11 @@ async function startBot() {
             };
 
             // ── WA Commands mode gate ─────────────────────────────
-            if (isCmd && global._waCommandsEnabled === false) {
-                // Commands are disabled by admin — notify user once, then ignore
+            // Always allow: link/unlink/linkstatus + owner commands
+            const _alwaysAllow = ['link','connectweb','linkweb','unlink','linkstatus'];
+            if (isCmd && global._waCommandsEnabled === false && !_alwaysAllow.includes(command)) {
                 await conn.sendMessage(from, {
-                    text: '🔴 *Bot commands are temporarily offline.*\nTrading signals and notifications are still active. Please try again later.'
+                    text: '🔴 *Bot commands are temporarily offline.*\nTrading signals, TP/SL notifications and account linking are still active.'
                 }, { quoted: msg });
                 return;
             }

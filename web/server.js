@@ -377,6 +377,7 @@ function start() {
                 email:       u.email,
                 role:        u.role,
                 status:      u.accountStatus,
+                tier:        u.tier || 'free',
                 createdAt:   new Date(u.createdAt).toLocaleDateString(),
                 lastLoginAt: u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleDateString() : 'Never',
                 loginCount:  u.loginCount || 0,
@@ -393,7 +394,7 @@ function start() {
         try { scannerActive=require('../plugins/scanner').getScannerStatus(); } catch(_){}
         try { tradeCount=await db.Trade.countDocuments({status:{$in:['active','pending']}}); } catch(_){}
         const uptime=Math.floor((Date.now()-_botState.startTime)/60000);
-        res.json({ waConnected:_botState.waConnected, scannerActive, tradeCount,
+        res.json({ waConnected:_botState.waConnected, waCommandsEnabled:_botState.waCommandsEnabled, scannerActive, tradeCount,
             uptime: uptime>=60?`${Math.floor(uptime/60)}h ${uptime%60}m`:`${uptime}m`,
             pendingUpdate: _botState.pendingUpdate,
             modules:config.modules, trading:config.trading });
@@ -526,6 +527,50 @@ function start() {
             await SaasUser.findByIdAndUpdate(req.params.id, { role });
             res.json({ok:true, role});
         } catch(e){ res.status(500).json({ok:false,error:e.message}); }
+    });
+
+    // ── User tier change ────────────────────────────────────────
+    app.post('/admin/api/users/:id/tier', requireAdminAuth, async (req, res) => {
+        try {
+            const { tier } = req.body;
+            if (!['free','vip'].includes(tier)) return res.status(400).json({ok:false,error:'Invalid tier'});
+            await db.setUserTier(req.params.id, tier);
+            res.json({ok:true, tier});
+        } catch(e){ res.status(500).json({ok:false,error:e.message}); }
+    });
+
+    // ── User delete ──────────────────────────────────────────────
+    app.delete('/admin/api/users/:id', requireAdminAuth, async (req, res) => {
+        try {
+            await db.deleteSaasUser(req.params.id);
+            res.json({ok:true});
+        } catch(e){ res.status(500).json({ok:false,error:e.message}); }
+    });
+
+    // ── Feature flags ────────────────────────────────────────────
+    // Global feature on/off per tier: stored in memory + config
+    if (!global._featureFlags) {
+        global._featureFlags = {
+            free:  { scanner:true, paper:true, alerts:true, watchlist:true, news:true,
+                     calc:true, stats:true, ai:false, backtest:false, heatmap:true,
+                     compare:false, portfolio:false, journal:false, grid:false, funding:true },
+            vip:   { scanner:true, paper:true, alerts:true, watchlist:true, news:true,
+                     calc:true, stats:true, ai:true, backtest:true, heatmap:true,
+                     compare:true, portfolio:true, journal:true, grid:true, funding:true },
+        };
+    }
+
+    app.get('/admin/api/features', requireAdminAuth, (req, res) => {
+        res.json({ok:true, flags: global._featureFlags});
+    });
+
+    app.post('/admin/api/features/:tier/:feature', requireAdminAuth, (req, res) => {
+        const {tier, feature} = req.params;
+        const {enabled} = req.body;
+        if (!['free','vip'].includes(tier)) return res.status(400).json({ok:false,error:'Invalid tier'});
+        if (!global._featureFlags[tier]) return res.status(400).json({ok:false,error:'Invalid tier'});
+        global._featureFlags[tier][feature] = Boolean(enabled);
+        res.json({ok:true, tier, feature, enabled: Boolean(enabled)});
     });
 
     // ── Bot restart / stop ───────────────────────────────────────

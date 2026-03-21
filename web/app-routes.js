@@ -267,6 +267,15 @@ app.get('/app/api/heatmap', saasAuth.requireUserAuth, async (req, res) => {
     } catch(e) { res.status(500).json({ok:false,error:e.message}); }
 });
 
+// ─── /app/guide ─────────────────────────────────────────────────────────
+app.get('/app/guide', saasAuth.requireUserAuth, async (req, res) => {
+    const fu = await db.getSaasUserById(req.saasUser.userId).catch(()=>null);
+    res.send(renderView('app/guide', {
+        username: req.saasUser.username,
+        tier: fu?.tier || 'free',
+    }));
+});
+
 // ─── /app/stats ─────────────────────────────────────────────────────────
 app.get('/app/stats', saasAuth.requireUserAuth, async (req, res) => {
     const user = req.saasUser;
@@ -351,12 +360,13 @@ app.get('/app/settings', saasAuth.requireUserAuth, async (req, res) => {
             if (wu) { paperBalance=wu.paperBalance||0; margin=wu.margin||0; }
         }
     } catch(_){}
-    let minScoreThreshold = 20, hasUserGroq = false, hasUserGemini = false;
+    let minScoreThreshold = 20, hasUserGroq = false, hasUserGemini = false, userTier = 'free';
     try {
         const fu2 = await db.getSaasUserById(user.userId);
         minScoreThreshold = fu2?.minScoreThreshold ?? 20;
         hasUserGroq   = Boolean(fu2?.encGroqApiKey);
         hasUserGemini = Boolean(fu2?.encGeminiApiKey);
+        userTier      = fu2?.tier || 'free';
     } catch(_) {}
     res.send(renderView('app/settings', {
         user: { username: user.username, role: user.role },
@@ -364,8 +374,9 @@ app.get('/app/settings', saasAuth.requireUserAuth, async (req, res) => {
         tradingMode, paperBalance: parseFloat(paperBalance).toFixed(2), margin: parseFloat(margin).toFixed(2),
         minScoreThreshold,
         hasUserGroq, hasUserGemini,
-        hasSysGroq: Boolean(config.GROQ_API),
-        hasSysGemini: Boolean(config.GEMINI_API),
+        hasSysGroq: false,  // system keys not shared with users
+        hasSysGemini: false,
+        userTier,
         msg: req.query.added?'added':req.query.removed?'removed':req.query.unlinked?'unlinked':req.query.keyerr||'',
     }));
 });
@@ -624,13 +635,13 @@ app.post('/app/api/margin', saasAuth.requireUserAuth, async (req, res) => {
 
 app.post('/app/api/ai-chat', saasAuth.requireUserAuth, async (req, res) => {
     try {
-        // Resolve GROQ key: user's key > system key
-        let groqKey = config.GROQ_API || '';
+        // Users must provide their OWN GROQ key — system key not shared
+        let groqKey = '';
         try {
             const fu = await db.getSaasUserById(req.saasUser.userId);
             if (fu?.encGroqApiKey) groqKey = saasAuth.decryptApiKey(fu.encGroqApiKey);
         } catch(_) {}
-        if (!groqKey) return res.json({ok:false,error:'GROQ API key නැත. Settings → AI Keys හි add කරන්න.'});
+        if (!groqKey) return res.json({ok:false,error:'AI Chat ලිනිිusage ගන්න Settings → AI Keys හි ඔබගේ GROQ API key add කරන්න. (Free service — groq.com)'});
         const {messages=[]}=req.body;
         if(!messages.length)return res.status(400).json({ok:false,error:'No messages'});
         const r=await axios.post('https://api.groq.com/openai/v1/chat/completions',

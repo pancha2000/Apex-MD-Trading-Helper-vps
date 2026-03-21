@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Settings · Apex-MD</title>
 <link rel="stylesheet" href="/css/main.css">
@@ -171,7 +172,11 @@ document.getElementById('wa-body').innerHTML = `
       <div style="color:var(--text2);font-size:.78rem">${D.waLinkedAt||''}</div></div>
     <button class="btn btn-danger btn-sm" onclick="unlinkWa()">Unlink</button>
   </div>` : `<div style="background:rgba(255,171,0,.06);border:1px solid rgba(255,171,0,.2);border-radius:var(--radius);padding:10px 12px;margin-bottom:12px;font-size:.82rem;color:var(--yellow)">⚠️ Not linked</div>`}
-  <div style="font-size:.8rem;color:var(--text2);margin-bottom:10px">1. Generate token → 2. Send <code style="background:var(--card2);padding:1px 5px;border-radius:3px">.link TOKEN</code> to bot</div>
+  <div style="font-size:.8rem;color:var(--text2);margin-bottom:10px">
+    1. Generate token<br>
+    2. Open WhatsApp → Add bot: <strong style="color:var(--accent)">+94 70 139 1585</strong><br>
+    3. Send: <code style="background:var(--card2);padding:1px 5px;border-radius:3px">.link TOKEN</code>
+  </div>
   <button class="btn btn-primary" onclick="generateToken()" id="gen-btn">⚡ Generate Token</button>
   <div id="token-display" style="display:none;margin-top:14px">
     <div style="font-size:.78rem;color:var(--text2);margin-bottom:6px">Token (valid 15 min):</div>
@@ -196,8 +201,12 @@ document.getElementById('mode-cards').innerHTML = [
 
 // Account info
 const u = D.user || {};
+const tierPill = (D.userTier||'free')==='vip'
+  ? '<span style="background:linear-gradient(135deg,rgba(255,215,0,.2),rgba(255,165,0,.15));color:gold;border:1px solid rgba(255,215,0,.4);border-radius:99px;padding:2px 10px;font-size:.72rem;font-weight:700">👑 VIP</span>'
+  : '<span style="background:rgba(255,255,255,.08);color:var(--text2);border:1px solid rgba(255,255,255,.15);border-radius:99px;padding:2px 10px;font-size:.72rem">🆓 Free</span>';
 document.getElementById('account-info').innerHTML = `
   <div class="stat-row"><span>Username</span><span class="stat-row-val">${u.username||'—'}</span></div>
+  <div class="stat-row"><span>Plan</span><span class="stat-row-val">${tierPill}</span></div>
   <div class="stat-row"><span>Role</span><span class="stat-row-val">${u.role||'user'}</span></div>
   <div class="stat-row"><span>Mode</span><span class="stat-row-val">${isAuto?'<span class="pill pill-active">🤖 Auto</span>':'<span class="pill pill-ok">📡 Signals</span>'}</span></div>
   <div class="stat-row"><span>WhatsApp</span><span class="stat-row-val">${waLinked?'<span class="pill pill-ok">linked</span>':'<span class="pill pill-susp">not linked</span>'}</span></div>`;

@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>User Guide · Apex-MD</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="stylesheet" href="/css/main.css">
+<style>
+.guide-section{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:24px;margin-bottom:20px}
+.guide-section h2{font-family:var(--font-head);font-size:1.05rem;font-weight:700;color:var(--accent);margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.guide-section p,.guide-section li{font-size:.85rem;color:var(--text2);line-height:1.8}
+.guide-section ul{padding-left:18px;margin:8px 0}
+.step-box{background:var(--bg2);border-radius:8px;padding:14px 16px;margin:10px 0;border-left:3px solid var(--accent)}
+.step-num{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--accent);color:#000;font-size:.72rem;font-weight:700;margin-right:8px;flex-shrink:0}
+.cmd-tag{background:var(--bg2);border:1px solid var(--border);border-radius:5px;padding:2px 8px;font-family:var(--font-mono);font-size:.82rem;color:var(--accent)}
+.tier-badge-free{background:rgba(255,255,255,.08);color:var(--text2);border:1px solid rgba(255,255,255,.15);border-radius:99px;padding:2px 10px;font-size:.72rem;font-weight:700}
+.tier-badge-vip{background:linear-gradient(135deg,rgba(255,215,0,.2),rgba(255,165,0,.15));color:gold;border:1px solid rgba(255,215,0,.4);border-radius:99px;padding:2px 10px;font-size:.72rem;font-weight:700}
+.feat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-top:12px}
+.feat-item{background:var(--bg2);border-radius:8px;padding:10px 12px;font-size:.8rem;color:var(--text2)}
+.feat-item strong{color:var(--text);display:block;margin-bottom:3px}
+</style>
+</head>
+<body>
+<div id="nav-root"></div>
+<div class="wrap">
+
+  <h1 class="page-title">📖 User Guide
+    <span id="tier-badge" style="margin-left:10px;font-size:.8rem;font-weight:400"></span>
+  </h1>
+
+  <!-- Tier info -->
+  <div id="tier-banner" style="margin-bottom:20px"></div>
+
+  <!-- 1. Getting Started -->
+  <div class="guide-section">
+    <h2>🚀 Getting Started</h2>
+    <p>Apex-MD is an AI-powered crypto futures trading platform. It provides real-time market analysis, signal scanning, paper trading, and more.</p>
+    <div class="step-box"><span class="step-num">1</span><strong style="color:var(--text)">Create Account</strong> — Register at <a href="/auth/register">/auth/register</a></div>
+    <div class="step-box"><span class="step-num">2</span><strong style="color:var(--text)">Link WhatsApp</strong> — Settings → Generate Token → Send <span class="cmd-tag">.link CODE</span> to bot</div>
+    <div class="step-box"><span class="step-num">3</span><strong style="color:var(--text)">Start Scanning</strong> — Visit Scanner → analyze any coin</div>
+    <div class="step-box"><span class="step-num">4</span><strong style="color:var(--text)">Paper Trade</strong> — Practice with virtual money before real trading</div>
+  </div>
+
+  <!-- 2. WhatsApp Linking -->
+  <div class="guide-section">
+    <h2>📱 WhatsApp Integration</h2>
+    <p>Linking WhatsApp lets you receive trading signals, TP/SL hit notifications, and daily P&L reports directly.</p>
+    <div class="step-box">
+      <span class="step-num">1</span> Go to <a href="/app/settings">Settings</a> → Click <strong>Generate Token</strong>
+    </div>
+    <div class="step-box">
+      <span class="step-num">2</span> Open WhatsApp → Send this message to bot number <strong style="color:var(--accent)">+94 70 139 1585</strong>:
+      <div style="margin-top:8px;background:var(--card);border-radius:6px;padding:10px 14px;font-family:var(--font-mono);color:var(--accent)">
+        .link LINK-XXXXXX
+      </div>
+      <div style="font-size:.78rem;color:var(--text2);margin-top:6px">Replace XXXXXX with your token code</div>
+    </div>
+    <div class="step-box">
+      <span class="step-num">3</span> Bot replies with ✅ confirmation — you're linked!
+    </div>
+    <p style="margin-top:12px">To unlink: Send <span class="cmd-tag">.unlink</span> | Check status: <span class="cmd-tag">.linkstatus</span></p>
+  </div>
+
+  <!-- 3. Scanner -->
+  <div class="guide-section">
+    <h2>⚡ AI Scanner</h2>
+    <p>The scanner uses 70+ technical indicators to find high-probability trading setups.</p>
+    <ul>
+      <li><strong>Deep Scan</strong> — Enter any coin (eg: BTC, ETH, SOL) + timeframe → full analysis</li>
+      <li><strong>Auto Market Scan</strong> — Scans top 50 coins automatically → shows top 5 setups</li>
+      <li><strong>Score</strong> — 0-100. Higher = stronger signal. Your threshold filters out weak signals</li>
+      <li><strong>Funding Rate</strong> — High positive = LONG squeeze risk. High negative = SHORT squeeze risk</li>
+      <li><strong>Daily Trend</strong> — ✅ = trading with daily trend. ⚠️ = against daily (higher risk)</li>
+      <li><strong>RRR</strong> — Risk:Reward Ratio. Minimum 1.5:1 required for quality setups</li>
+    </ul>
+    <div style="margin-top:12px;padding:10px 14px;background:rgba(0,200,255,.06);border-radius:6px;font-size:.82rem;color:var(--text2)">
+      💡 <strong style="color:var(--accent)">Tip:</strong> Set your Score Threshold to 40+ in Settings for better quality signals.
+    </div>
+  </div>
+
+  <!-- 4. Paper Trading -->
+  <div class="guide-section">
+    <h2>📄 Paper Trading</h2>
+    <p>Practice trading with virtual money — zero real risk, full realism.</p>
+    <ul>
+      <li>Start with $100 virtual balance (customizable)</li>
+      <li>Open trades manually or directly from Scanner results</li>
+      <li>TP1 auto-calculated as midpoint between Entry and TP2</li>
+      <li>Live P&L updates every 30 seconds</li>
+      <li>Max 5 open positions at once</li>
+      <li>Trades auto-deleted after 7 days</li>
+    </ul>
+  </div>
+
+  <!-- 5. Alerts -->
+  <div class="guide-section">
+    <h2>🔔 Price Alerts</h2>
+    <p>Set price level notifications for any coin. Delivered via WhatsApp when triggered.</p>
+    <ul>
+      <li>Up to 20 simultaneous alerts</li>
+      <li>Set "above" or "below" target price conditions</li>
+      <li>WhatsApp must be linked to receive notifications</li>
+    </ul>
+  </div>
+
+  <!-- 6. Features Overview -->
+  <div class="guide-section">
+    <h2>🗺️ All Features</h2>
+    <div class="feat-grid">
+      <div class="feat-item"><strong>⚡ Scanner</strong>70-factor AI deep analysis</div>
+      <div class="feat-item"><strong>🔍 Market Scan</strong>Top 5 setups auto-detected</div>
+      <div class="feat-item"><strong>🌡️ Heatmap</strong>Top 50 coins 24h view</div>
+      <div class="feat-item"><strong>⚖️ Compare</strong>Side-by-side coin analysis</div>
+      <div class="feat-item"><strong>💸 Funding</strong>Binance perpetual rates</div>
+      <div class="feat-item"><strong>📰 Intel</strong>Fear & Greed + crypto news</div>
+      <div class="feat-item"><strong>📄 Paper</strong>Virtual trading simulator</div>
+      <div class="feat-item"><strong>📋 Trades</strong>Live trade tracking</div>
+      <div class="feat-item"><strong>🎯 Tracks</strong>WA trade history</div>
+      <div class="feat-item"><strong>🔔 Alerts</strong>Price level notifications</div>
+      <div class="feat-item"><strong>👁 Watchlist</strong>Track up to 15 coins</div>
+      <div class="feat-item"><strong>💼 Portfolio</strong>Binance balance viewer</div>
+      <div class="feat-item"><strong>🧪 Backtest</strong>Historical accuracy test</div>
+      <div class="feat-item"><strong>📓 Journal</strong>Signal + trade log</div>
+      <div class="feat-item"><strong>📊 Stats</strong>Performance analytics</div>
+      <div class="feat-item"><strong>🧮 Calc</strong>Position size calculator</div>
+      <div class="feat-item"><strong>🕸 Grid</strong>Grid trading advisor</div>
+      <div class="feat-item"><strong>🤖 AI Chat</strong>AI market assistant</div>
+    </div>
+  </div>
+
+  <!-- 7. Settings -->
+  <div class="guide-section">
+    <h2>⚙️ Settings Guide</h2>
+    <ul>
+      <li><strong>Score Threshold</strong> — Minimum signal score for Scanner. Recommended: 40</li>
+      <li><strong>Capital</strong> — Set your paper trading balance</li>
+      <li><strong>Trading Mode</strong> — Signals Only: receive alerts. Auto Trade: bot executes (requires API keys)</li>
+      <li><strong>API Keys</strong> — Add Binance API key (secret optional for read-only). Never share secret keys</li>
+      <li><strong>AI Keys</strong> — Add your own GROQ key for AI Chat. Free at <a href="https://console.groq.com" target="_blank">console.groq.com</a></li>
+    </ul>
+  </div>
+
+  <!-- 8. Risk Warning -->
+  <div class="guide-section" style="border-color:rgba(255,171,0,.3)">
+    <h2 style="color:var(--yellow)">⚠️ Important Risk Warning</h2>
+    <ul>
+      <li>Crypto trading involves <strong style="color:var(--yellow)">substantial risk of loss</strong></li>
+      <li>AI signals are tools, NOT financial advice</li>
+      <li>Always use stop losses and manage position sizes</li>
+      <li>Never risk more than you can afford to lose</li>
+      <li>Past signal performance does NOT guarantee future results</li>
+      <li>Leverage amplifies both gains and losses significantly</li>
+    </ul>
+  </div>
+
+</div>
+
+<script src="/js/user.js"></script>
+<script>
+const D = window.__DATA__ || {};
+window._apexUser = { username: D.username };
+renderUserNav('guide');
+
+const tier = D.tier || 'free';
+const badge = document.getElementById('tier-badge');
+if (badge) badge.innerHTML = tier==='vip'
+  ? '<span style="background:linear-gradient(135deg,rgba(255,215,0,.2),rgba(255,165,0,.15));color:gold;border:1px solid rgba(255,215,0,.4);border-radius:99px;padding:2px 10px;font-size:.72rem;font-weight:700">👑 VIP Member</span>'
+  : '<span style="background:rgba(255,255,255,.08);color:var(--text2);border:1px solid rgba(255,255,255,.15);border-radius:99px;padding:2px 10px;font-size:.72rem">🆓 Free Plan</span>';
+
+const banner = document.getElementById('tier-banner');
+if (banner && tier === 'free') {
+  banner.innerHTML = `<div style="background:linear-gradient(135deg,rgba(255,215,0,.06),rgba(255,165,0,.04));border:1px solid rgba(255,215,0,.25);border-radius:var(--radius);padding:16px 20px;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap">
+    <div>
+      <div style="font-weight:700;color:gold;margin-bottom:4px">👑 Upgrade to VIP</div>
+      <div style="font-size:.82rem;color:var(--text2)">Get access to AI Chat, Backtest, Compare, Portfolio, Journal and more advanced features.</div>
+    </div>
+    <a href="/app/settings" class="btn btn-sm" style="background:linear-gradient(135deg,rgba(255,215,0,.2),rgba(255,165,0,.15));border-color:rgba(255,215,0,.4);color:gold;white-space:nowrap">Contact Admin →</a>
+  </div>`;
+}
+</script>
+</body>
+</html>

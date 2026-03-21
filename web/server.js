@@ -182,21 +182,20 @@ function start() {
     app.use(express.static(path.join(__dirname, 'public')));
 
     // ─── Public pages (no auth required) ──────────────────────────────
-    const fs = require('fs');
-    const publicView = (file) => fs.readFileSync(path.join(__dirname, 'public', 'views', 'public', file), 'utf8');
-
     app.get('/', (req, res) => {
-        // Check if already logged in → redirect to app
-        const cookies = saasAuth.parseCookiesPublic ? saasAuth.parseCookiesPublic(req.headers.cookie) : {};
-        res.sendFile(path.join(__dirname, 'public', 'views', 'public', 'landing.html'));
+        res.send(renderView('public/landing', {}));
+    });
+
+    app.get('/about', (req, res) => {
+        res.send(renderView('public/landing', {}));
     });
 
     app.get('/privacy', (req, res) => {
-        res.sendFile(path.join(__dirname, 'public', 'views', 'public', 'privacy.html'));
+        res.send(renderView('public/privacy', {}));
     });
 
     app.get('/terms', (req, res) => {
-        res.sendFile(path.join(__dirname, 'public', 'views', 'public', 'terms.html'));
+        res.send(renderView('public/terms', {}));
     });
 
     app.get('/robots.txt', (req, res) => {
@@ -210,12 +209,12 @@ function start() {
             'Disallow: /auth/',
             'Disallow: /app/api/',
             '',
-            'Sitemap: https://apexmd.trade/sitemap.xml',
+            'Sitemap: ' + (process.env.SITE_URL || 'https://apextradingfree.duckdns.org') + '/sitemap.xml',
         ].join('\n'));
     });
 
     app.get('/sitemap.xml', (req, res) => {
-        const base = process.env.SITE_URL || 'http://apextradingfree.duckdns.org';
+        const base = process.env.SITE_URL || 'https://apextradingfree.duckdns.org';
         res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>${base}/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>
@@ -674,7 +673,6 @@ function start() {
     }
 
     // ─── Root & Compat ─────────────────────────────────────────────────
-    app.get('/', (req, res) => res.redirect('/auth/login'));
     app.use('/dashboard', (req, res) => {
         const dest = req.path==='/'||req.path==='' ? '/admin/' : '/admin'+req.path;
         res.redirect(301, dest+(req.search||''));

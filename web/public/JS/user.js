@@ -34,12 +34,44 @@ function renderUserNav(active) {
         { href: '/app/system',    key: 'system',    label: '💻 System' },
     ];
     const user = window._apexUser || {};
-    const linkHtml = links.map(l => `
-        <a href="${l.href}" onclick="_navClose()" class="nav-link${active === l.key ? ' active' : ''}">
-            ${l.label}
-        </a>`).join('');
 
-    // ── Nav bar (without the dropdown links) ──────────────
+    // ── Category groups for organized drawer ──────────────
+    const GROUPS = [
+        { label: 'Analysis', keys: ['scanner','market','heatmap','compare','funding','news'] },
+        { label: 'Trading',  keys: ['trades','paper','tracks','alerts','watchlist','portfolio'] },
+        { label: 'Tools',    keys: ['backtest','journal','stats','calc','grid','ai'] },
+        { label: 'Account',  keys: ['settings','system'] },
+    ];
+    const aboutLinks = [
+        { href: '/',        label: '🏠 About Us' },
+        { href: '/privacy', label: '🔒 Privacy Policy' },
+        { href: '/terms',   label: '📄 Terms of Service' },
+    ];
+
+    function buildDrawerHTML() {
+        let html = '';
+        const sep = (label, extra='') => `<div style="font-size:.62rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.1em;padding:10px 20px 3px;margin-top:6px${extra}">${label}</div>`;
+        // Home first
+        const home = links.find(l => l.key === 'home');
+        if (home) html += `<a href="${home.href}" onclick="_navClose()" class="nav-link${active===home.key?' active':''}">${home.label}</a>`;
+        // Category groups
+        GROUPS.forEach(g => {
+            const gl = links.filter(l => g.keys.includes(l.key));
+            if (!gl.length) return;
+            html += sep(g.label);
+            gl.forEach(l => { html += `<a href="${l.href}" onclick="_navClose()" class="nav-link${active===l.key?' active':''}">${l.label}</a>`; });
+        });
+        // About section
+        html += sep('About', ';border-top:1px solid rgba(255,255,255,.07);margin-top:10px');
+        aboutLinks.forEach(l => { html += `<a href="${l.href}" onclick="_navClose()" class="nav-link" style="font-size:.82rem;opacity:.8">${l.label}</a>`; });
+        // Footer
+        html += `<div style="padding:10px 16px 4px;margin-top:4px;border-top:1px solid rgba(255,255,255,.07)">`;
+        if (user.username) html += `<div style="font-size:.75rem;color:var(--text2);padding:2px 0 8px;font-family:var(--font-mono)">👤 ${user.username}</div>`;
+        html += `<a href="/auth/logout" class="nav-btn" style="justify-content:center">Logout →</a></div>`;
+        return html;
+    }
+
+    // ── Nav bar ──────────────────────────────────────────
     document.getElementById('nav-root').innerHTML = `
     <nav class="nav">
         <div class="nav-logo">
@@ -51,21 +83,14 @@ function renderUserNav(active) {
         </button>
     </nav>`;
 
-    // ── Move nav-links to <body> so it escapes nav stacking context ──
-    // This is the key fix: nav has z-index:200 stacking context,
-    // so any child can never appear above other z-index elements.
-    // Moving to body makes z-index:10000 actually work.
+    // ── Drawer appended to <body> — escapes nav stacking context ──
     let existing = document.getElementById('nav-links');
     if (existing) existing.remove();
 
     const drawer = document.createElement('div');
     drawer.id = 'nav-links';
     drawer.className = 'nav-links';
-    drawer.innerHTML = `
-        ${linkHtml}
-        ${user.username ? `<span style="font-size:.78rem;color:var(--text2);padding:0 5px;font-family:var(--font-mono)">👤 ${user.username}</span>` : ''}
-        <a href="/auth/logout" class="nav-btn">Logout →</a>
-    `;
+    drawer.innerHTML = buildDrawerHTML();
     document.body.appendChild(drawer);
 
     // ── Dim overlay ───────────────────────────────────────

@@ -165,12 +165,18 @@ app.post('/app/api/scan', saasAuth.requireUserAuth, async (req, res) => {
                     withTimeout(binance.getMarketSentiment(coin).catch(()=>fallSent), 8000, fallSent),
                 ]);
                 let aiSummary = null;
-                if (config.GROQ_API) {
+                // Resolve GROQ key: user key > system key
+                let groqKey = config.GROQ_API || '';
+                try {
+                    const fu = await db.getSaasUserById(req.saasUser.userId);
+                    if (fu?.encGroqApiKey) { const {decryptApiKey} = require('../lib/saas-auth'); groqKey = decryptApiKey(fu.encGroqApiKey); }
+                } catch(_) {}
+                if (groqKey) {
                     try {
                         const prompt = `Apex-MD crypto analysis for ${coin} on ${timeframe}. Score:${a.score}/${a.maxScore||100}. Direction:${a.direction}. Entry:${a.entryPrice} TP2:${a.tp2} SL:${a.sl} RRR:${f.rrr}:1. Leverage:${f.leverage}x. 4H:${a.trend4H} 1H:${a.trend1H}. FnG:${sent.fngValue}. Sentiment:${sent.overallSentiment}. Confirmations:${conf.confirmationStrength}. Confluences:${a.reasons}. Reply ONLY with JSON: {"summary":"2-3 sentences","risk":"low|medium|high","confidence":"0-100%","keyLevel":"price level to watch"}`;
                         const gr = await withTimeout(axios.post('https://api.groq.com/openai/v1/chat/completions',
                             { model:'llama-3.3-70b-versatile', messages:[{role:'user',content:prompt}], max_tokens:180, temperature:0.3 },
-                            { headers:{Authorization:`Bearer ${config.GROQ_API}`}, timeout:22000 }), 23000, null);
+                            { headers:{Authorization:`Bearer ${groqKey}`}, timeout:22000 }), 23000, null);
                         if (gr?.data?.choices?.[0]?.message?.content) {
                             let raw = gr.data.choices[0].message.content.replace(/```json|```/g,'').trim();
                             aiSummary = JSON.parse(raw.slice(raw.indexOf('{'), raw.lastIndexOf('}')+1));

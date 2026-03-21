@@ -82,6 +82,53 @@
         </div>
       </div>
 
+      <!-- ── AI API Keys ── -->
+      <div class="panel" style="margin-bottom:20px">
+        <div class="panel-head">
+          <div class="panel-title">🤖 AI API Keys</div>
+          <span style="font-size:.72rem;color:var(--text2)">Deep Scan · AI Chat</span>
+        </div>
+        <div class="panel-body">
+          <div style="font-size:.8rem;color:var(--text2);margin-bottom:14px;line-height:1.6">
+            ඔබගේ personal AI keys — system key නැතිව හෝ override කරන්නට. Encrypted ලෙස save වේ.
+          </div>
+
+          <!-- GROQ -->
+          <div style="margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--border)">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+              <div>
+                <div style="font-size:.84rem;font-weight:600">GROQ API Key</div>
+                <div style="font-size:.72rem;color:var(--text2)">AI Summary · Deep Scan · AI Chat</div>
+              </div>
+              <span id="groq-status-pill"></span>
+            </div>
+            <div style="display:flex;gap:8px">
+              <input type="password" id="groq-inp" class="inp" placeholder="gsk_..." style="flex:1;font-family:var(--font-mono);font-size:.82rem" autocomplete="off">
+              <button class="btn btn-primary btn-sm" onclick="saveAiKey('groq')">Save</button>
+              <button class="btn btn-danger btn-sm" id="groq-remove-btn" onclick="removeAiKey('groq')" style="display:none">Remove</button>
+            </div>
+            <div id="groq-msg" style="font-size:.78rem;margin-top:6px;min-height:16px"></div>
+          </div>
+
+          <!-- Gemini -->
+          <div>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+              <div>
+                <div style="font-size:.84rem;font-weight:600">Gemini API Key</div>
+                <div style="font-size:.72rem;color:var(--text2)">WhatsApp .ai command</div>
+              </div>
+              <span id="gemini-status-pill"></span>
+            </div>
+            <div style="display:flex;gap:8px">
+              <input type="password" id="gemini-inp" class="inp" placeholder="AIza..." style="flex:1;font-family:var(--font-mono);font-size:.82rem" autocomplete="off">
+              <button class="btn btn-primary btn-sm" onclick="saveAiKey('gemini')">Save</button>
+              <button class="btn btn-danger btn-sm" id="gemini-remove-btn" onclick="removeAiKey('gemini')" style="display:none">Remove</button>
+            </div>
+            <div id="gemini-msg" style="font-size:.78rem;margin-top:6px;min-height:16px"></div>
+          </div>
+        </div>
+      </div>
+
       <div class="panel">
         <div class="panel-head"><div class="panel-title">👤 Account</div></div>
         <div class="panel-body" id="account-info"></div>
@@ -182,6 +229,56 @@ async function generateToken() {
   let secs=900;const iv=setInterval(()=>{secs--;const m=String(Math.floor(secs/60)).padStart(2,'0'),s=String(secs%60).padStart(2,'0');document.getElementById('token-timer').textContent='⏳ Expires in '+m+':'+s;if(secs<=0){clearInterval(iv);document.getElementById('token-timer').textContent='❌ Expired';document.getElementById('token-timer').style.color='var(--red)';}},1000);
 }
 function copyToken(){navigator.clipboard.writeText(document.getElementById('token-value').textContent).then(()=>{showToast('✅ Copied!')});}
+
+// ── AI Key UI init ────────────────────────────────────────────
+function initAiKeyUI() {
+  // GROQ
+  const hasGroq = D.hasUserGroq || false;
+  const gp = document.getElementById('groq-status-pill');
+  const grb = document.getElementById('groq-remove-btn');
+  if (gp) gp.innerHTML = hasGroq
+    ? '<span class="pill pill-ok" style="font-size:.7rem">✅ Saved</span>'
+    : (D.hasSysGroq ? '<span class="pill" style="font-size:.7rem;color:var(--text2)">System key active</span>' : '<span class="pill pill-susp" style="font-size:.7rem">Not set</span>');
+  if (grb) grb.style.display = hasGroq ? 'block' : 'none';
+  // Gemini
+  const hasGem = D.hasUserGemini || false;
+  const gmp = document.getElementById('gemini-status-pill');
+  const gmb = document.getElementById('gemini-remove-btn');
+  if (gmp) gmp.innerHTML = hasGem
+    ? '<span class="pill pill-ok" style="font-size:.7rem">✅ Saved</span>'
+    : (D.hasSysGemini ? '<span class="pill" style="font-size:.7rem;color:var(--text2)">System key active</span>' : '<span class="pill pill-susp" style="font-size:.7rem">Not set</span>');
+  if (gmb) gmb.style.display = hasGem ? 'block' : 'none';
+}
+initAiKeyUI();
+
+async function saveAiKey(type) {
+  const val = document.getElementById(type+'-inp').value.trim();
+  const msg = document.getElementById(type+'-msg');
+  if (!val) { msg.style.color='var(--red)'; msg.textContent='❌ Key cannot be empty'; return; }
+  msg.style.color='var(--text2)'; msg.textContent='⏳ Saving...';
+  const d = await apiFetch('/app/api/aikeys/save', { method:'POST', body: JSON.stringify({type, key: val}) });
+  if (d.ok) {
+    msg.style.color='var(--green)'; msg.textContent='✅ '+type.toUpperCase()+' key saved!';
+    document.getElementById(type+'-inp').value='';
+    document.getElementById(type+'-status-pill') && (document.getElementById(type+'-status-pill').innerHTML='<span class="pill pill-ok" style="font-size:.7rem">✅ Saved</span>');
+    document.getElementById(type+'-remove-btn') && (document.getElementById(type+'-remove-btn').style.display='block');
+    showToast('✅ '+(type==='groq'?'GROQ':'Gemini')+' key saved!');
+  } else {
+    msg.style.color='var(--red)'; msg.textContent='❌ '+(d.error||'Failed');
+  }
+}
+async function removeAiKey(type) {
+  if (!confirm('Remove '+type.toUpperCase()+' API key?')) return;
+  const msg = document.getElementById(type+'-msg');
+  const d = await apiFetch('/app/api/aikeys/remove', { method:'POST', body: JSON.stringify({type}) });
+  if (d.ok) {
+    msg.style.color='var(--yellow)'; msg.textContent='🗑️ Key removed';
+    document.getElementById(type+'-remove-btn') && (document.getElementById(type+'-remove-btn').style.display='none');
+    showToast('✅ Key removed');
+  } else {
+    msg.style.color='var(--red)'; msg.textContent='❌ '+(d.error||'Failed');
+  }
+}
 
 // ── Signal Score Threshold ───────────────────────────────────────
 const SCORE_LABELS = [

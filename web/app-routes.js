@@ -263,13 +263,21 @@ app.get('/app/settings', saasAuth.requireUserAuth, async (req, res) => {
             if (wu) { paperBalance=wu.paperBalance||0; margin=wu.margin||0; }
         }
     } catch(_){}
-    let minScoreThreshold = 20;
-    try { const fu2 = await db.getSaasUserById(user.userId); minScoreThreshold = fu2?.minScoreThreshold ?? 20; } catch(_) {}
+    let minScoreThreshold = 20, hasUserGroq = false, hasUserGemini = false;
+    try {
+        const fu2 = await db.getSaasUserById(user.userId);
+        minScoreThreshold = fu2?.minScoreThreshold ?? 20;
+        hasUserGroq   = Boolean(fu2?.encGroqApiKey);
+        hasUserGemini = Boolean(fu2?.encGeminiApiKey);
+    } catch(_) {}
     res.send(renderView('app/settings', {
         user: { username: user.username, role: user.role },
         apiKeys, waLinked, waJid: waJid.replace('@s.whatsapp.net',''), waLinkedAt,
         tradingMode, paperBalance: parseFloat(paperBalance).toFixed(2), margin: parseFloat(margin).toFixed(2),
         minScoreThreshold,
+        hasUserGroq, hasUserGemini,
+        hasSysGroq: Boolean(config.GROQ_API),
+        hasSysGemini: Boolean(config.GEMINI_API),
         msg: req.query.added?'added':req.query.removed?'removed':req.query.unlinked?'unlinked':req.query.keyerr||'',
     }));
 });
@@ -520,12 +528,18 @@ app.post('/app/api/margin', saasAuth.requireUserAuth, async (req, res) => {
 
 app.post('/app/api/ai-chat', saasAuth.requireUserAuth, async (req, res) => {
     try {
-        if (!config.GROQ_API) return res.json({ok:false,error:'GROQ API key නැත. config.env හි GROQ_API add කරන්න.'});
+        // Resolve GROQ key: user's key > system key
+        let groqKey = config.GROQ_API || '';
+        try {
+            const fu = await db.getSaasUserById(req.saasUser.userId);
+            if (fu?.encGroqApiKey) groqKey = saasAuth.decryptApiKey(fu.encGroqApiKey);
+        } catch(_) {}
+        if (!groqKey) return res.json({ok:false,error:'GROQ API key නැත. Settings → AI Keys හි add කරන්න.'});
         const {messages=[]}=req.body;
         if(!messages.length)return res.status(400).json({ok:false,error:'No messages'});
         const r=await axios.post('https://api.groq.com/openai/v1/chat/completions',
             {model:'llama-3.3-70b-versatile',messages:messages.slice(-14),max_tokens:600,temperature:0.5},
-            {headers:{Authorization:'Bearer '+config.GROQ_API},timeout:20000});
+            {headers:{Authorization:'Bearer '+groqKey},timeout:20000});
         res.json({ok:true,reply:r.data.choices[0].message.content||''});
     } catch(e){ console.error('[AI Chat]',e.message); res.status(500).json({ok:false,error:e.message}); }
 });
@@ -567,6 +581,27 @@ app.post('/app/api/targets/:key', saasAuth.requireUserAuth, async (req, res) => 
 app.post('/app/api/params/:key', saasAuth.requireUserAuth, async (req, res) => {
     try { const val=parseFloat(req.body.value); if(isNaN(val))throw new Error('Invalid number'); config.setTradingParam(req.params.key,val); res.json({ok:true,key:req.params.key,value:val}); }
     catch(e){ res.json({ok:false,error:e.message}); }
+});
+
+// ── User AI API Keys (GROQ / Gemini) ───────────────────────────
+app.post('/app/api/aikeys/save', saasAuth.requireUserAuth, async (req, res) => {
+    try {
+        const { type, key } = req.body;
+        if (!['groq','gemini'].includes(type)) return res.status(400).json({ok:false,error:'Invalid type'});
+        if (!key || !key.trim()) return res.status(400).json({ok:false,error:'Key is empty'});
+        const encKey = saasAuth.encryptApiKey(key.trim());
+        await db.setUserAiKey(req.saasUser.userId, type, encKey);
+        res.json({ok:true, type});
+    } catch(e) { res.status(500).json({ok:false,error:e.message}); }
+});
+
+app.post('/app/api/aikeys/remove', saasAuth.requireUserAuth, async (req, res) => {
+    try {
+        const { type } = req.body;
+        if (!['groq','gemini'].includes(type)) return res.status(400).json({ok:false,error:'Invalid type'});
+        await db.setUserAiKey(req.saasUser.userId, type, '');
+        res.json({ok:true, type});
+    } catch(e) { res.status(500).json({ok:false,error:e.message}); }
 });
 
 // ── Per-user Signal Score Threshold ────────────────────────────

@@ -181,6 +181,50 @@ function start() {
     // ─── Static Files ──────────────────────────────────────────────────
     app.use(express.static(path.join(__dirname, 'public')));
 
+    // ─── Public pages (no auth required) ──────────────────────────────
+    const fs = require('fs');
+    const publicView = (file) => fs.readFileSync(path.join(__dirname, 'public', 'views', 'public', file), 'utf8');
+
+    app.get('/', (req, res) => {
+        // Check if already logged in → redirect to app
+        const cookies = saasAuth.parseCookiesPublic ? saasAuth.parseCookiesPublic(req.headers.cookie) : {};
+        res.sendFile(path.join(__dirname, 'public', 'views', 'public', 'landing.html'));
+    });
+
+    app.get('/privacy', (req, res) => {
+        res.sendFile(path.join(__dirname, 'public', 'views', 'public', 'privacy.html'));
+    });
+
+    app.get('/terms', (req, res) => {
+        res.sendFile(path.join(__dirname, 'public', 'views', 'public', 'terms.html'));
+    });
+
+    app.get('/robots.txt', (req, res) => {
+        res.type('text/plain').send([
+            'User-agent: *',
+            'Allow: /',
+            'Allow: /privacy',
+            'Allow: /terms',
+            'Disallow: /app/',
+            'Disallow: /admin/',
+            'Disallow: /auth/',
+            'Disallow: /app/api/',
+            '',
+            'Sitemap: https://apexmd.trade/sitemap.xml',
+        ].join('\n'));
+    });
+
+    app.get('/sitemap.xml', (req, res) => {
+        const base = process.env.SITE_URL || 'http://apextradingfree.duckdns.org';
+        res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>${base}/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>
+  <url><loc>${base}/privacy</loc><changefreq>monthly</changefreq><priority>0.4</priority></url>
+  <url><loc>${base}/terms</loc><changefreq>monthly</changefreq><priority>0.4</priority></url>
+  <url><loc>${base}/auth/register</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+</urlset>`);
+    });
+
     // ─── Admin redirect compat ─────────────────────────────────────────
     app.get('/admin/login',  (req, res) => res.redirect('/auth/login'));
     app.get('/admin/logout', (req, res) => res.redirect('/auth/logout'));

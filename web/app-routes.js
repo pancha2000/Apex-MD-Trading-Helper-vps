@@ -186,6 +186,85 @@ app.get('/app/calc', saasAuth.requireUserAuth, (req, res) => {
     res.send(renderView('app/calc', { username: req.saasUser.username }));
 });
 
+// ─── /app/journal (Signal Journal) ──────────────────────────────────────
+app.get('/app/journal', saasAuth.requireUserAuth, async (req, res) => {
+    const user = req.saasUser;
+    let history = [];
+    try { history = await db.getSaasUserTradeHistory(user.userId, 100); } catch(_) {}
+    res.send(renderView('app/journal', { username: user.username, history: history.map(t => ({
+        coin: (t.coin||'').replace('USDT',''), direction: t.direction,
+        entry: fmtPrice(t.entry), tp2: fmtPrice(t.tp2||t.tp), sl: fmtPrice(t.sl),
+        result: t.result, pnlPct: t.pnlPct||0, score: t.score||0,
+        closedAt: t.closedAt ? new Date(t.closedAt).toLocaleDateString() : '—',
+        isPaper: t.isPaper,
+    })) }));
+});
+
+// ─── /app/backtest ────────────────────────────────────────────────────────
+app.get('/app/backtest', saasAuth.requireUserAuth, (req, res) => {
+    res.send(renderView('app/backtest', { username: req.saasUser.username }));
+});
+
+// ─── /app/heatmap ─────────────────────────────────────────────────────────
+app.get('/app/heatmap', saasAuth.requireUserAuth, (req, res) => {
+    res.send(renderView('app/heatmap', { username: req.saasUser.username }));
+});
+
+// ─── /app/portfolio ───────────────────────────────────────────────────────
+app.get('/app/portfolio', saasAuth.requireUserAuth, async (req, res) => {
+    const user = req.saasUser;
+    let apiKeys = [];
+    try {
+        const fu = await db.getSaasUserById(user.userId);
+        apiKeys = (fu?.apiKeys||[]).map(k=>({ _id:k._id.toString(), label:k.label, exchange:k.exchange, hasSecret: Boolean(k.encSecretKey) }));
+    } catch(_) {}
+    res.send(renderView('app/portfolio', { username: user.username, apiKeys }));
+});
+
+// ─── /app/compare ─────────────────────────────────────────────────────────
+app.get('/app/compare', saasAuth.requireUserAuth, (req, res) => {
+    res.send(renderView('app/compare', { username: req.saasUser.username }));
+});
+
+// ─── Portfolio API (Binance read-only) ─────────────────────────────────────
+app.get('/app/api/portfolio/balance', saasAuth.requireUserAuth, async (req, res) => {
+    try {
+        const fu = await db.getSaasUserById(req.saasUser.userId);
+        const key = (fu?.apiKeys||[]).find(k => k.exchange === 'binance' && k.encApiKey);
+        if (!key) return res.json({ok:false, error:'No Binance API key found. Add one in Settings.'});
+        const apiKey = saasAuth.decryptApiKey(key.encApiKey);
+        const crypto = require('crypto');
+        const ts = Date.now();
+        const queryStr = `timestamp=${ts}&recvWindow=10000`;
+        const sig = crypto.createHmac('sha256', key.encSecretKey ? saasAuth.decryptApiKey(key.encSecretKey) : '').update(queryStr).digest('hex');
+        const url = `https://fapi.binance.com/fapi/v2/balance?${queryStr}&signature=${sig}`;
+        const r = await axios.get(url, { headers:{'X-MBX-APIKEY': apiKey}, timeout:8000 });
+        const balances = (r.data||[]).filter(b => parseFloat(b.balance) > 0);
+        res.json({ok:true, balances, label: key.label});
+    } catch(e) {
+        const msg = e.response?.data?.msg || e.message;
+        res.json({ok:false, error: msg});
+    }
+});
+
+// ─── Heatmap API ───────────────────────────────────────────────────────────
+app.get('/app/api/heatmap', saasAuth.requireUserAuth, async (req, res) => {
+    try {
+        const r = await axios.get('https://api.binance.com/api/v3/ticker/24hr', {timeout:8000});
+        const coins = (r.data||[])
+            .filter(t => t.symbol.endsWith('USDT') && !['USDCUSDT','BUSDUSDT','USDTUSDT','TUSDUSDT','DAIUSDT','EURUSDT'].includes(t.symbol))
+            .sort((a,b) => parseFloat(b.quoteVolume)-parseFloat(a.quoteVolume))
+            .slice(0, 50)
+            .map(t => ({
+                coin: t.symbol.replace('USDT',''),
+                price: parseFloat(t.lastPrice),
+                change: parseFloat(t.priceChangePercent),
+                volume: parseFloat(t.quoteVolume),
+            }));
+        res.json({ok:true, coins});
+    } catch(e) { res.status(500).json({ok:false,error:e.message}); }
+});
+
 // ─── /app/stats ─────────────────────────────────────────────────────────
 app.get('/app/stats', saasAuth.requireUserAuth, async (req, res) => {
     const user = req.saasUser;
@@ -206,10 +285,17 @@ app.get('/app/stats', saasAuth.requireUserAuth, async (req, res) => {
         const worst=arr.reduce((w,t)=>(t.pnlPct||0)<(w?.pnlPct||0)?t:w,null);
         return { total:arr.length, wins, loss, wr:((wins/arr.length)*100).toFixed(1), totalPnl:pnl.toFixed(2), avgPnl:(pnl/arr.length).toFixed(2), best:best?{coin:best.coin,pnl:(best.pnlPct||0).toFixed(2)}:null, worst:worst?{coin:worst.coin,pnl:(worst.pnlPct||0).toFixed(2)}:null };
     };
+    // Build equity curve data (cumulative PnL timeline)
+    const equityCurve = live.slice().sort((a,b)=>new Date(a.closedAt)-new Date(b.closedAt)).reduce((acc, t) => {
+        const prev = acc.length ? acc[acc.length-1].cumPnl : 0;
+        acc.push({ date: t.closedAt ? new Date(t.closedAt).toLocaleDateString() : '—', pnl: t.pnlPct||0, cumPnl: parseFloat((prev+(t.pnlPct||0)).toFixed(2)), coin: (t.coin||'').replace('USDT',''), result: t.result });
+        return acc;
+    }, []);
     res.send(renderView('app/stats', {
         liveStats:  calcS(live),
         paperStats: calcS(paper),
         paperBalance: paperUser ? parseFloat(paperUser.paperBalance||0).toFixed(2) : '0.00',
+        equityCurve,
     }));
 });
 
@@ -309,17 +395,25 @@ app.post('/app/api/paper/open', saasAuth.requireUserAuth, async (req, res) => {
         const fullUser = await db.getSaasUserById(req.saasUser.userId);
         const waJid = fullUser?.whatsappJid;
         if (!waJid) return res.status(400).json({ok:false,error:'WhatsApp not linked. Link in Settings first.'});
-        const { coin='', direction='LONG', entry, tp2, sl, leverage=10 } = req.body;
+        const { coin='', direction='LONG', entry, tp1: tp1Raw, tp2, tp3: tp3Raw, sl, leverage=10 } = req.body;
         const coinFull = coin.toUpperCase().replace(/[^A-Z0-9]/g,'') + (coin.includes('USDT')?'':'USDT');
         if (!entry||!tp2||!sl) return res.status(400).json({ok:false,error:'entry, tp2, sl required'});
         const existing = await db.Trade.countDocuments({userJid:waJid,isPaper:true,status:{$in:['active','pending']}});
         if (existing >= 5) return res.status(400).json({ok:false,error:'Max 5 open paper trades'});
         const wu = await db.getUser(waJid);
         const margin = wu?.margin||100;
-        const slDist = Math.abs(parseFloat(entry)-parseFloat(sl));
+        const entryF = parseFloat(entry), tp2F = parseFloat(tp2), slF = parseFloat(sl);
+        const isLong = direction === 'LONG';
+        // Auto-calculate TP1 midpoint between entry and TP2 if not provided
+        const tp1F = tp1Raw ? parseFloat(tp1Raw) : (entryF + tp2F) / 2;
+        const tp3F = tp3Raw ? parseFloat(tp3Raw) : (isLong ? tp2F + (tp2F-entryF)*0.5 : tp2F - (entryF-tp2F)*0.5);
+        const slDist = Math.abs(entryF - slF);
         const qty = slDist>0 ? (margin*0.02)/slDist : 0;
-        const marginUsed = qty>0 ? (qty*parseFloat(entry))/leverage : 0;
-        await db.saveTrade({ userJid:waJid, userId:req.saasUser.userId, coin:coinFull, type:'future', direction, entry:parseFloat(entry), tp:parseFloat(tp2), tp1:null, tp2:parseFloat(tp2), sl:parseFloat(sl), status:'active', orderType:'MARKET', isPaper:true, source:'WEB', leverage:parseInt(leverage), quantity:qty, marginUsed, score:0, timeframe:'15m' });
+        const marginUsed = qty>0 ? (qty*entryF)/leverage : 0;
+        const riskDist = Math.abs(entryF - slF);
+        const rewardDist = Math.abs(tp2F - entryF);
+        const rrr = riskDist > 0 ? (rewardDist/riskDist).toFixed(2)+':1' : '—';
+        await db.saveTrade({ userJid:waJid, userId:req.saasUser.userId, coin:coinFull, type:'future', direction, entry:entryF, tp:tp2F, tp1:tp1F, tp2:tp2F, tp3:tp3F, sl:slF, status:'active', orderType:'MARKET', isPaper:true, source:'WEB', leverage:parseInt(leverage), quantity:qty, marginUsed, score:0, timeframe:'15m', rrr });
         res.json({ok:true});
     } catch(e) { res.status(500).json({ok:false,error:e.message}); }
 });
@@ -612,6 +706,17 @@ app.post('/app/api/user-settings/min-score', saasAuth.requireUserAuth, async (re
         await db.setUserMinScore(req.saasUser.userId, score);
         res.json({ok:true, minScoreThreshold: score});
     } catch(e) { res.status(500).json({ok:false,error:e.message}); }
+});
+
+// ── User Signals (from shared signal buffer) ─────────────────
+app.get('/app/api/signals/recent', saasAuth.requireUserAuth, (req, res) => {
+    try {
+        const { pushSignal, ...rest } = require('../web/server');
+        // Access via global shared state
+        const signals = global._apexSignalBuffer || [];
+        const limit = Math.min(parseInt(req.query.limit)||50, 200);
+        res.json({ ok:true, signals: signals.slice(-limit).reverse() });
+    } catch(e) { res.json({ ok:true, signals: [] }); }
 });
 
 // ── Trade Detail ─────────────────────────────────────────────

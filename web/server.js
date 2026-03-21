@@ -54,6 +54,8 @@ function log(msg) { _pushLog('[BOT] ' + msg); }
 const SIGNAL_BUFFER_SIZE = 200;
 const _signalBuffer      = [];
 const _signalSseClients  = new Set();
+// Make signal buffer globally accessible for user-facing routes
+global._apexSignalBuffer = _signalBuffer;
 
 function pushSignal(setup) {
     const entry = {
@@ -95,7 +97,6 @@ function requireAdminAuth(req, res, next) {
 const _botState = {
     waConnected: false, startTime: Date.now(),
     lastUpdate: null, pendingUpdate: false,
-    waCommandsEnabled: true,
 };
 function setBotConnected(connected) { _botState.waConnected = connected; }
 
@@ -197,8 +198,7 @@ function start() {
         try { saasUserCount = await db.SaasUser.countDocuments(); } catch(_){}
         const uptime = Math.floor((Date.now() - _botState.startTime) / 60000);
         res.send(renderView('admin/dashboard', {
-            waConnected:        _botState.waConnected,
-            waCommandsEnabled:  _botState.waCommandsEnabled,
+            waConnected:    _botState.waConnected,
             scannerActive,
             tradeCount:     trades.length,
             signalsToday:   _signalBuffer.filter(s => Date.now()-s.ts < 86400000).length,
@@ -340,7 +340,7 @@ function start() {
         try { scannerActive=require('../plugins/scanner').getScannerStatus(); } catch(_){}
         try { tradeCount=await db.Trade.countDocuments({status:{$in:['active','pending']}}); } catch(_){}
         const uptime=Math.floor((Date.now()-_botState.startTime)/60000);
-        res.json({ waConnected:_botState.waConnected, waCommandsEnabled:_botState.waCommandsEnabled, scannerActive, tradeCount,
+        res.json({ waConnected:_botState.waConnected, scannerActive, tradeCount,
             uptime: uptime>=60?`${Math.floor(uptime/60)}h ${uptime%60}m`:`${uptime}m`,
             pendingUpdate: _botState.pendingUpdate,
             modules:config.modules, trading:config.trading });
@@ -372,6 +372,16 @@ function start() {
     app.get('/admin/api/signals', requireAdminAuth, (req, res) => {
         const limit = Math.min(parseInt(req.query.limit)||50, 200);
         res.json({ ok:true, signals:_signalBuffer.slice(-limit).reverse() });
+    });
+
+    // User-accessible signals endpoint (read-only, no admin required)
+    app.get('/app/api/signals/stream', saasAuth.requireUserAuth, (req, res) => {
+        res.setHeader('Content-Type','text/event-stream');
+        res.setHeader('Cache-Control','no-cache');
+        res.setHeader('Connection','keep-alive');
+        _signalSseClients.add(res);
+        res.write('data: {"ping":true}\n\n');
+        req.on('close', () => _signalSseClients.delete(res));
     });
 
     app.post('/admin/api/signals/push', requireAdminAuth, (req, res) => {
@@ -479,18 +489,6 @@ function start() {
                 process.exit(1);
             }
         }, 500);
-    });
-
-    // ── WA Commands mode toggle (admin only) ───────────────────
-    app.post('/admin/api/wa/mode', requireAdminAuth, (req, res) => {
-        const { enabled } = req.body;
-        if (typeof enabled !== 'boolean') return res.status(400).json({ok:false, error:'enabled must be boolean'});
-        _botState.waCommandsEnabled = enabled;
-        // Propagate to index.js via global
-        global._waCommandsEnabled = enabled;
-        const status = enabled ? 'ONLINE' : 'OFFLINE';
-        _pushLog(`[ADMIN] ${enabled ? '🟢' : '🔴'} WA Commands set to ${status} by admin`);
-        res.json({ ok: true, waCommandsEnabled: enabled });
     });
 
     // ── System info ──────────────────────────────────────────────

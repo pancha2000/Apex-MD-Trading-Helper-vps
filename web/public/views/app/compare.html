@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Compare · Apex-MD</title>
+<link rel="stylesheet" href="/css/main.css">
+<style>
+.compare-col{flex:1;min-width:200px}
+.winner-badge{display:inline-block;background:rgba(255,215,0,.15);color:gold;border:1px solid rgba(255,215,0,.3);border-radius:4px;font-size:.7rem;padding:2px 7px;font-weight:700;margin-left:6px}
+</style>
+</head>
+<body>
+<div id="nav-root"></div>
+<div class="wrap">
+  <h1 class="page-title">⚖️ Coin Compare <span>Side-by-side analysis</span></h1>
+
+  <div class="panel" style="margin-bottom:20px">
+    <div class="panel-body">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+        <div><label class="field-label">Coin 1</label><input type="text" id="c1" class="inp" placeholder="BTC" maxlength="12" style="width:100px;font-family:var(--font-mono);font-weight:700;text-transform:uppercase"></div>
+        <div style="align-self:flex-end;font-size:1.4rem;color:var(--text2)">⚖️</div>
+        <div><label class="field-label">Coin 2</label><input type="text" id="c2" class="inp" placeholder="ETH" maxlength="12" style="width:100px;font-family:var(--font-mono);font-weight:700;text-transform:uppercase"></div>
+        <div><label class="field-label">Timeframe</label><select id="c-tf" class="inp" style="width:100px"><option value="5m">5m</option><option value="15m" selected>15m</option><option value="1h">1h</option><option value="4h">4h</option></select></div>
+        <button id="cmp-btn" class="btn btn-primary" onclick="doCompare()" style="padding:11px 24px">⚖️ Compare</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="cmp-loading" style="display:none" class="loading-center"><div class="spinner"></div><div style="margin-top:12px;color:var(--text2)">Analyzing both coins...</div></div>
+  <div id="cmp-result" style="display:none"></div>
+</div>
+
+<script src="/js/user.js"></script>
+<script>
+renderUserNav('compare');
+['c1','c2'].forEach(id=>document.getElementById(id).addEventListener('input',e=>{e.target.value=e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,'');}));
+
+function fmtP(n){if(!n||isNaN(n))return'—';const p=parseFloat(n);return p>=1000?'$'+p.toFixed(2):p>=1?'$'+p.toFixed(4):'$'+p.toFixed(6);}
+function scoreCol(s){return s>=70?'var(--green)':s>=45?'var(--yellow)':'var(--red)';}
+
+async function doCompare() {
+  const coin1=document.getElementById('c1').value.trim();
+  const coin2=document.getElementById('c2').value.trim();
+  const tf=document.getElementById('c-tf').value;
+  if(!coin1||!coin2){showToast('❌ Enter both coins','err');return;}
+  document.getElementById('cmp-result').style.display='none';
+  document.getElementById('cmp-loading').style.display='block';
+  document.getElementById('cmp-btn').disabled=true;
+  try {
+    const d=await apiFetch('/app/api/compare',{method:'POST',body:JSON.stringify({coin1,coin2,timeframe:tf})});
+    document.getElementById('cmp-loading').style.display='none';
+    document.getElementById('cmp-btn').disabled=false;
+    if(!d.ok){document.getElementById('cmp-result').style.display='block';document.getElementById('cmp-result').innerHTML=`<div class="panel"><div class="panel-body" style="color:var(--red)">❌ ${d.error}</div></div>`;return;}
+    renderCompare(d.coin1,d.coin2,tf);
+  } catch(e){document.getElementById('cmp-loading').style.display='none';document.getElementById('cmp-btn').disabled=false;showToast('❌ '+e.message,'err');}
+}
+
+function renderCompare(a, b, tf) {
+  const el = document.getElementById('cmp-result');
+  el.style.display = 'block';
+  if (!a && !b) { el.innerHTML='<div class="panel"><div class="panel-body" style="color:var(--red)">❌ Both analyses failed</div></div>'; return; }
+  const winner = (!a) ? 'b' : (!b) ? 'a' : a.score > b.score ? 'a' : b.score > a.score ? 'b' : 'tie';
+
+  const col = d => d ? (d.direction==='LONG'?'<span class="pill pill-long">▲ LONG</span>':'<span class="pill pill-short">▼ SHORT</span>') : '—';
+  const fundTag = r => {
+    if(r===null||r===undefined) return '—';
+    const col=Math.abs(r)>0.1?(r>0?'var(--red)':'var(--green)'):'var(--text2)';
+    return `<span style="color:${col}">${r>0?'+':''}${parseFloat(r).toFixed(3)}%</span>`;
+  };
+  const dayTag = (aligned, trend) => !trend||trend.includes('Unknown') ? '—' : aligned ? '<span style="color:var(--green)">✅ Aligned</span>' : '<span style="color:var(--yellow)">⚠️ Against</span>';
+
+  const rows = [
+    { label:'Direction',    va: a?col(a):null,                           vb: b?col(b):null },
+    { label:'Score',        va: a?`<span style="color:${scoreCol(a.score)};font-weight:700">${a.score}/100</span>`:null, vb: b?`<span style="color:${scoreCol(b.score)};font-weight:700">${b.score}/100</span>`:null },
+    { label:'Entry',        va: a?fmtP(a.entryPrice):null,               vb: b?fmtP(b.entryPrice):null },
+    { label:'TP2',          va: a?`<span style="color:var(--green)">${fmtP(a.tp2)}</span>`:null, vb: b?`<span style="color:var(--green)">${fmtP(b.tp2)}</span>`:null },
+    { label:'SL',           va: a?`<span style="color:var(--red)">${fmtP(a.sl)}</span>`:null, vb: b?`<span style="color:var(--red)">${fmtP(b.sl)}</span>`:null },
+    { label:'RRR',          va: a?`${a.rrr}:1`:null,                      vb: b?`${b.rrr}:1`:null },
+    { label:'4H Trend',     va: a?a.trend4H:null,                        vb: b?b.trend4H:null },
+    { label:'1H Trend',     va: a?a.trend1H:null,                        vb: b?b.trend1H:null },
+    { label:'Daily Trend',  va: a?dayTag(a.dailyAligned,a.dailyAligned):null, vb: b?dayTag(b.dailyAligned,b.dailyAligned):null },
+    { label:'Funding Rate', va: a?fundTag(a.fundingRate):null,           vb: b?fundTag(b.fundingRate):null },
+  ];
+
+  el.innerHTML = `
+    <div class="panel" style="margin-bottom:20px">
+      <div class="panel-head">
+        <div class="panel-title">⚖️ ${a?.coin||'—'} vs ${b?.coin||'—'} · ${tf}</div>
+        <span style="font-size:.8rem;color:var(--text2)">${winner==='tie'?'🤝 Tied':winner==='a'?`🏆 ${a?.coin} leads`:`🏆 ${b?.coin} leads`}</span>
+      </div>
+      <div class="panel-body" style="padding:0">
+        <div class="tbl-wrap"><table>
+          <thead><tr>
+            <th>Factor</th>
+            <th style="text-align:center">${a?.coin||'—'}${winner==='a'?'<span class="winner-badge">WINNER</span>':''}</th>
+            <th style="text-align:center">${b?.coin||'—'}${winner==='b'?'<span class="winner-badge">WINNER</span>':''}</th>
+          </tr></thead>
+          <tbody>${rows.map(r=>`<tr>
+            <td style="color:var(--text2);font-size:.82rem">${r.label}</td>
+            <td style="text-align:center;font-family:var(--font-mono);font-size:.82rem">${r.va||'—'}</td>
+            <td style="text-align:center;font-family:var(--font-mono);font-size:.82rem">${r.vb||'—'}</td>
+          </tr>`).join('')}</tbody>
+        </table></div>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      ${a?`<button class="btn btn-ghost" onclick="window.open('/app/scanner?coin=${a.coin}','_self')">⚡ Deep Scan ${a.coin}</button>`:''}
+      ${b?`<button class="btn btn-ghost" onclick="window.open('/app/scanner?coin=${b.coin}','_self')">⚡ Deep Scan ${b.coin}</button>`:''}
+    </div>`;
+}
+</script>
+</body>
+</html>

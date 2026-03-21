@@ -270,6 +270,36 @@ app.post('/app/api/grid', saasAuth.requireUserAuth, async (req, res) => {
     } catch(e) { console.error('[Grid API]', e.message); res.status(500).json({ok:false,error:e.message}); }
 });
 
+// ─── Coin Compare API ───────────────────────────────────────────────────
+app.post('/app/api/compare', saasAuth.requireUserAuth, async (req, res) => {
+    try {
+        const analyzer = require('../lib/analyzer');
+        let { coin1='BTC', coin2='ETH', timeframe='15m' } = req.body;
+        coin1 = cleanCoin(coin1); coin2 = cleanCoin(coin2);
+        if (STABLES.has(coin1)||STABLES.has(coin2)) return res.status(400).json({ok:false,error:'Stablecoins not supported'});
+        if (!VALID_TF.includes(timeframe)) timeframe = '15m';
+        const [a1, a2] = await Promise.all([
+            withTimeout(analyzer.run14FactorAnalysis(coin1, timeframe), 25000, null),
+            withTimeout(analyzer.run14FactorAnalysis(coin2, timeframe), 25000, null),
+        ]);
+        const fmt = a => a ? {
+            coin: a.entryPrice ? coin1.replace('USDT','') : coin2.replace('USDT',''),
+            direction: a.direction, score: a.score,
+            entryPrice: a.entryPrice, tp1: a.tp1, tp2: a.tp2, sl: a.sl,
+            trend4H: a.trend4H, trend1H: a.trend1H,
+            rsi: a.rsi, adx: a.adxData?.value,
+            fundingRate: a.fundingRate,
+            dailyAligned: a.dailyAligned,
+            reasons: a.reasons,
+            rrr: calcFutures(a).rrr,
+        } : null;
+        res.json({ok:true,
+            coin1: a1 ? {...fmt(a1), coin: coin1.replace('USDT','')} : null,
+            coin2: a2 ? {...fmt(a2), coin: coin2.replace('USDT','')} : null,
+        });
+    } catch(e) { res.status(500).json({ok:false,error:e.message}); }
+});
+
 // ─── Funding Rates API ───────────────────────────────────────────────────
 app.get('/app/api/funding', saasAuth.requireUserAuth, async (req, res) => {
     try {

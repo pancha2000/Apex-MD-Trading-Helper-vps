@@ -13,6 +13,16 @@
   <div class="g-stats" style="margin-bottom:20px">
     <div class="stat-card"><div class="stat-label">Paper Balance</div><div class="stat-val c-yellow" id="paper-bal"></div></div>
   </div>
+
+  <!-- Equity Curve Chart -->
+  <div class="panel" style="margin-bottom:20px" id="equity-panel">
+    <div class="panel-head"><div class="panel-title">📈 Equity Curve</div><span style="font-size:.75rem;color:var(--text2)">Cumulative PnL %</span></div>
+    <div class="panel-body" style="padding:14px">
+      <canvas id="equity-chart" height="120"></canvas>
+      <div id="equity-empty" class="empty-state" style="display:none"><div class="empty-msg">No closed trades yet</div></div>
+    </div>
+  </div>
+
   <div id="stats-content"></div>
   <div style="margin-top:20px;text-align:right">
     <button class="btn btn-ghost btn-sm" onclick="resetStats()">↺ Reset Stats</button>
@@ -23,6 +33,58 @@
 const D = window.__DATA__ || {};
 renderUserNav('stats');
 document.getElementById('paper-bal').textContent = '$'+(D.paperBalance||'0.00');
+
+// ── Equity Curve ─────────────────────────────────────────────
+const eq = D.equityCurve || [];
+if (eq.length < 2) {
+  document.getElementById('equity-chart').style.display = 'none';
+  document.getElementById('equity-empty').style.display = 'flex';
+} else {
+  const canvas = document.getElementById('equity-chart');
+  const ctx = canvas.getContext('2d');
+  canvas.width = canvas.parentElement.clientWidth - 28;
+  canvas.height = 120;
+  const vals = eq.map(e => e.cumPnl);
+  const mn = Math.min(...vals), mx = Math.max(...vals);
+  const range = mx - mn || 1;
+  const W = canvas.width, H = canvas.height, pad = 30;
+  const x = i => pad + (i/(eq.length-1))*(W-pad*2);
+  const y = v => H - pad - ((v-mn)/range)*(H-pad*2);
+  // Grid lines
+  ctx.strokeStyle = 'rgba(255,255,255,.06)';
+  ctx.lineWidth = 1;
+  for(let i=0;i<4;i++){const yy=pad+(i/3)*(H-pad*2);ctx.beginPath();ctx.moveTo(pad,yy);ctx.lineTo(W-pad,yy);ctx.stroke();}
+  // Zero line
+  if (mn < 0 && mx > 0) {
+    ctx.strokeStyle='rgba(255,255,255,.2)';ctx.setLineDash([4,4]);
+    ctx.beginPath();ctx.moveTo(pad,y(0));ctx.lineTo(W-pad,y(0));ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  // Area fill
+  const grad = ctx.createLinearGradient(0,pad,0,H-pad);
+  grad.addColorStop(0,'rgba(0,200,255,.25)');grad.addColorStop(1,'rgba(0,200,255,.02)');
+  ctx.beginPath();ctx.moveTo(x(0),y(vals[0]));
+  eq.forEach((_,i)=>{if(i>0)ctx.lineTo(x(i),y(vals[i]));});
+  ctx.lineTo(x(eq.length-1),H-pad);ctx.lineTo(x(0),H-pad);ctx.closePath();
+  ctx.fillStyle=grad;ctx.fill();
+  // Line
+  ctx.beginPath();ctx.moveTo(x(0),y(vals[0]));
+  eq.forEach((_,i)=>{if(i>0)ctx.lineTo(x(i),y(vals[i]));});
+  ctx.strokeStyle='rgba(0,200,255,.9)';ctx.lineWidth=2;ctx.stroke();
+  // Dots on last
+  ctx.beginPath();ctx.arc(x(eq.length-1),y(vals[vals.length-1]),4,0,Math.PI*2);
+  ctx.fillStyle=vals[vals.length-1]>=0?'var(--green)':'var(--red)';ctx.fill();
+  // Labels
+  ctx.fillStyle='rgba(255,255,255,.4)';ctx.font='10px monospace';
+  ctx.fillText((mn>=0?'+':'')+mn.toFixed(1)+'%',2,H-pad);
+  ctx.fillText((mx>=0?'+':'')+mx.toFixed(1)+'%',2,pad+4);
+  const last=vals[vals.length-1];
+  ctx.fillStyle=last>=0?'rgba(0,230,118,.9)':'rgba(255,51,85,.9)';
+  ctx.font='bold 11px monospace';
+  ctx.fillText((last>=0?'+':'')+last.toFixed(2)+'%',W-pad-60,y(last)-6);
+}
+
+// ── Stat blocks ──────────────────────────────────────────────
 function statBlock(s, title, emoji) {
   if (!s) return `<div class="panel" style="margin-bottom:20px"><div class="panel-head"><div class="panel-title">${emoji} ${title}</div></div><div class="panel-body empty-state"><div class="empty-icon">🛑</div><div class="empty-msg">No closed trades yet.</div></div></div>`;
   const wrNum=parseFloat(s.wr), pnlNum=parseFloat(s.totalPnl);
@@ -45,6 +107,7 @@ function statBlock(s, title, emoji) {
   </div>`;
 }
 document.getElementById('stats-content').innerHTML = statBlock(D.liveStats,'Live Trades','💰') + statBlock(D.paperStats,'Paper Trades','📄');
+
 async function resetStats(){if(!confirm('Reset trade stats?'))return;const d=await apiFetch('/app/api/stats/reset',{method:'POST',body:'{}'});if(d.ok){showToast('✅ Stats reset');setTimeout(()=>location.reload(),800);}else showToast('❌ '+d.error,'err');}
 </script>
 </body>

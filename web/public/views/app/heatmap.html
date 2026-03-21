@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Heatmap · Apex-MD</title>
+<link rel="stylesheet" href="/css/main.css">
+<style>
+.heatmap-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:4px;padding:4px}
+.hm-cell{border-radius:6px;padding:10px 6px;text-align:center;cursor:pointer;transition:.2s;position:relative;overflow:hidden}
+.hm-cell:hover{transform:scale(1.05);z-index:2}
+.hm-coin{font-family:var(--font-mono);font-weight:700;font-size:.82rem;color:#fff;line-height:1}
+.hm-pct{font-family:var(--font-mono);font-size:.78rem;margin-top:3px;font-weight:600}
+.hm-vol{font-size:.62rem;color:rgba(255,255,255,.5);margin-top:2px}
+</style>
+</head>
+<body>
+<div id="nav-root"></div>
+<div class="wrap">
+  <h1 class="page-title">🌡️ Market Heatmap <span>Top 50 coins · 24h change</span></h1>
+  <div class="panel" style="margin-bottom:16px">
+    <div class="panel-head">
+      <div class="panel-title">📊 Color Scale</div>
+      <button class="btn btn-ghost btn-sm" onclick="loadHeatmap()">↺ Refresh</button>
+    </div>
+    <div class="panel-body" style="padding:12px 16px">
+      <div style="display:flex;align-items:center;gap:8px;font-size:.78rem">
+        <div style="width:40px;height:16px;background:#b71c1c;border-radius:3px"></div><span style="color:var(--red)">≤-5%</span>
+        <div style="width:40px;height:16px;background:#c62828;border-radius:3px"></div><span>-3%</span>
+        <div style="width:40px;height:16px;background:rgba(255,51,85,.3);border-radius:3px"></div><span>-1%</span>
+        <div style="width:40px;height:16px;background:rgba(255,255,255,.08);border-radius:3px"></div><span style="color:var(--text2)">0%</span>
+        <div style="width:40px;height:16px;background:rgba(0,230,118,.3);border-radius:3px"></div><span>+1%</span>
+        <div style="width:40px;height:16px;background:#2e7d32;border-radius:3px"></div><span>+3%</span>
+        <div style="width:40px;height:16px;background:#1b5e20;border-radius:3px"></div><span style="color:var(--green)">≥+5%</span>
+      </div>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-body" style="padding:4px" id="heatmap-body">
+      <div class="loading-center" style="padding:40px"><div class="spinner"></div></div>
+    </div>
+  </div>
+  <div id="mkt-summary" style="display:flex;gap:14px;flex-wrap:wrap;margin-top:14px;font-size:.82rem;color:var(--text2)"></div>
+</div>
+
+<script src="/js/user.js"></script>
+<script>
+renderUserNav('heatmap');
+
+function heatColor(pct) {
+  if (pct <= -5) return '#b71c1c';
+  if (pct <= -3) return '#c62828';
+  if (pct <= -1) return 'rgba(255,51,85,.45)';
+  if (pct <   0) return 'rgba(255,51,85,.22)';
+  if (pct === 0) return 'rgba(255,255,255,.07)';
+  if (pct <   1) return 'rgba(0,230,118,.22)';
+  if (pct <   3) return 'rgba(0,230,118,.45)';
+  if (pct <   5) return '#2e7d32';
+  return '#1b5e20';
+}
+
+function fmtVol(v){if(v>=1e9)return(v/1e9).toFixed(1)+'B';if(v>=1e6)return(v/1e6).toFixed(0)+'M';return(v/1e3).toFixed(0)+'K';}
+
+async function loadHeatmap() {
+  const body = document.getElementById('heatmap-body');
+  body.innerHTML = '<div class="loading-center" style="padding:40px"><div class="spinner"></div></div>';
+  try {
+    const d = await apiFetch('/app/api/heatmap');
+    if (!d.ok) { body.innerHTML='<div style="color:var(--red);padding:20px">❌ '+(d.error||'')+'</div>'; return; }
+    const coins = d.coins || [];
+    const gainers = coins.filter(c=>c.change>0).length;
+    const losers  = coins.filter(c=>c.change<0).length;
+    const avgChg  = coins.reduce((s,c)=>s+c.change,0)/coins.length;
+    document.getElementById('mkt-summary').innerHTML =
+      `<span>🟢 Gainers: <strong style="color:var(--green)">${gainers}</strong></span>` +
+      `<span>🔴 Losers: <strong style="color:var(--red)">${losers}</strong></span>` +
+      `<span>Avg 24h: <strong style="color:${avgChg>=0?'var(--green)':'var(--red)'}">${avgChg>=0?'+':''}${avgChg.toFixed(2)}%</strong></span>` +
+      `<span style="margin-left:auto;font-size:.72rem">Click any coin → Deep Scan</span>`;
+    body.innerHTML = '<div class="heatmap-grid">' + coins.map(c => {
+      const pct = c.change;
+      const col = heatColor(pct);
+      const textCol = Math.abs(pct) > 2 ? '#fff' : 'rgba(255,255,255,.85)';
+      return `<div class="hm-cell" style="background:${col}" onclick="window.location='/app/scanner?coin=${c.coin}'" title="${c.coin}: ${pct>=0?'+':''}${pct.toFixed(2)}% | Vol: $${fmtVol(c.volume)}">
+        <div class="hm-coin" style="color:${textCol}">${c.coin}</div>
+        <div class="hm-pct" style="color:${pct>=0?'#a5f3a5':'#ffaaaa'}">${pct>=0?'+':''}${pct.toFixed(2)}%</div>
+        <div class="hm-vol">$${fmtVol(c.volume)}</div>
+      </div>`;
+    }).join('') + '</div>';
+  } catch(e) { body.innerHTML='<div style="color:var(--red);padding:20px">❌ '+e.message+'</div>'; }
+}
+
+// Handle ?coin= from heatmap click to scanner
+const urlParams = new URLSearchParams(location.search);
+const prefilledCoin = urlParams.get('coin');
+if (prefilledCoin) window.location = '/app/scanner#'+prefilledCoin;
+
+loadHeatmap();
+</script>
+</body>
+</html>

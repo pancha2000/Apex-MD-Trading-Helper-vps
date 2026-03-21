@@ -9,24 +9,26 @@
 <body>
 <div id="nav-root"></div>
 <div class="wrap">
-  <h1 class="page-title">📄 Paper Trading <span>Virtual trades · Zero risk · Full realism</span></h1>
+  <h1 class="page-title">📄 Paper Trading <span>Virtual trades · Zero risk</span></h1>
   <div id="wa-warn"></div>
   <div class="g-stats" style="margin-bottom:22px" id="stats-grid"></div>
 
   <div class="panel" style="margin-bottom:18px;border-color:rgba(255,171,0,.2)">
     <div class="panel-head">
       <div class="panel-title" style="color:var(--yellow)">📄 Open Paper Trade</div>
-      <div style="font-size:.75rem;color:var(--text2)">Manual entry</div>
+      <div style="font-size:.75rem;color:var(--text2)">Manual entry · TP1 auto-calculated if blank</div>
     </div>
     <div class="panel-body">
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px;margin-bottom:14px">
         <div><label class="field-label">Coin</label><input type="text" id="pt-coin" class="inp" placeholder="BTC" style="font-family:var(--font-mono);font-weight:700;text-transform:uppercase" maxlength="10"></div>
         <div><label class="field-label">Direction</label><select id="pt-dir" class="inp"><option value="LONG">▲ LONG</option><option value="SHORT">▼ SHORT</option></select></div>
-        <div><label class="field-label">Entry Price</label><input type="number" id="pt-entry" class="inp" placeholder="0.00" step="any"></div>
-        <div><label class="field-label">TP2 Price</label><input type="number" id="pt-tp2" class="inp" placeholder="0.00" step="any"></div>
+        <div><label class="field-label">Entry Price</label><input type="number" id="pt-entry" class="inp" placeholder="0.00" step="any" oninput="autoCalcTP()"></div>
+        <div><label class="field-label">TP1 <span style="color:var(--text2);font-size:.7rem">(optional)</span></label><input type="number" id="pt-tp1" class="inp" placeholder="auto" step="any"></div>
+        <div><label class="field-label">TP2 Price</label><input type="number" id="pt-tp2" class="inp" placeholder="0.00" step="any" oninput="autoCalcTP()"></div>
         <div><label class="field-label">SL Price</label><input type="number" id="pt-sl" class="inp" placeholder="0.00" step="any"></div>
         <div><label class="field-label">Leverage</label><input type="number" id="pt-lev" class="inp" placeholder="10" value="10" min="1" max="125"></div>
       </div>
+      <div id="rrr-preview" style="font-size:.78rem;color:var(--text2);margin-bottom:10px"></div>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
         <button class="btn btn-warn" onclick="openPaperTrade()">📄 Open Trade</button>
         <button class="btn btn-ghost btn-sm" onclick="resetPaper()">↺ Reset Account</button>
@@ -41,22 +43,26 @@
   </div>
 
   <div class="panel" style="margin-bottom:20px">
-    <div class="panel-head"><div class="panel-title">⚡ Open Positions</div></div>
+    <div class="panel-head">
+      <div class="panel-title">⚡ Open Positions</div>
+      <button class="btn btn-ghost btn-sm" onclick="refreshLivePnl()">↺ Live P&L</button>
+    </div>
     <div class="panel-body" style="padding:0">
       <div class="tbl-wrap">
         <table>
-          <thead><tr><th>Coin</th><th>Dir</th><th>Entry</th><th>TP1</th><th>TP2</th><th>SL</th><th>Lev</th><th>Status</th><th>Action</th></tr></thead>
+          <thead><tr><th>Coin</th><th>Dir</th><th>Entry</th><th>TP1</th><th>TP2</th><th>SL</th><th>Lev</th><th>Live P&L</th><th>Status</th><th>Action</th></tr></thead>
           <tbody id="active-body"></tbody>
         </table>
       </div>
     </div>
   </div>
+
   <div class="panel">
     <div class="panel-head"><div class="panel-title">📜 Closed Paper Trades</div></div>
     <div class="panel-body" style="padding:0">
       <div class="tbl-wrap">
         <table>
-          <thead><tr><th>Coin</th><th>Dir</th><th>Entry</th><th>TP2</th><th>SL</th><th>Result</th><th>Profit</th></tr></thead>
+          <thead><tr><th>Coin</th><th>Dir</th><th>Entry</th><th>TP1</th><th>TP2</th><th>SL</th><th>Result</th><th>Profit</th></tr></thead>
           <tbody id="closed-body"></tbody>
         </table>
       </div>
@@ -70,49 +76,123 @@ const D = window.__DATA__ || {};
 renderUserNav('paper');
 
 if (!D.waLinked) {
-  document.getElementById('wa-warn').innerHTML = '<div style="background:rgba(255,171,0,.07);border:1px solid rgba(255,171,0,.2);border-radius:var(--radius);padding:14px 18px;margin-bottom:20px;font-size:.85rem;color:var(--yellow)">⚠️ <strong>WhatsApp not linked.</strong> Paper balance & history is tied to your WhatsApp. <a href="/app/settings">Link →</a></div>';
+  document.getElementById('wa-warn').innerHTML = '<div style="background:rgba(255,171,0,.07);border:1px solid rgba(255,171,0,.2);border-radius:var(--radius);padding:14px 18px;margin-bottom:20px;font-size:.85rem;color:var(--yellow)">⚠️ <strong>WhatsApp not linked.</strong> Paper balance is tied to your WhatsApp. <a href="/app/settings">Link →</a></div>';
 }
 
 const s = D.stats || {};
 document.getElementById('stats-grid').innerHTML = [
-  { label:'Paper Balance', val:'$'+s.balance, cls:'c-yellow', sub:'Virtual wallet' },
-  { label:'Start Balance', val:'$'+s.startBal, cls:'', sub:'Baseline' },
-  { label:'Net P&L', val:(s.pnlAmt||'')+'', cls:'', sub:s.pnlPct||'', style:'color:'+s.pnlColor },
-  { label:'Win Rate', val:s.winRate||'—', cls:'c-green', sub:s.wins+'W / '+s.losses+'L' },
-  { label:'Open Positions', val:s.openCount||0, cls:'c-cyan', sub:'Max 5' },
-].map(c => `<div class="stat-card"><div class="stat-label">${c.label}</div><div class="stat-val ${c.cls}" style="${c.style||''}">${c.val}</div><div class="stat-sub">${c.sub}</div></div>`).join('');
+  { label:'Paper Balance', val:'$'+s.balance,   cls:'c-yellow', sub:'Virtual wallet' },
+  { label:'Start Balance', val:'$'+s.startBal,  cls:'',         sub:'Baseline' },
+  { label:'Net P&L',       val:s.pnlAmt||'',    cls:'',         sub:s.pnlPct||'', style:'color:'+s.pnlColor },
+  { label:'Win Rate',      val:s.winRate||'—',  cls:'c-green',  sub:s.wins+'W / '+s.losses+'L' },
+  { label:'Open Positions',val:s.openCount||0,  cls:'c-cyan',   sub:'Max 5' },
+].map(c=>`<div class="stat-card"><div class="stat-label">${c.label}</div><div class="stat-val ${c.cls}" style="${c.style||''}">${c.val}</div><div class="stat-sub">${c.sub}</div></div>`).join('');
+
+function fmtP(n){if(!n||isNaN(n))return'—';const p=parseFloat(n);return p>=1000?'$'+p.toFixed(2):p>=1?'$'+p.toFixed(4):'$'+p.toFixed(6);}
+
+// ── Auto RRR preview ──────────────────────────────────────────
+function autoCalcTP() {
+  const e=parseFloat(document.getElementById('pt-entry').value);
+  const t=parseFloat(document.getElementById('pt-tp2').value);
+  const sl=parseFloat(document.getElementById('pt-sl').value);
+  const prev=document.getElementById('rrr-preview');
+  if(e&&t&&sl) {
+    const risk=Math.abs(e-sl), reward=Math.abs(t-e);
+    const rrr=risk>0?(reward/risk).toFixed(2):'—';
+    const col=parseFloat(rrr)>=1.5?'var(--green)':parseFloat(rrr)>=1?'var(--yellow)':'var(--red)';
+    prev.innerHTML=`RRR: <strong style="color:${col}">${rrr}:1</strong> ${parseFloat(rrr)<1.5?'<span style="color:var(--yellow)">⚠️ Below 1.5:1</span>':'<span style="color:var(--green)">✅</span>'}`;
+    // Auto-fill TP1 midpoint
+    if(!document.getElementById('pt-tp1').value) {
+      document.getElementById('pt-tp1').placeholder = ((e+t)/2).toFixed(4)+' (auto)';
+    }
+  } else { prev.innerHTML=''; }
+}
 
 const active = D.activePaper || [];
+const livePnl = {};
 document.getElementById('active-body').innerHTML = active.length === 0
-  ? '<tr><td colspan="9" class="empty-state"><div class="empty-icon">📄</div><div class="empty-msg">No open positions — open a trade above or from <a href="/app/scanner">Scanner</a></div></td></tr>'
+  ? '<tr><td colspan="10" class="empty-state"><div class="empty-icon">📄</div><div class="empty-msg">No open positions — open a trade above or from <a href="/app/scanner">Scanner</a></div></td></tr>'
   : active.map(t => {
-      const dir = t.direction==='LONG'?'<span class="pill pill-long">▲ L</span>':'<span class="pill pill-short">▼ S</span>';
-      const st  = t.status==='pending'?'<span class="pill pill-pending">LIMIT</span>':'<span class="pill pill-active">LIVE</span>';
-      return `<tr><td><strong style="font-family:var(--font-mono)">${t.coin}</strong></td><td>${dir}</td><td style="font-family:var(--font-mono)">${t.entry}</td><td style="font-family:var(--font-mono);color:var(--text3)">${t.tp1}</td><td style="font-family:var(--font-mono);color:var(--green)">${t.tp2}</td><td style="font-family:var(--font-mono);color:var(--red)">${t.sl}</td><td style="font-family:var(--font-mono)">${t.leverage}x</td><td>${st} <span style="color:var(--text2);font-size:.72rem">${t.ageHrs}h</span></td><td><button class="btn btn-danger btn-sm" onclick="closeTrade('${t._id}','${t.coin}')">Close</button></td></tr>`;
+      const dir=t.direction==='LONG'?'<span class="pill pill-long">▲ L</span>':'<span class="pill pill-short">▼ S</span>';
+      const st=t.status==='pending'?'<span class="pill pill-pending">LIMIT</span>':'<span class="pill pill-active">LIVE</span>';
+      const tp1Display = t.tp1 && t.tp1 !== '—' ? `<span style="color:var(--text3)">${t.tp1}</span>` : '<span style="color:var(--text2)">—</span>';
+      return `<tr id="row-${t._id}">
+        <td><strong style="font-family:var(--font-mono)">${t.coin}</strong></td>
+        <td>${dir}</td>
+        <td style="font-family:var(--font-mono)">${t.entry}</td>
+        <td style="font-family:var(--font-mono)">${tp1Display}</td>
+        <td style="font-family:var(--font-mono);color:var(--green)">${t.tp2}</td>
+        <td style="font-family:var(--font-mono);color:var(--red)">${t.sl}</td>
+        <td style="font-family:var(--font-mono)">${t.leverage}x</td>
+        <td id="pnl-${t._id}" style="font-family:var(--font-mono);font-weight:600;color:var(--text2)">…</td>
+        <td>${st} <span style="color:var(--text2);font-size:.72rem">${t.ageHrs}h</span></td>
+        <td><button class="btn btn-danger btn-sm" onclick="closeTrade('${t._id}','${t.coin}')">Close</button></td>
+      </tr>`;
     }).join('');
 
 const closed = D.closedPaper || [];
 document.getElementById('closed-body').innerHTML = closed.length === 0
-  ? '<tr><td colspan="7" class="empty-state"><div class="empty-msg">No closed trades yet</div></td></tr>'
+  ? '<tr><td colspan="8" class="empty-state"><div class="empty-msg">No closed trades yet</div></td></tr>'
   : closed.map(t => {
-      const dir    = t.direction==='LONG'?'<span class="pill pill-long">▲ L</span>':'<span class="pill pill-short">▼ S</span>';
-      const result = t.result==='WIN'?'<span class="pill pill-win">WIN</span>':t.result==='LOSS'?'<span class="pill pill-loss">LOSS</span>':'<span class="pill pill-be">B/E</span>';
-      return `<tr><td><strong style="font-family:var(--font-mono)">${t.coin}</strong></td><td>${dir}</td><td style="font-family:var(--font-mono)">${t.entry}</td><td style="font-family:var(--font-mono);color:var(--green)">${t.tp2}</td><td style="font-family:var(--font-mono);color:var(--red)">${t.sl}</td><td>${result}</td><td style="font-family:var(--font-mono);font-weight:700;color:${t.profitColor}">${t.profit}</td></tr>`;
+      const dir=t.direction==='LONG'?'<span class="pill pill-long">▲ L</span>':'<span class="pill pill-short">▼ S</span>';
+      const res=t.result==='WIN'?'<span class="pill pill-win">WIN</span>':t.result==='LOSS'?'<span class="pill pill-loss">LOSS</span>':'<span class="pill pill-be">B/E</span>';
+      return `<tr>
+        <td><strong style="font-family:var(--font-mono)">${t.coin}</strong></td>
+        <td>${dir}</td>
+        <td style="font-family:var(--font-mono)">${t.entry}</td>
+        <td style="font-family:var(--font-mono);color:var(--text3)">${t.tp1||'—'}</td>
+        <td style="font-family:var(--font-mono);color:var(--green)">${t.tp2}</td>
+        <td style="font-family:var(--font-mono);color:var(--red)">${t.sl}</td>
+        <td>${res}</td>
+        <td style="font-family:var(--font-mono);font-weight:700;color:${t.profitColor}">${t.profit}</td>
+      </tr>`;
     }).join('');
+
+// ── Live P&L polling ─────────────────────────────────────────
+async function refreshLivePnl() {
+  if (!active.length) return;
+  const coins = [...new Set(active.map(t => t.coin+'USDT'))];
+  try {
+    const prices = await Promise.all(coins.map(c =>
+      apiFetch(`/app/api/watchlist/prices`).catch(()=>null)
+    ));
+    const d = await apiFetch('/app/api/watchlist/prices');
+    if (!d.ok) return;
+    const priceMap = {};
+    (d.prices||[]).forEach(p => priceMap[p.coin] = parseFloat(p.price));
+    active.forEach(t => {
+      const el = document.getElementById('pnl-'+t._id);
+      if (!el) return;
+      const cur = priceMap[t.coin+'USDT'];
+      if (!cur) { el.textContent = '—'; return; }
+      const entry = parseFloat(t.entry.replace('$',''));
+      const diff = t.direction === 'LONG' ? (cur - entry) : (entry - cur);
+      const pct = entry > 0 ? (diff/entry*100).toFixed(2) : 0;
+      const col = diff > 0 ? 'var(--green)' : diff < 0 ? 'var(--red)' : 'var(--text2)';
+      el.style.color = col;
+      el.textContent = (diff>=0?'+':'')+pct+'%';
+    });
+  } catch(_) {}
+}
+// Auto-refresh every 30s
+if (active.length) { refreshLivePnl(); setInterval(refreshLivePnl, 30000); }
 
 async function openPaperTrade() {
   const msg = document.getElementById('pt-msg');
   const coin = document.getElementById('pt-coin').value.trim().toUpperCase();
   const dir  = document.getElementById('pt-dir').value;
-  const entry= document.getElementById('pt-entry').value;
-  const tp2  = document.getElementById('pt-tp2').value;
-  const sl   = document.getElementById('pt-sl').value;
-  const lev  = document.getElementById('pt-lev').value;
-  if (!coin||!entry||!tp2||!sl) { msg.style.color='var(--red)'; msg.textContent='❌ Fill all fields'; return; }
+  const entry= parseFloat(document.getElementById('pt-entry').value);
+  const tp1  = document.getElementById('pt-tp1').value ? parseFloat(document.getElementById('pt-tp1').value) : null;
+  const tp2  = parseFloat(document.getElementById('pt-tp2').value);
+  const sl   = parseFloat(document.getElementById('pt-sl').value);
+  const lev  = parseInt(document.getElementById('pt-lev').value)||10;
+  if (!coin||!entry||!tp2||!sl) { msg.style.color='var(--red)'; msg.textContent='❌ Fill Coin, Entry, TP2, SL'; return; }
   msg.style.color='var(--text2)'; msg.textContent='⏳ Opening...';
   try {
-    const d = await apiFetch('/app/api/paper/open', {method:'POST',body:JSON.stringify({coin,direction:dir,entry:parseFloat(entry),tp2:parseFloat(tp2),sl:parseFloat(sl),leverage:parseInt(lev)})});
-    if (d.ok) { showToast('✅ Paper trade opened'); setTimeout(()=>location.reload(),800); }
+    const body = {coin,direction:dir,entry,tp2,sl,leverage:lev};
+    if (tp1) body.tp1 = tp1;
+    const d = await apiFetch('/app/api/paper/open', {method:'POST',body:JSON.stringify(body)});
+    if (d.ok) { showToast('✅ Paper trade opened!'); setTimeout(()=>location.reload(),800); }
     else { msg.style.color='var(--red)'; msg.textContent='❌ '+(d.error||'Failed'); }
   } catch(e) { msg.style.color='var(--red)'; msg.textContent='❌ Network error'; }
 }
@@ -121,29 +201,24 @@ async function closeTrade(id, coin) {
   if (!confirm('Close '+coin+' paper trade at current market price?')) return;
   try {
     const d = await apiFetch('/app/api/paper/close/'+id, {method:'POST',body:JSON.stringify({})});
-    showToast(d.ok ? '✅ Closed: '+(d.result||'')+(d.profit?` $${d.profit}`:'') : '❌ '+(d.error||''), d.ok?'ok':'err');
+    showToast(d.ok?'✅ Closed: '+(d.result||'')+(d.profit?` $${d.profit}`:''):'❌ '+(d.error||''), d.ok?'ok':'err');
     if (d.ok) setTimeout(()=>location.reload(),900);
   } catch { showToast('❌ Network error','err'); }
 }
 
 async function resetPaper() {
-  if (!confirm('Reset paper account to $100?')) return;
-  try {
-    const d = await apiFetch('/app/api/paper/reset', {method:'POST',body:JSON.stringify({})});
-    if (d.ok) { showToast('✅ Reset to $100'); setTimeout(()=>location.reload(),800); }
-    else showToast('❌ '+(d.error||''),'err');
-  } catch { showToast('❌ Network error','err'); }
+  if (!confirm('Reset paper account to $100? This closes all open trades.')) return;
+  const d = await apiFetch('/app/api/paper/reset', {method:'POST',body:JSON.stringify({})});
+  if (d.ok) { showToast('✅ Reset to $100'); setTimeout(()=>location.reload(),800); }
+  else showToast('❌ '+(d.error||''),'err');
 }
 
 async function setCapital() {
-  const v = parseFloat(document.getElementById('cap-inp').value);
-  const msg = document.getElementById('cap-msg');
-  if (!v||v<10) { msg.style.color='var(--red)'; msg.textContent='❌ Min $10'; return; }
-  try {
-    const d = await apiFetch('/app/api/paper/set-capital', {method:'POST',body:JSON.stringify({amount:v})});
-    if (d.ok) { msg.style.color='var(--green)'; msg.textContent='✅ Set to $'+v; setTimeout(()=>location.reload(),900); }
-    else { msg.style.color='var(--red)'; msg.textContent='❌ '+(d.error||''); }
-  } catch { msg.style.color='var(--red)'; msg.textContent='❌ Network error'; }
+  const v=parseFloat(document.getElementById('cap-inp').value), msg=document.getElementById('cap-msg');
+  if(!v||v<10){msg.style.color='var(--red)';msg.textContent='❌ Min $10';return;}
+  const d=await apiFetch('/app/api/paper/set-capital',{method:'POST',body:JSON.stringify({amount:v})});
+  if(d.ok){msg.style.color='var(--green)';msg.textContent='✅ Set to $'+v;setTimeout(()=>location.reload(),900);}
+  else{msg.style.color='var(--red)';msg.textContent='❌ '+(d.error||'');}
 }
 </script>
 </body>

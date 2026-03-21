@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Portfolio · Apex-MD</title>
+<link rel="stylesheet" href="/css/main.css">
+</head>
+<body>
+<div id="nav-root"></div>
+<div class="wrap">
+  <h1 class="page-title">💼 Portfolio <span>Binance read-only balance</span></h1>
+
+  <div id="no-key-warn" style="display:none">
+    <div style="background:rgba(255,171,0,.07);border:1px solid rgba(255,171,0,.2);border-radius:var(--radius);padding:18px 20px;margin-bottom:20px">
+      <div style="font-weight:700;color:var(--yellow);margin-bottom:6px">⚠️ No Binance API Key</div>
+      <div style="font-size:.84rem;color:var(--text2)">Add a Binance API key in <a href="/app/settings" style="color:var(--accent)">Settings</a>. Secret key not required — read-only mode works with API key only.</div>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-bottom:20px" id="key-select-panel">
+    <div class="panel-head"><div class="panel-title">🔑 API Key</div></div>
+    <div class="panel-body">
+      <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+        <div id="key-list" style="flex:1"></div>
+        <button class="btn btn-primary" onclick="loadBalance()" id="load-btn">💼 Load Balance</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="balance-loading" style="display:none" class="loading-center"><div class="spinner"></div><div style="margin-top:12px;color:var(--text2)">Fetching balance from Binance...</div></div>
+  <div id="balance-result" style="display:none"></div>
+</div>
+
+<script src="/js/user.js"></script>
+<script>
+const D = window.__DATA__ || {};
+renderUserNav('portfolio');
+
+const keys = D.apiKeys || [];
+if (!keys.length) {
+  document.getElementById('no-key-warn').style.display = 'block';
+  document.getElementById('key-select-panel').style.display = 'none';
+} else {
+  document.getElementById('key-list').innerHTML = keys.length === 1
+    ? `<div style="font-size:.88rem;color:var(--text)">🔑 <strong>${keys[0].label}</strong> <span style="color:var(--text2)">(${keys[0].exchange}${keys[0].hasSecret?'':' · read-only'})</span></div>`
+    : '<select id="key-sel" class="inp" style="width:200px">'+keys.map((k,i)=>`<option value="${k._id}">${k.label} (${k.exchange}${k.hasSecret?'':' · read-only'})</option>`).join('')+'</select>';
+}
+
+async function loadBalance() {
+  document.getElementById('balance-result').style.display = 'none';
+  document.getElementById('balance-loading').style.display = 'block';
+  document.getElementById('load-btn').disabled = true;
+  try {
+    const d = await apiFetch('/app/api/portfolio/balance');
+    document.getElementById('balance-loading').style.display = 'none';
+    document.getElementById('load-btn').disabled = false;
+    const el = document.getElementById('balance-result');
+    el.style.display = 'block';
+    if (!d.ok) {
+      el.innerHTML = `<div class="panel"><div class="panel-body" style="color:var(--red)">❌ ${d.error||'Failed'}<br><span style="font-size:.78rem;color:var(--text2)">Make sure your API key has Futures read permission.</span></div></div>`;
+      return;
+    }
+    const bals = d.balances || [];
+    const totalUsdt = bals.reduce((s,b)=>s+parseFloat(b.balance||0),0);
+    el.innerHTML = `
+      <div class="g-stats" style="margin-bottom:20px">
+        <div class="stat-card"><div class="stat-label">Key</div><div class="stat-val c-cyan" style="font-size:.9rem">${d.label||'—'}</div><div class="stat-sub">Binance Futures</div></div>
+        <div class="stat-card"><div class="stat-label">Total Balance</div><div class="stat-val c-yellow">$${totalUsdt.toFixed(2)}</div><div class="stat-sub">USDT equivalent</div></div>
+        <div class="stat-card"><div class="stat-label">Assets</div><div class="stat-val c-cyan">${bals.length}</div><div class="stat-sub">Non-zero</div></div>
+      </div>
+      <div class="panel"><div class="panel-head"><div class="panel-title">💰 Asset Balances</div></div>
+      <div class="panel-body" style="padding:0"><div class="tbl-wrap"><table>
+        <thead><tr><th>Asset</th><th>Balance</th><th>Available</th><th>Unrealized PnL</th></tr></thead>
+        <tbody>${bals.length===0?'<tr><td colspan="4" class="empty-state"><div class="empty-msg">No balance found</div></td></tr>':
+          bals.map(b=>{
+            const unPnl = parseFloat(b.crossUnPnl||0);
+            const pnlCol = unPnl>0?'var(--green)':unPnl<0?'var(--red)':'var(--text2)';
+            return `<tr>
+              <td><strong style="font-family:var(--font-mono)">${b.asset}</strong></td>
+              <td style="font-family:var(--font-mono)">${parseFloat(b.balance||0).toFixed(4)}</td>
+              <td style="font-family:var(--font-mono);color:var(--text2)">${parseFloat(b.availableBalance||b.balance||0).toFixed(4)}</td>
+              <td style="font-family:var(--font-mono);color:${pnlCol}">${unPnl>=0?'+':''}${unPnl.toFixed(4)}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table></div></div></div>
+      <div style="margin-top:12px;font-size:.74rem;color:var(--text2)">⚠️ Read-only — no trading actions possible from here.</div>`;
+  } catch(e) {
+    document.getElementById('balance-loading').style.display = 'none';
+    document.getElementById('load-btn').disabled = false;
+    document.getElementById('balance-result').style.display = 'block';
+    document.getElementById('balance-result').innerHTML = `<div class="panel"><div class="panel-body" style="color:var(--red)">❌ ${e.message}</div></div>`;
+  }
+}
+</script>
+</body>
+</html>

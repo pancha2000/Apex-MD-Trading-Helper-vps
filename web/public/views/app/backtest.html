@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Backtest · Apex-MD</title>
+<link rel="stylesheet" href="/css/main.css">
+</head>
+<body>
+<div id="nav-root"></div>
+<div class="wrap">
+  <h1 class="page-title">🧪 Backtest <span>Historical signal accuracy</span></h1>
+
+  <div class="panel" style="margin-bottom:20px">
+    <div class="panel-head"><div class="panel-title">⚙️ Backtest Settings</div></div>
+    <div class="panel-body">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+        <div><label class="field-label">Coin</label><input type="text" id="bt-coin" class="inp" placeholder="BTC" maxlength="12" style="width:110px;font-family:var(--font-mono);font-weight:700;text-transform:uppercase" autocomplete="off"></div>
+        <div><label class="field-label">Timeframe</label><select id="bt-tf" class="inp" style="width:100px"><option value="5m">5m</option><option value="15m" selected>15m</option><option value="1h">1h</option><option value="4h">4h</option></select></div>
+        <div><label class="field-label">Days</label><select id="bt-days" class="inp" style="width:90px"><option value="7">7 days</option><option value="14">14 days</option><option value="30" selected>30 days</option><option value="60">60 days</option><option value="90">90 days</option></select></div>
+        <button id="bt-btn" class="btn btn-primary" onclick="runBacktest()" style="padding:11px 24px">🧪 Run Backtest</button>
+      </div>
+      <div id="bt-warn" style="margin-top:10px;font-size:.8rem;color:var(--yellow)">⏳ Backtest takes 30–60 seconds. Please wait.</div>
+    </div>
+  </div>
+
+  <div id="bt-loading" style="display:none" class="loading-center">
+    <div class="spinner"></div>
+    <div style="margin-top:12px;color:var(--text2)" id="bt-progress">Running backtest...</div>
+  </div>
+  <div id="bt-result" style="display:none"></div>
+</div>
+
+<script src="/js/user.js"></script>
+<script>
+renderUserNav('backtest');
+document.getElementById('bt-coin').addEventListener('input', e=>{e.target.value=e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,'');});
+
+function fmtP(n){if(!n||isNaN(n))return'—';const p=parseFloat(n);return p>=1000?'$'+p.toFixed(2):p>=1?'$'+p.toFixed(4):'$'+p.toFixed(6);}
+
+async function runBacktest() {
+  const coin = document.getElementById('bt-coin').value.trim();
+  const tf   = document.getElementById('bt-tf').value;
+  const days = document.getElementById('bt-days').value;
+  if (!coin) { document.getElementById('bt-coin').focus(); return; }
+  document.getElementById('bt-result').style.display = 'none';
+  document.getElementById('bt-loading').style.display = 'block';
+  document.getElementById('bt-btn').disabled = true;
+  // Progress feedback
+  let dots = 0;
+  const iv = setInterval(() => {
+    dots = (dots+1)%4;
+    document.getElementById('bt-progress').textContent = 'Running backtest' + '.'.repeat(dots+1) + ' ('+days+'d · '+tf+')';
+  }, 800);
+  try {
+    const d = await apiFetch('/app/api/backtest', {method:'POST', body: JSON.stringify({coin, timeframe:tf, days:parseInt(days)})});
+    clearInterval(iv);
+    document.getElementById('bt-loading').style.display = 'none';
+    document.getElementById('bt-btn').disabled = false;
+    if (!d.ok) { document.getElementById('bt-result').style.display='block'; document.getElementById('bt-result').innerHTML=`<div class="panel"><div class="panel-body" style="color:var(--red)">❌ ${d.error||'Backtest failed'}</div></div>`; return; }
+    renderBacktest(d.result, coin, tf, days);
+  } catch(e) {
+    clearInterval(iv);
+    document.getElementById('bt-loading').style.display='none';
+    document.getElementById('bt-btn').disabled=false;
+    document.getElementById('bt-result').style.display='block';
+    document.getElementById('bt-result').innerHTML=`<div class="panel"><div class="panel-body" style="color:var(--red)">❌ ${e.message}</div></div>`;
+  }
+}
+
+function renderBacktest(r, coin, tf, days) {
+  const el = document.getElementById('bt-result');
+  el.style.display = 'block';
+  if (!r) { el.innerHTML='<div class="panel"><div class="panel-body" style="color:var(--red)">❌ No result data</div></div>'; return; }
+  const wr = r.winRate || r.winrate || 0;
+  const wrCol = wr >= 55 ? 'var(--green)' : wr >= 45 ? 'var(--yellow)' : 'var(--red)';
+  const pnl = parseFloat(r.totalPnl||r.totalPnlPct||0);
+  const pnlCol = pnl >= 0 ? 'var(--green)' : 'var(--red)';
+  el.innerHTML = `
+    <div class="g-stats" style="margin-bottom:20px">
+      <div class="stat-card"><div class="stat-label">Coin</div><div class="stat-val c-cyan">${coin} · ${tf}</div><div class="stat-sub">${days} days</div></div>
+      <div class="stat-card"><div class="stat-label">Total Signals</div><div class="stat-val c-cyan">${r.totalSignals||r.total||0}</div></div>
+      <div class="stat-card"><div class="stat-label">Win Rate</div><div class="stat-val" style="color:${wrCol}">${typeof wr==='number'?wr.toFixed(1):wr}%</div></div>
+      <div class="stat-card"><div class="stat-label">Wins / Losses</div><div class="stat-val c-green">${r.wins||0} W</div><div class="stat-sub" style="color:var(--red)">${r.losses||0} L</div></div>
+      <div class="stat-card"><div class="stat-label">Total PnL</div><div class="stat-val" style="color:${pnlCol}">${pnl>=0?'+':''}${pnl.toFixed(2)}%</div></div>
+      <div class="stat-card"><div class="stat-label">Avg PnL</div><div class="stat-val" style="color:${parseFloat(r.avgPnl||0)>=0?'var(--green)':'var(--red)'}">${parseFloat(r.avgPnl||0)>=0?'+':''}${parseFloat(r.avgPnl||0).toFixed(2)}%</div></div>
+    </div>
+    ${r.maxDrawdown!==undefined?`<div class="panel" style="margin-bottom:20px"><div class="panel-body">
+      <div class="stat-row"><span>📉 Max Drawdown</span><span class="stat-row-val c-red">${parseFloat(r.maxDrawdown||0).toFixed(2)}%</span></div>
+      <div class="stat-row"><span>🏆 Best Trade</span><span class="stat-row-val c-green">${r.bestTrade?'+'+parseFloat(r.bestTrade).toFixed(2)+'%':'—'}</span></div>
+      <div class="stat-row"><span>💀 Worst Trade</span><span class="stat-row-val c-red">${r.worstTrade?parseFloat(r.worstTrade).toFixed(2)+'%':'—'}</span></div>
+      ${r.avgHoldHours?`<div class="stat-row"><span>⏱️ Avg Hold Time</span><span class="stat-row-val">${parseFloat(r.avgHoldHours).toFixed(1)}h</span></div>`:''}
+    </div></div>`:''}
+    ${r.trades&&r.trades.length?`<div class="panel"><div class="panel-head"><div class="panel-title">📋 Trade Log</div></div><div class="panel-body" style="padding:0"><div class="tbl-wrap"><table><thead><tr><th>#</th><th>Dir</th><th>Entry</th><th>Exit</th><th>Result</th><th>PnL %</th></tr></thead><tbody>${
+      r.trades.slice(0,20).map((t,i)=>{
+        const res=t.result==='WIN'?'<span class="pill pill-win">WIN</span>':t.result==='LOSS'?'<span class="pill pill-loss">LOSS</span>':'<span class="pill pill-be">B/E</span>';
+        const col=parseFloat(t.pnlPct||0)>=0?'var(--green)':'var(--red)';
+        return `<tr><td style="color:var(--text2)">${i+1}</td><td>${t.direction==='LONG'?'<span class="pill pill-long">▲</span>':'<span class="pill pill-short">▼</span>'}</td><td style="font-family:var(--font-mono)">${fmtP(t.entry)}</td><td style="font-family:var(--font-mono)">${fmtP(t.exitPrice||t.exit)}</td><td>${res}</td><td style="font-family:var(--font-mono);color:${col}">${parseFloat(t.pnlPct||0)>=0?'+':''}${parseFloat(t.pnlPct||0).toFixed(2)}%</td></tr>`;
+      }).join('')
+    }</tbody></table></div></div></div>`:''}`;
+}
+</script>
+</body>
+</html>

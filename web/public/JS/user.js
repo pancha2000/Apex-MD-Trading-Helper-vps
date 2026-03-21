@@ -21,6 +21,11 @@ function renderUserNav(active) {
         { href: '/app/system',    key: 'system',    label: '💻 System' },
         { href: '/app/trades',    key: 'trades',    label: 'Trades' },
         { href: '/app/settings',  key: 'settings',  label: '⚙️' },
+        { href: '/app/journal',    key: 'journal',   label: '📓 Journal' },
+        { href: '/app/backtest',   key: 'backtest',  label: '🧪 Backtest' },
+        { href: '/app/heatmap',    key: 'heatmap',   label: '🌡️ Heatmap' },
+        { href: '/app/portfolio',  key: 'portfolio', label: '💼 Portfolio' },
+        { href: '/app/compare',    key: 'compare',   label: '⚖️ Compare' },
     ];
     const user = window._apexUser || {};
     const linkHtml = links.map(l => `

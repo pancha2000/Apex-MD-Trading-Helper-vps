@@ -307,14 +307,18 @@ function startTradeManager(conn) {
                                 const pQty = (trade.quantity || 0) * 0.33;
                                 const pPnl = Math.abs(tp1v - trade.entry) * pQty;
                                 await db.updatePaperBalance(trade.userJid, pPnl, pPnl > 0, false, false); // ✅ BUG 2 FIX: countTrade=false (partial TP1)
-                                trade.sl = trade.entry;   // move SL to break-even
+                                // ✅ FIX: SL → entry + profit buffer (not just breakeven)
+                                // 33% profit already booked → protect remaining 67% from going negative
+                                const { getPostTP1SL } = require('../lib/indicators');
+                                const postTP1 = getPostTP1SL(trade.entry, trade.direction || (isLong?'LONG':'SHORT'), tp1v);
+                                trade.sl = postTP1.sl;  // slightly above entry = locked profit
                                 await trade.save();
                                 await conn.sendMessage(trade.userJid, { text:
                                     `🎯 *PAPER TP1 HIT!* 💰\n━━━━━━━━━━━━━━━━\n` +
                                     `🪙 *${cb}/USDT* ${de} *${dir}*\n\n` +
                                     `✅ TP1: $${tp1v.toFixed(4)} Hit!\n` +
                                     `💰 +33% Profit: +$${pPnl.toFixed(2)} ✅ Auto-booked\n` +
-                                    `🛡️ SL → Entry (Break-even) ✅ Auto-moved\n\n` +
+                                    `🛡️ SL → +${postTP1.profitLocked}% LOCKED PROFIT ✅ Auto-moved\n\n` +
                                     `🎯 TP2: $${parseFloat(trade.tp2 || trade.tp).toFixed(4)} targeting...`,
                                 });
                             } else {
@@ -419,10 +423,10 @@ function startTradeManager(conn) {
                     const tp3v = parseFloat(trade.tp), slv = parseFloat(trade.sl);
                     if (isLong) {
                         if (currentPrice >= tp3v)     { hitType = 'TP3'; result = 'WIN'; }
-                        else if (currentPrice <= slv) { hitType = 'SL';  result = slv === parseFloat(trade.entry) ? 'BREAK-EVEN' : 'LOSS'; }
+                        else if (currentPrice <= slv) { hitType = 'SL';  result = slv > parseFloat(trade.entry) ? 'WIN' : slv === parseFloat(trade.entry) ? 'BREAK-EVEN' : 'LOSS'; }
                     } else {
                         if (currentPrice <= tp3v)     { hitType = 'TP3'; result = 'WIN'; }
-                        else if (currentPrice >= slv) { hitType = 'SL';  result = slv === parseFloat(trade.entry) ? 'BREAK-EVEN' : 'LOSS'; }
+                        else if (currentPrice >= slv) { hitType = 'SL';  result = slv < parseFloat(trade.entry) ? 'WIN' : slv === parseFloat(trade.entry) ? 'BREAK-EVEN' : 'LOSS'; }
                     }
 
                     if (hitType) {

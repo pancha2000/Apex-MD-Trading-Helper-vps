@@ -218,6 +218,17 @@ app.post('/app/api/scan', saasAuth.requireUserAuth, async (req, res) => {
             liquidation: { sentiment: liqData.sentiment, liqLevel: liqData.liqLevel },
             // Advanced fields — all from analyzer
             mainTrend: a.mainTrend, marketState: a.marketState, isTrueChoppy: a.isTrueChoppy,
+            // ✅ NEW: Entry intelligence
+            entryQuality: a.entryQuality, mtfFibEntry: a.mtfFibEntry ? {
+                nearestZone: a.mtfFibEntry.nearestZone,
+                distPct: a.mtfFibEntry.distPct,
+                atZone: a.mtfFibEntry.atZone,
+                zoneBypassed: a.mtfFibEntry.zoneBypassed,
+                zones: a.mtfFibEntry.zones?.slice(0,3),
+                tps: a.mtfFibEntry.tps?.slice(0,3),
+            } : null,
+            hiddenDivergence: a.hiddenDivergence,
+            btcContext: a.btcContext,
             stochRSI: a.stochRSI, bbands: a.bbands, mtfOB: a.mtfOB, emaRibbon: a.emaRibbon,
             volNodes: a.volNodes, session: a.session, candleConf: a.candleConf,
             keyLevels: a.keyLevels, fvgData: a.fvgData, supertrend: a.supertrend,

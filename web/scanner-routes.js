@@ -253,7 +253,17 @@ app.post('/app/api/scan', saasAuth.requireUserAuth, async (req, res) => {
                 label: a.future.label, available: a.future.available } : null,
             ai: aiSummary,
         }});
-    } catch(e) { console.error('[Scan API]', e.message); res.status(500).json({ok:false,error:e.message}); }
+    } catch(e) {
+        console.error('[Scan API] ❌', e.message, e.stack?.split('\n')[1]?.trim());
+        // User-friendly error mapping
+        const msg = e.message || 'Unknown error';
+        let userMsg = '⚠️ Analysis engine error. Please try again.';
+        if (msg.includes('timeout'))            userMsg = '⏱️ Analysis timed out. Try again in a moment.';
+        else if (msg.includes('initialization'))userMsg = '⚙️ System code error detected. Admin has been notified via logs.';
+        else if (msg.includes('Cannot read'))   userMsg = '⚙️ Indicator data error. Try a different coin or timeframe.';
+        else if (msg.includes('Network') || msg.includes('ECONNREFUSED')) userMsg = '🌐 Binance API unreachable. Check VPS internet connection.';
+        res.status(500).json({ ok: false, error: userMsg, debug: msg });
+    }
 });
 
 // ─── Backtest ────────────────────────────────────────────────────────────

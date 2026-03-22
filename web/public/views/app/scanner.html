@@ -229,7 +229,102 @@ function renderScanResult(a) {
     </div>
   </div>
 
-  <!-- ═══ MORE INFO PANEL ═══════════════════════════════════════════════ -->
+  </div>
+
+  <!-- ═══ MORE INFO PANEL (inline, toggleable) ═══════════════════════ -->
+  <div id="more-info-panel" style="display:none;margin-top:12px">
+  <div class="signal-card" style="padding:16px">
+
+    ${sec('📐 MTF Fibonacci Zones', fib?.zones?.length ? `
+      ${fib.zones.slice(0,3).map(z=>`
+        <div style="display:flex;justify-content:space-between;font-size:.75rem;padding:4px 0;border-bottom:1px solid rgba(255,255,255,.04)">
+          <span style="color:${z.strength==='STRONG'?'var(--accent)':'var(--text2)'}">${z.strength==='STRONG'?'💪':'📌'} ${z.label}</span>
+          <span style="font-family:var(--font-mono)">$${parseFloat(z.price).toFixed(4)}
+            <span style="color:var(--text2);font-size:.68rem">(${(Math.abs(z.price-parseFloat(a.currentPrice||0))/parseFloat(a.currentPrice||1)*100).toFixed(1)}% away)</span>
+          </span>
+        </div>`).join('')}
+      ${fib.tps?.length?`<div style="font-size:.67rem;color:var(--text2);text-transform:uppercase;margin:8px 0 4px">Fib TP Targets</div>
+        ${fib.tps.slice(0,3).map(t=>`<div style="display:flex;justify-content:space-between;font-size:.74rem;padding:2px 0">
+          <span style="color:var(--text2)">${t.label}</span>
+          <span style="font-family:var(--font-mono);color:var(--green)">$${parseFloat(t.price).toFixed(4)}</span>
+        </div>`).join('')}`:''}
+    ` : '<div style="color:var(--text2);font-size:.75rem">No Fib data</div>')}
+
+    ${a.btcContext&&a.btcContext.trend!=='UNKNOWN'?sec('₿ BTC Context',`
+      <div style="font-size:.78rem">BTC: <strong style="color:${a.btcContext.trend==='BULL'?'var(--green)':a.btcContext.trend==='BEAR'?'var(--red)':'var(--yellow)'}">${a.btcContext.display}</strong></div>
+    `):''}
+
+    ${a.hiddenDivergence&&(a.hiddenDivergence.bull||a.hiddenDivergence.bear)?sec('🔀 Hidden Divergence',`
+      <div style="font-size:.78rem;color:var(--green)">${a.hiddenDivergence.display}</div>
+    `):''}
+
+    ${sec('📊 Technical Indicators',
+      row('RSI', a.rsi?parseFloat(a.rsi).toFixed(1):'—', parseFloat(a.rsi||50)>70?'var(--red)':parseFloat(a.rsi||50)<30?'var(--green)':'') +
+      row('MACD', a.macd||'—') +
+      row('Bollinger', typeof a.bb==='object'?a.bb?.signal||'—':a.bb||a.bbands?.signal||'—') +
+      row('ADX', a.adx||'—') +
+      row('StochRSI', a.stochRSI?.signal||'—') +
+      row('Supertrend', a.supertrend?.signal||'—') +
+      row('EMA Ribbon', a.emaRibbon?.signal||'—') +
+      row('ChoCH', a.choch||'—') +
+      row('Liq Sweep', a.liquiditySweep||'—') +
+      row('VWAP', a.vwap?'$'+parseFloat(a.vwap).toFixed(4):'—')
+    )}
+
+    ${sec('🧠 Advanced Intelligence',
+      row('Wyckoff Phase', a.wyckoff?.phase||'—') +
+      row('Breaker Block', a.breakers?.display||'None') +
+      row('EQH/EQL', a.equalHL?.display||'None') +
+      row('Ichimoku', a.ichimoku?.signal||'—') +
+      row('CVD', a.cvd?.trend||'—') +
+      row('Heikin Ashi', a.heikinAshi?.signal||'—') +
+      row('Williams %R', a.williamsR?.value||'—') +
+      row('Pivot Signal', a.pivotSignal?.display||'—') +
+      row('Fib Confluence', a.fibConf?.hasConfluence?a.fibConf.count+'× at $'+a.fibConf.zone:'None') +
+      row('OTE Zone', a.fibLevels?.isAtOTE?'🎯 AT OTE':'Not at OTE') +
+      row('Dynamic S/R', a.dynamicSR?.nearSupport?'At Support 📊':a.dynamicSR?.nearResist?'At Resistance 📊':'Neutral')
+    )}
+
+    ${sec('⚡ Momentum & Volatility',
+      row('BB Squeeze', a.bbSqueeze?.isSqueezing?'⚡ SQUEEZING':a.bbSqueeze?.exploding?'💥 EXPLOSION':'Normal') +
+      row('Vol Expansion', a.volExpansion?.expanding?'📈 Expanding':'Stable') +
+      row('MM Trap', a.mmTrap?.display||'None') +
+      row('Momentum', a.momentumShift?.isBull?'BULL '+a.momentumShift.bullSignals+'/6':a.momentumShift?.isBear?'BEAR '+a.momentumShift.bearSignals+'/6':'Neutral') +
+      row('BOS', a.bos?.bullBOS?'🔺 Bullish':a.bos?.bearBOS?'🔻 Bearish':'None') +
+      row('MFI', a.mfi?.value?a.mfi.value.toFixed(0)+' ('+a.mfi.signal+')':'—') +
+      row('CCI', a.cci?.value?a.cci.value.toFixed(0):'—') +
+      row('ROC', a.roc?.value?a.roc.value.toFixed(2)+'%':'—')
+    )}
+
+    ${sec('🔮 v7 PRO Signals',
+      row('3TF Aligned', a.tf3Align?.aligned?(a.tf3Align.allBull?'🟢🟢🟢 All Bull':'🔴🔴🔴 All Bear'):'Partial') +
+      row('Gann', a.gannAngles?.signal||'—') +
+      row('Renko', a.renko?.isBull?'🧱 Bull '+a.renko.streak+'x':a.renko?.isBear?'🧱 Bear '+a.renko.streak+'x':'Neutral') +
+      row('Candle Pattern', a.advCandles?.pattern||'None') +
+      row('Daily Trend', (a.dailyTrend||'—')+' '+(a.dailyAligned?'✅':'⚠️'))
+    )}
+
+    ${sec('🌊 Market Context',
+      row('🐋 Buy Wall', ww.supportWall&&ww.supportWall!=='N/A'?fmtP(ww.supportWall)+(ww.supportVol?' ('+ww.supportVol+')':''):'N/A') +
+      row('🔴 Sell Wall', ww.resistWall&&ww.resistWall!=='N/A'?fmtP(ww.resistWall)+(ww.resistVol?' ('+ww.resistVol+')':''):'N/A') +
+      row('Liquidation', liq.sentiment||'N/A') +
+      row('F&G Index', (sent.fngEmoji||'')+' '+(sent.fng||'N/A')) +
+      row('BTC Dominance', sent.btcDom?sent.btcDom+'%':'N/A') +
+      row('News Score', sent.newsSentimentScore!=null?(sent.newsSentimentScore>0?'+':'')+sent.newsSentimentScore:'N/A') +
+      row('Market Bias', sent.overall||'—')
+    )}
+
+    ${conf.totalScore!=null?sec('🔬 Entry Confirmation',
+      row('Score', (conf.totalScore>=0?'+':'')+conf.totalScore+' ('+conf.strength+')', conf.strength==='STRONG'?'var(--green)':conf.strength==='WEAK'?'var(--red)':'var(--yellow)') +
+      row('Stablecoin Flow', conf.usdtDom||'N/A') +
+      row('Open Interest', conf.oiChange||'N/A') +
+      row('CVD Signal', conf.cvd||'N/A') +
+      row('BTC Correlation', conf.btcCorr||'N/A')
+    ):''}
+
+  </div>
+  </div>`;
+
   document.getElementById('scan-result').style.display='block';
   document.getElementById('scan-result').innerHTML = `
     ${a.score<userMinScore?`<div style="background:rgba(255,171,0,.08);border:1px solid rgba(255,171,0,.25);border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:.82rem;color:var(--yellow)">⚠️ Score ${a.score} below your threshold (${userMinScore}). <a href="/app/settings" style="color:var(--accent)">Adjust →</a></div>`:''}
@@ -238,10 +333,13 @@ function renderScanResult(a) {
 }
 
 function toggleMoreInfo() {
-  if (!window._lastScan) { showToast && showToast('❌ No analysis yet','err'); return; }
-  if (typeof openAnalysisDrawer === 'function') {
-    openAnalysisDrawer(window._lastScan);
-  }
+  const panel = document.getElementById('more-info-panel');
+  const btn   = document.getElementById('more-info-btn');
+  if(!panel) return;
+  const open = panel.style.display === 'none';
+  panel.style.display = open ? 'block' : 'none';
+  btn.textContent = open ? '📊 Less Info' : '📊 More Info';
+  if(open) panel.scrollIntoView({behavior:'smooth', block:'start'});
 }
 
 async function openPaperFromScan() {
@@ -348,6 +446,5 @@ async function loadMarketScan() {
 }
 loadMarketScan();
 </script>
-<!--INCLUDE:app/analysis-detail-->
 </body>
 </html>

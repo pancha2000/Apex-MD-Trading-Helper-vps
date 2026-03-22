@@ -118,37 +118,60 @@ function autoCalcTP() {
 
 const active = D.activePaper || [];
 const livePnl = {};
-document.getElementById('active-body').innerHTML = active.length === 0
-  ? '<tr><td colspan="10" class="empty-state"><div class="empty-icon">📄</div><div class="empty-msg">No open positions — open a trade above or from <a href="/app/scanner">Scanner</a></div></td></tr>'
-  : active.map(t => {
-      const dir=t.direction==='LONG'?'<span class="pill pill-long">▲ L</span>':'<span class="pill pill-short">▼ S</span>';
-      const st=t.status==='pending'?'<span class="pill pill-pending">LIMIT</span>':'<span class="pill pill-active">LIVE</span>';
-      const tp1Display = t.tp1 && t.tp1 !== '—' ? `<span style="color:var(--text3)">${t.tp1}</span>` : '<span style="color:var(--text2)">—</span>';
-      const isPending = t.status === 'pending';
-      const entryDisplay = isPending
-        ? `<span style="color:var(--accent)">$${t.entry}</span><div style="font-size:.66rem;color:var(--text2)">limit</div>`
-        : t.entry;
-      const actionBtns = isPending
-        ? `<div style="display:flex;gap:6px">
-             <button class="btn btn-sm" style="background:rgba(0,200,255,.12);color:var(--accent);border:1px solid rgba(0,200,255,.25)" onclick="editLimitOrder('${t._id}','${t.entry}','${t.sl}','${t.tp2}')">✏️</button>
-             <button class="btn btn-danger btn-sm" onclick="cancelLimitOrder('${t._id}','${t.coin}')">✕</button>
-           </div>`
-        : `<button class="btn btn-danger btn-sm" onclick="closeTrade('${t._id}','${t.coin}')">Close</button>`;
-      return `<tr id="row-${t._id}" style="${isPending?'opacity:.85;background:rgba(0,200,255,.03)':''}">
-        <td><strong style="font-family:var(--font-mono)">${t.coin}</strong>
-          ${isPending&&t.zoneLabel?`<div style="font-size:.65rem;color:var(--text2)">${t.zoneLabel}</div>`:''}
-        </td>
-        <td>${dir}</td>
-        <td style="font-family:var(--font-mono)">${entryDisplay}</td>
-        <td style="font-family:var(--font-mono)">${tp1Display}</td>
-        <td style="font-family:var(--font-mono);color:var(--green)">${t.tp2}</td>
-        <td style="font-family:var(--font-mono);color:var(--red)">${t.sl}</td>
-        <td style="font-family:var(--font-mono)">${t.leverage}x</td>
-        <td id="pnl-${t._id}" style="font-family:var(--font-mono);font-weight:600;color:var(--text2)">${isPending?'⏳ waiting':'…'}</td>
-        <td>${st} <span style="color:var(--text2);font-size:.72rem">${t.ageHrs}h</span></td>
-        <td>${actionBtns}</td>
-      </tr>`;
-    }).join('');
+
+function renderActiveRows() {
+  document.getElementById('active-body').innerHTML = active.length === 0
+    ? '<tr><td colspan="10" class="empty-state"><div class="empty-icon">📄</div><div class="empty-msg">No open positions — open a trade above or from <a href="/app/scanner">Scanner</a></div></td></tr>'
+    : active.map(t => {
+        const dir       = t.direction==='LONG'?'<span class="pill pill-long">▲ L</span>':'<span class="pill pill-short">▼ S</span>';
+        const st        = t.status==='pending'?'<span class="pill pill-pending">LIMIT</span>':'<span class="pill pill-active">LIVE</span>';
+        const isPending = t.status === 'pending';
+        const isL       = t.direction === 'LONG';
+        const entryN    = parseFloat(t.entry)||0;
+        const tp1N      = parseFloat(t.tp1)||0;
+        const tp2N      = parseFloat(t.tp2)||0;
+        const slN       = parseFloat(t.sl)||0;
+
+        const entryDisplay = isPending
+          ? `<span style="color:var(--accent)">$${t.entry}</span><div style="font-size:.62rem;color:var(--text2)">limit</div>`
+          : `<span style="font-family:var(--font-mono)">$${t.entry}</span>`;
+
+        const actionBtns = isPending
+          ? `<div style="display:flex;gap:6px">
+               <button class="btn btn-sm" style="background:rgba(0,200,255,.12);color:var(--accent);border:1px solid rgba(0,200,255,.25)" onclick="editLimitOrder('${t._id}','${t.entry}','${t.sl}','${t.tp2}')">✏️</button>
+               <button class="btn btn-danger btn-sm" onclick="cancelLimitOrder('${t._id}','${t.coin}')">✕</button>
+             </div>`
+          : `<button class="btn btn-danger btn-sm" onclick="closeTrade('${t._id}','${t.coin}')">Close</button>`;
+
+        return `<tr id="row-${t._id}" style="${isPending?'opacity:.85;background:rgba(0,200,255,.03)':''}">
+          <td>
+            <strong style="font-family:var(--font-mono)">${t.coin}</strong>
+            ${isPending&&t.zoneLabel?`<div style="font-size:.62rem;color:var(--text2)">${t.zoneLabel}</div>`:''}
+            ${!isPending?`<div style="font-size:.62rem;color:var(--text2)">${t.ageHrs}h open</div>`:''}
+          </td>
+          <td>${dir}</td>
+          <td>${entryDisplay}</td>
+          <td style="font-family:var(--font-mono);color:var(--text3)">${t.tp1||'—'}</td>
+          <td style="font-family:var(--font-mono);color:var(--green)">${t.tp2}</td>
+          <td style="font-family:var(--font-mono);color:var(--red)">${t.sl}</td>
+          <td style="font-family:var(--font-mono)">${t.leverage}x</td>
+          <td id="pnl-${t._id}" style="font-weight:600;color:var(--text2)">
+            ${isPending?'<span style="font-size:.75rem">⏳ waiting</span>':'<span style="font-size:.75rem;color:var(--text2)">loading...</span>'}
+          </td>
+          <td>
+            ${st}
+            <div id="tp-bar-${t._id}" style="width:80px;margin-top:4px"></div>
+          </td>
+          <td>${actionBtns}</td>
+        </tr>
+        <tr id="warn-row-${t._id}" style="background:transparent">
+          <td colspan="10" style="padding:0 8px 4px;border:none">
+            <div id="warn-${t._id}"></div>
+          </td>
+        </tr>`;
+      }).join('');
+}
+renderActiveRows();
 
 const closed = D.closedPaper || [];
 document.getElementById('closed-body').innerHTML = closed.length === 0
@@ -168,34 +191,101 @@ document.getElementById('closed-body').innerHTML = closed.length === 0
       </tr>`;
     }).join('');
 
-// ── Live P&L polling ─────────────────────────────────────────
+// ── Live P&L + TP Progress + Warnings ───────────────────────
 async function refreshLivePnl() {
-  if (!active.length) return;
-  const coins = [...new Set(active.map(t => t.coin+'USDT'))];
-  try {
-    const prices = await Promise.all(coins.map(c =>
-      apiFetch(`/app/api/watchlist/prices`).catch(()=>null)
-    ));
-    const d = await apiFetch('/app/api/watchlist/prices');
-    if (!d.ok) return;
-    const priceMap = {};
-    (d.prices||[]).forEach(p => priceMap[p.coin] = parseFloat(p.price));
-    active.forEach(t => {
-      const el = document.getElementById('pnl-'+t._id);
-      if (!el) return;
-      const cur = priceMap[t.coin+'USDT'];
-      if (!cur) { el.textContent = '—'; return; }
-      const entry = parseFloat(t.entry.replace('$',''));
-      const diff = t.direction === 'LONG' ? (cur - entry) : (entry - cur);
-      const pct = entry > 0 ? (diff/entry*100).toFixed(2) : 0;
-      const col = diff > 0 ? 'var(--green)' : diff < 0 ? 'var(--red)' : 'var(--text2)';
-      el.style.color = col;
-      el.textContent = (diff>=0?'+':'')+pct+'%';
-    });
-  } catch(_) {}
+  const liveActive = active.filter(t => t.status !== 'pending');
+  if (!liveActive.length) return;
+
+  // Fetch prices directly from Binance for active trades
+  const coins = [...new Set(liveActive.map(t => t.coin+'USDT'))];
+  const priceMap = {};
+  await Promise.all(coins.map(async coin => {
+    try {
+      const r = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${coin}`);
+      const d = await r.json();
+      priceMap[coin] = parseFloat(d.price);
+    } catch(_) {}
+  }));
+
+  liveActive.forEach(t => {
+    const el  = document.getElementById('pnl-'+t._id);
+    const bar = document.getElementById('tp-bar-'+t._id);
+    if (!el) return;
+
+    const coin = t.coin+'USDT';
+    const cur  = priceMap[coin];
+    if (!cur) { el.innerHTML = '<span style="color:var(--text2)">—</span>'; return; }
+
+    const entry = parseFloat(t.entry)||0;
+    const tp1   = parseFloat(t.tp1)||0;
+    const tp2   = parseFloat(t.tp2)||0;
+    const sl    = parseFloat(t.sl)||0;
+    const isL   = t.direction === 'LONG';
+
+    // P&L calculation
+    const diff  = isL ? cur - entry : entry - cur;
+    const pct   = entry > 0 ? (diff/entry*100) : 0;
+    const pctStr= (pct>=0?'+':'')+pct.toFixed(2)+'%';
+    const col   = pct > 0 ? 'var(--green)' : pct < 0 ? 'var(--red)' : 'var(--text2)';
+
+    // Current price display
+    const curStr = cur >= 1 ? '$'+cur.toFixed(4) : '$'+cur.toFixed(6);
+
+    el.innerHTML = `
+      <div style="font-family:var(--font-mono);color:${col};font-weight:700;font-size:.82rem">${pctStr}</div>
+      <div style="font-size:.67rem;color:var(--text2)">${curStr}</div>`;
+
+    // ── TP Progress Bar ─────────────────────────────────────
+    if (bar && tp1 > 0) {
+      const totalMove = Math.abs(tp1 - entry);
+      const curMove   = isL ? Math.max(0, cur - entry) : Math.max(0, entry - cur);
+      const progress  = totalMove > 0 ? Math.min(100, (curMove/totalMove)*100) : 0;
+      const barCol    = progress >= 80 ? 'var(--green)' : progress >= 40 ? 'var(--yellow)' : 'var(--accent)';
+      bar.innerHTML = `
+        <div style="font-size:.6rem;color:var(--text2);margin-bottom:2px">TP1 ${progress.toFixed(0)}%</div>
+        <div style="background:rgba(255,255,255,.08);border-radius:99px;height:4px;overflow:hidden">
+          <div style="width:${progress}%;height:100%;background:${barCol};border-radius:99px;transition:.5s"></div>
+        </div>`;
+    }
+
+    // ── Smart Warnings ──────────────────────────────────────
+    const warnEl = document.getElementById('warn-'+t._id);
+    if (!warnEl) return;
+
+    const distToTP1Pct = tp1 > 0 ? Math.abs(cur - tp1)/tp1*100 : 999;
+    const distToSLPct  = sl  > 0 ? Math.abs(cur - sl)/sl*100   : 999;
+    const betweenEntrySL = isL ? cur < entry && cur > sl : cur > entry && cur < sl;
+    const nearSL       = distToSLPct < 1.5;
+    const nearTP1      = distToTP1Pct < 1.5;
+    const tp1Hit       = isL ? cur >= tp1 : cur <= tp1;
+
+    let warn = '';
+    if (tp1Hit && !t.tp1Hit) {
+      warn = `<div style="background:rgba(0,230,118,.1);border:1px solid rgba(0,230,118,.3);border-radius:6px;padding:5px 8px;font-size:.7rem;color:var(--green)">
+        🎯 TP1 Reached! Consider partial close or move SL to entry.
+      </div>`;
+    } else if (nearTP1) {
+      warn = `<div style="background:rgba(0,230,118,.07);border:1px solid rgba(0,230,118,.2);border-radius:6px;padding:5px 8px;font-size:.7rem;color:var(--green)">
+        📍 Approaching TP1 (${distToTP1Pct.toFixed(1)}% away) — ready to close?
+      </div>`;
+    } else if (nearSL) {
+      warn = `<div style="background:rgba(255,82,82,.1);border:1px solid rgba(255,82,82,.3);border-radius:6px;padding:5px 8px;font-size:.7rem;color:var(--red)">
+        ⚠️ Price near Stop Loss (${distToSLPct.toFixed(1)}% away) — monitor closely!
+      </div>`;
+    } else if (betweenEntrySL && pct < -1.5) {
+      warn = `<div style="background:rgba(255,171,0,.08);border:1px solid rgba(255,171,0,.2);border-radius:6px;padding:5px 8px;font-size:.7rem;color:var(--yellow)">
+        📉 Trade moving toward SL — DCA zone or wait for reversal?
+      </div>`;
+    }
+    warnEl.innerHTML = warn;
+  });
 }
-// Auto-refresh every 30s
-if (active.length) { refreshLivePnl(); setInterval(refreshLivePnl, 30000); }
+
+// Auto-refresh every 20s
+if (active.filter(t=>t.status!=='pending').length) {
+  refreshLivePnl();
+  setInterval(refreshLivePnl, 20000);
+}
 
 async function openPaperTrade() {
   const msg = document.getElementById('pt-msg');

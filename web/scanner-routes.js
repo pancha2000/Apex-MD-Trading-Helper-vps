@@ -187,12 +187,12 @@ app.post('/app/api/scan', saasAuth.requireUserAuth, async (req, res) => {
                         }
                     } catch(_) {}
                 }
-                return { a, f, conf, sent, aiSummary };
+                return { a, f, conf, sent, aiSummary, whaleWalls, liqData };
             })(),
             masterTimeout
         ]);
 
-        const { a, f, conf, sent, aiSummary } = analysis;
+        const { a, f, conf, sent, aiSummary, whaleWalls, liqData } = analysis;
         res.json({ ok:true, analysis:{
             coin: coin.replace('USDT',''), timeframe, direction: a.direction,
             score: a.score, maxScore: a.maxScore||100,

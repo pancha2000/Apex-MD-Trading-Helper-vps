@@ -29,15 +29,33 @@ const { handler }    = require('./lib/commands');
 const { initDashboard, setBotConnected, log: dashLog } = require('./dashboard');
 initDashboard();
 
+// ─── Bot status file — lets standalone Dashboard process read bot status ──
+const _statusFile = path.join(__dirname, 'auth_info', '_bot_status.json');
+function _writeBotStatus(connected) {
+    try {
+        fs.mkdirSync(path.join(__dirname, 'auth_info'), { recursive: true });
+        fs.writeFileSync(_statusFile, JSON.stringify({ connected, ts: Date.now() }));
+    } catch (_) {}
+}
+_writeBotStatus(false);
+
 // ─── Serialize helper ─────────────────────────────────────────
 const serialize = require('./lib/functions').serialize;
 
-// ─── Load all plugins ─────────────────────────────────────────
+// ─── Load all plugins (safe — one plugin failing won't crash others) ──
+let _loadedPlugins = 0, _failedPlugins = 0;
 fs.readdirSync('./plugins/').forEach(plugin => {
-    if (path.extname(plugin).toLowerCase() === '.js') {
+    if (path.extname(plugin).toLowerCase() !== '.js') return;
+    try {
         require('./plugins/' + plugin);
+        _loadedPlugins++;
+    } catch (e) {
+        _failedPlugins++;
+        console.error(`⚠️ Plugin load failed [${plugin}]: ${e.message}`);
+        // Dashboard is still running — bot continues with remaining plugins
     }
 });
+console.log(`📦 Plugins: ${_loadedPlugins} loaded${_failedPlugins ? `, ⚠️ ${_failedPlugins} failed` : ' ✅'}`);
 
 // ─── WhatsApp keep-alive Express server ──────────────────────
 // ✅ FIX: PORT conflict guard — keep-alive uses PORT (default 8000).
@@ -134,6 +152,7 @@ async function startBot() {
 
         if (connection === 'close') {
             setBotConnected(false);
+            _writeBotStatus(false);
             const reason = lastDisconnect?.error?.output?.statusCode;
             console.log(`⚠️ Connection Closed. Reason: ${reason}`);
 
@@ -152,6 +171,7 @@ async function startBot() {
             }
         } else if (connection === 'open') {
             setBotConnected(true);
+            _writeBotStatus(true);
             reconnectCount = 0;
             console.log('✅ Bot Connected to WhatsApp Successfully!');
             console.log(`💡 Type ${config.PREFIX}scanstart in your WhatsApp to activate the Auto-Scanner!`);

@@ -891,4 +891,140 @@ app.post('/app/api/trades/cleanup', saasAuth.requireUserAuth, async (req, res) =
 });
 
 
+
+// ════════════════════════════════════════════════════════════════════════
+//  ZONE BYPASS LIMIT ORDER
+// ════════════════════════════════════════════════════════════════════════
+
+app.post('/app/api/paper/open-limit', saasAuth.requireUserAuth, async (req, res) => {
+    try {
+        const fullUser = await db.getSaasUserById(req.saasUser.userId);
+        const waJid   = fullUser?.whatsappJid;
+        if (!waJid) return res.status(400).json({ok:false,error:'WhatsApp not linked.'});
+        const { coin='', direction='LONG', limitPrice, tp1, tp2, tp3, sl, leverage=10, zoneLabel='', zoneStrength='' } = req.body;
+        if (!limitPrice||!tp2||!sl) return res.status(400).json({ok:false,error:'limitPrice, tp2, sl required'});
+        const coinFull = coin.toUpperCase().replace(/[^A-Z0-9]/g,'') + (coin.includes('USDT')?'':'USDT');
+        const existing = await db.Trade.countDocuments({userJid:waJid,isPaper:true,status:{$in:['active','pending']}});
+        if (existing >= 5) return res.status(400).json({ok:false,error:'Max 5 open paper trades'});
+        const wu     = await db.getUser(waJid);
+        const margin = wu?.margin || 100;
+        const limF   = parseFloat(limitPrice), tp2F = parseFloat(tp2), slF = parseFloat(sl);
+        const tp1F   = tp1 ? parseFloat(tp1) : (limF+tp2F)/2;
+        const tp3F   = tp3 ? parseFloat(tp3) : (direction==='LONG' ? tp2F+(tp2F-limF)*0.5 : tp2F-(limF-tp2F)*0.5);
+        const slDist = Math.abs(limF-slF);
+        const qty    = slDist>0 ? (margin*0.02)/slDist : 0;
+        const riskD  = Math.abs(limF-slF), rewardD = Math.abs(tp2F-limF);
+        const rrr    = riskD>0 ? (rewardD/riskD).toFixed(2)+':1' : '—';
+        await db.saveTrade({ userJid:waJid, userId:req.saasUser.userId, coin:coinFull, type:'future', direction,
+            entry:limF, tp:tp2F, tp1:tp1F, tp2:tp2F, tp3:tp3F, sl:slF,
+            status:'pending', orderType:'LIMIT', isPaper:true, source:'WEB_LIMIT',
+            leverage:parseInt(leverage), quantity:qty, marginUsed:qty>0?(qty*limF)/leverage:0,
+            score:0, timeframe:'15m', rrr, limitPrice:limF, zoneLabel, zoneStrength });
+        res.json({ok:true, msg:`Limit order placed at $${limF} — watching for price to reach zone.`});
+    } catch(e) { res.status(500).json({ok:false,error:e.message}); }
+});
+
+app.post('/app/api/paper/cancel-limit/:tradeId', saasAuth.requireUserAuth, async (req, res) => {
+    try {
+        const trade = await db.Trade.findById(req.params.tradeId);
+        if (!trade) return res.status(404).json({ok:false,error:'Trade not found'});
+        const fullUser = await db.getSaasUserById(req.saasUser.userId);
+        if (String(trade.userId) !== req.saasUser.userId && trade.userJid !== fullUser?.whatsappJid)
+            return res.status(403).json({ok:false,error:'Not your trade'});
+        if (trade.status !== 'pending') return res.status(400).json({ok:false,error:'Trade is not pending'});
+        await db.Trade.findByIdAndUpdate(req.params.tradeId, {status:'closed',result:'CANCELLED',closedAt:new Date()});
+        res.json({ok:true});
+    } catch(e) { res.status(500).json({ok:false,error:e.message}); }
+});
+
+app.post('/app/api/paper/update-limit/:tradeId', saasAuth.requireUserAuth, async (req, res) => {
+    try {
+        const trade = await db.Trade.findById(req.params.tradeId);
+        if (!trade) return res.status(404).json({ok:false,error:'Trade not found'});
+        const fullUser = await db.getSaasUserById(req.saasUser.userId);
+        if (String(trade.userId) !== req.saasUser.userId && trade.userJid !== fullUser?.whatsappJid)
+            return res.status(403).json({ok:false,error:'Not your trade'});
+        if (trade.status !== 'pending') return res.status(400).json({ok:false,error:'Can only update pending orders'});
+        const { limitPrice, sl, tp1, tp2, tp3 } = req.body;
+        const updates = {};
+        if (limitPrice) { updates.limitPrice=parseFloat(limitPrice); updates.entry=parseFloat(limitPrice); }
+        if (sl)  updates.sl  = parseFloat(sl);
+        if (tp1) updates.tp1 = parseFloat(tp1);
+        if (tp2) { updates.tp2=parseFloat(tp2); updates.tp=parseFloat(tp2); }
+        if (tp3) updates.tp3 = parseFloat(tp3);
+        await db.Trade.findByIdAndUpdate(req.params.tradeId, updates);
+        res.json({ok:true});
+    } catch(e) { res.status(500).json({ok:false,error:e.message}); }
+});
+
+// ── Background Zone Watcher — every 3 min (Oracle free tier safe) ──────
+let _watcherRunning = false;
+async function runLimitOrderWatcher() {
+    if (_watcherRunning) return;
+    _watcherRunning = true;
+    try {
+        const pending = await db.Trade.find({status:'pending',orderType:'LIMIT',isPaper:true}).lean();
+        if (!pending.length) return;
+        const coins   = [...new Set(pending.map(t=>t.coin))];
+        const priceMap = {};
+        await Promise.all(coins.map(async coin => {
+            try {
+                const r = await axios.get(`https://api.binance.com/api/v3/ticker/price?symbol=${coin}`,{timeout:5000});
+                priceMap[coin] = parseFloat(r.data.price);
+            } catch(_) {}
+        }));
+        for (const trade of pending) {
+            const curP = priceMap[trade.coin]; if (!curP) continue;
+            const limP = trade.limitPrice || trade.entry;
+            const isL  = trade.direction === 'LONG';
+            const dist = Math.abs(curP-limP)/limP*100;
+            const hit  = isL ? curP <= limP*1.005 : curP >= limP*0.995;
+
+            if (!hit) {
+                // Approaching warning (1.5% away, once per 30min)
+                if (dist < 1.5) {
+                    const sinceWarn = trade.lastWatchAt ? Date.now()-new Date(trade.lastWatchAt).getTime() : Infinity;
+                    if (sinceWarn > 30*60*1000) {
+                        await db.Trade.findByIdAndUpdate(trade._id,{lastWatchAt:new Date()});
+                        const conn = global._botConn;
+                        if (conn && trade.userJid) {
+                            conn.sendMessage(trade.userJid,{text:
+                                `⚠️ *Limit Order Approaching!*\n\n`+
+                                `📌 *${trade.coin.replace('USDT','')}* ${trade.direction}\n`+
+                                `🎯 Zone: *$${limP}* (${trade.zoneLabel||'Fib Zone'})\n`+
+                                `💰 Current: *$${curP}* — *${dist.toFixed(2)}% away*\n\n`+
+                                `Price approaching your limit zone. Get ready!`
+                            }).catch(()=>{});
+                        }
+                    }
+                }
+                continue;
+            }
+
+            // TRIGGERED — activate trade
+            await db.Trade.findByIdAndUpdate(trade._id,{status:'active',fillPrice:curP,entry:curP,lastWatchAt:new Date()});
+            const conn = global._botConn;
+            if (conn && trade.userJid) {
+                const tp2 = trade.tp2||trade.tp;
+                const rr  = Math.abs(tp2-curP)/Math.abs(curP-trade.sl);
+                conn.sendMessage(trade.userJid,{text:
+                    `✅ *Limit Order TRIGGERED!*\n\n`+
+                    `🪙 *${trade.coin.replace('USDT','')}* ${isL?'🟢 LONG':'🔴 SHORT'}\n`+
+                    `📍 Zone: *${trade.zoneLabel||'Fib Zone'}* ${trade.zoneStrength==='STRONG'?'💪':''}\n\n`+
+                    `💵 Fill: *$${curP}*\n`+
+                    `🎯 TP1: $${trade.tp1||'—'} | TP2: $${tp2} | TP3: $${trade.tp3||'—'}\n`+
+                    `🛡️ SL: $${trade.sl} | ⚖️ RRR: ${rr.toFixed(2)}:1 | 💡 ${trade.leverage}x\n\n`+
+                    `Paper trade ACTIVE — track it in your dashboard!`
+                }).catch(()=>{});
+            }
+            console.log(`[LimitWatcher] ✅ TRIGGERED ${trade.coin} ${trade.direction} @ $${curP}`);
+        }
+    } catch(e) { console.error('[LimitWatcher]',e.message); }
+    finally { _watcherRunning = false; }
+}
+setInterval(runLimitOrderWatcher, 3*60*1000);
+setTimeout(runLimitOrderWatcher, 15000);
+console.log('[LimitWatcher] ✅ Zone watcher started (3min interval)');
+
+
 }; // end registerApp

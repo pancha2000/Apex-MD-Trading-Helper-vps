@@ -226,6 +226,39 @@ app.post('/app/api/scan', saasAuth.requireUserAuth, async (req, res) => {
                 zoneBypassed: a.mtfFibEntry.zoneBypassed,
                 zones: a.mtfFibEntry.zones?.slice(0,3),
                 tps: a.mtfFibEntry.tps?.slice(0,3),
+                nextLimitZone: (() => {
+                    if (!a.mtfFibEntry.zoneBypassed) return null;
+                    const currentP = parseFloat(a.currentPrice||0);
+                    const isLong   = a.direction === 'LONG';
+                    const tps      = a.mtfFibEntry.tps || [];
+                    const zones    = a.mtfFibEntry.zones || [];
+                    const validZones = zones.filter(z => {
+                        if (!z || !z.price) return false;
+                        const zp = parseFloat(z.price);
+                        return isLong ? zp < currentP * 0.995 : zp > currentP * 1.005;
+                    });
+                    if (!validZones.length) return null;
+                    validZones.sort((a,b) => {
+                        if (a.strength === 'STRONG' && b.strength !== 'STRONG') return -1;
+                        if (b.strength === 'STRONG' && a.strength !== 'STRONG') return  1;
+                        return Math.abs(a.price - currentP) - Math.abs(b.price - currentP);
+                    });
+                    const best    = validZones[0];
+                    const atrVal  = parseFloat(a.atr) || currentP * 0.01;
+                    const newSL   = isLong
+                        ? (best.price - atrVal * 1.5).toFixed(4)
+                        : (best.price + atrVal * 1.5).toFixed(4);
+                    const tp1p    = tps[0]?.price || null;
+                    const tp2p    = tps[1]?.price || tps[0]?.price || null;
+                    const tp3p    = tps[2]?.price || null;
+                    const riskD   = Math.abs(best.price - parseFloat(newSL));
+                    const rewardD = tp2p ? Math.abs(tp2p - best.price) : 0;
+                    const rrr     = riskD > 0 && rewardD > 0 ? (rewardD/riskD).toFixed(2) : null;
+                    const distPct = Math.abs(best.price - currentP) / currentP * 100;
+                    return { price: best.price.toFixed(4), label: best.label, strength: best.strength,
+                             distPct: distPct.toFixed(1), newSL,
+                             tp1: tp1p?.toFixed(4)||null, tp2: tp2p?.toFixed(4)||null, tp3: tp3p?.toFixed(4)||null, rrr };
+                })(),
             } : null,
             hiddenDivergence: a.hiddenDivergence,
             btcContext: a.btcContext,

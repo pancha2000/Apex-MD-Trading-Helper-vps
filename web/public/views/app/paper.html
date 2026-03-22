@@ -124,17 +124,29 @@ document.getElementById('active-body').innerHTML = active.length === 0
       const dir=t.direction==='LONG'?'<span class="pill pill-long">▲ L</span>':'<span class="pill pill-short">▼ S</span>';
       const st=t.status==='pending'?'<span class="pill pill-pending">LIMIT</span>':'<span class="pill pill-active">LIVE</span>';
       const tp1Display = t.tp1 && t.tp1 !== '—' ? `<span style="color:var(--text3)">${t.tp1}</span>` : '<span style="color:var(--text2)">—</span>';
-      return `<tr id="row-${t._id}">
-        <td><strong style="font-family:var(--font-mono)">${t.coin}</strong></td>
+      const isPending = t.status === 'pending';
+      const entryDisplay = isPending
+        ? `<span style="color:var(--accent)">$${t.entry}</span><div style="font-size:.66rem;color:var(--text2)">limit</div>`
+        : t.entry;
+      const actionBtns = isPending
+        ? `<div style="display:flex;gap:6px">
+             <button class="btn btn-sm" style="background:rgba(0,200,255,.12);color:var(--accent);border:1px solid rgba(0,200,255,.25)" onclick="editLimitOrder('${t._id}','${t.entry}','${t.sl}','${t.tp2}')">✏️</button>
+             <button class="btn btn-danger btn-sm" onclick="cancelLimitOrder('${t._id}','${t.coin}')">✕</button>
+           </div>`
+        : `<button class="btn btn-danger btn-sm" onclick="closeTrade('${t._id}','${t.coin}')">Close</button>`;
+      return `<tr id="row-${t._id}" style="${isPending?'opacity:.85;background:rgba(0,200,255,.03)':''}">
+        <td><strong style="font-family:var(--font-mono)">${t.coin}</strong>
+          ${isPending&&t.zoneLabel?`<div style="font-size:.65rem;color:var(--text2)">${t.zoneLabel}</div>`:''}
+        </td>
         <td>${dir}</td>
-        <td style="font-family:var(--font-mono)">${t.entry}</td>
+        <td style="font-family:var(--font-mono)">${entryDisplay}</td>
         <td style="font-family:var(--font-mono)">${tp1Display}</td>
         <td style="font-family:var(--font-mono);color:var(--green)">${t.tp2}</td>
         <td style="font-family:var(--font-mono);color:var(--red)">${t.sl}</td>
         <td style="font-family:var(--font-mono)">${t.leverage}x</td>
-        <td id="pnl-${t._id}" style="font-family:var(--font-mono);font-weight:600;color:var(--text2)">…</td>
+        <td id="pnl-${t._id}" style="font-family:var(--font-mono);font-weight:600;color:var(--text2)">${isPending?'⏳ waiting':'…'}</td>
         <td>${st} <span style="color:var(--text2);font-size:.72rem">${t.ageHrs}h</span></td>
-        <td><button class="btn btn-danger btn-sm" onclick="closeTrade('${t._id}','${t.coin}')">Close</button></td>
+        <td>${actionBtns}</td>
       </tr>`;
     }).join('');
 
@@ -203,6 +215,23 @@ async function openPaperTrade() {
     if (d.ok) { showToast('✅ Paper trade opened!'); setTimeout(()=>location.reload(),800); }
     else { msg.style.color='var(--red)'; msg.textContent='❌ '+(d.error||'Failed'); }
   } catch(e) { msg.style.color='var(--red)'; msg.textContent='❌ Network error'; }
+}
+
+async function cancelLimitOrder(id, coin) {
+  if(!confirm('Cancel limit order for '+coin+'?')) return;
+  const d = await apiFetch('/app/api/paper/cancel-limit/'+id, {method:'POST'});
+  if(d.ok){ showToast('🗑️ Limit order cancelled'); document.getElementById('row-'+id)?.remove(); }
+  else showToast('❌ '+(d.error||'Failed'),'err');
+}
+
+async function editLimitOrder(id, curLimit, curSL, curTP2) {
+  const newLimit = prompt('New limit price (current: '+curLimit+'):', curLimit);
+  if(!newLimit || isNaN(newLimit)) return;
+  const newSL = prompt('New stop loss (current: '+curSL+'):', curSL);
+  if(!newSL || isNaN(newSL)) return;
+  const d = await apiFetch('/app/api/paper/update-limit/'+id, {method:'POST',body:JSON.stringify({limitPrice:newLimit,sl:newSL})});
+  if(d.ok){ showToast('✅ Limit order updated — reload to see changes'); }
+  else showToast('❌ '+(d.error||'Failed'),'err');
 }
 
 async function closeTrade(id, coin) {

@@ -172,6 +172,7 @@ async function startBot() {
         } else if (connection === 'open') {
             setBotConnected(true);
             _writeBotStatus(true);
+            global._botConn = conn;
             reconnectCount = 0;
             console.log('✅ Bot Connected to WhatsApp Successfully!');
             console.log(`💡 Type ${config.PREFIX}scanstart in your WhatsApp to activate the Auto-Scanner!`);

@@ -167,7 +167,7 @@ function renderScanResult(a) {
       <!-- Confirmation Verdict -->
       ${conf.verdict?`<div style="margin-top:10px;font-size:.78rem;padding:8px 12px;background:rgba(0,0,0,.2);border-radius:6px;border-left:3px solid var(--accent)">${conf.verdict}${conf.detail?' — '+conf.detail:''}</div>`:''}
 
-      <!-- ✅ NEW: Entry Quality Gate -->
+      <!-- Entry Quality Gate + Smart Limit Zone -->
       ${a.entryQuality ? `<div style="margin-top:10px;padding:10px 14px;border-radius:8px;border-left:4px solid ${
           a.entryQuality.color==='green'?'var(--green)':a.entryQuality.color==='red'?'var(--red)':'var(--yellow)'};background:rgba(0,0,0,.15)">
         <div style="font-size:.75rem;font-weight:700;color:${a.entryQuality.color==='green'?'var(--green)':a.entryQuality.color==='red'?'var(--red)':'var(--yellow)'}">
@@ -176,6 +176,64 @@ function renderScanResult(a) {
         <div style="font-size:.74rem;color:var(--text2);margin-top:3px">${a.entryQuality.detail}</div>
         ${a.entryQuality.blockEntry?`<div style="font-size:.72rem;color:var(--red);margin-top:4px;font-weight:600">⛔ Do not enter at market now</div>`:''}
       </div>` : ''}
+
+      <!-- 🆕 SMART LIMIT ZONE — Zone Bypass detected → show best Fib limit entry -->
+      ${a.mtfFibEntry?.zoneBypassed && a.mtfFibEntry?.nextLimitZone ? (() => {
+        const z = a.mtfFibEntry.nextLimitZone;
+        const isL = a.direction === 'LONG';
+        return `<div style="margin-top:12px;border-radius:10px;border:1.5px solid rgba(0,200,255,.35);background:rgba(0,200,255,.05);padding:14px 16px">
+          <div style="font-size:.72rem;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">
+            📍 Smart Limit Zone — Best Entry
+          </div>
+          <div style="font-size:.78rem;color:var(--text2);margin-bottom:10px">
+            Zone bypassed — place a <strong style="color:var(--text)">limit order</strong> at the next best Fib zone.
+            Price will reach it on the next pullback.
+          </div>
+
+          <div style="background:rgba(0,0,0,.2);border-radius:8px;padding:10px 12px;margin-bottom:10px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+              <span style="font-size:.7rem;font-weight:700;color:${z.strength==='STRONG'?'var(--accent)':'var(--yellow)'}">
+                ${z.strength==='STRONG'?'💪 STRONG':'📌 MEDIUM'} — ${z.label}
+              </span>
+              <span style="font-size:.68rem;color:var(--text2)">${z.distPct}% away</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:.76rem;padding:3px 0">
+              <span style="color:var(--text2)">🎯 Limit Entry</span>
+              <span style="font-family:var(--font-mono);color:var(--accent);font-weight:700">$${z.price}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:.76rem;padding:3px 0">
+              <span style="color:var(--text2)">🛡️ Stop Loss</span>
+              <span style="font-family:var(--font-mono);color:var(--red)">$${z.newSL}</span>
+            </div>
+            ${z.tp1?`<div style="display:flex;justify-content:space-between;font-size:.76rem;padding:3px 0">
+              <span style="color:var(--text2)">🎯 TP1</span>
+              <span style="font-family:var(--font-mono);color:var(--green)">$${z.tp1}</span>
+            </div>`:''}
+            <div style="display:flex;justify-content:space-between;font-size:.76rem;padding:3px 0">
+              <span style="color:var(--text2)">🎯 TP2</span>
+              <span style="font-family:var(--font-mono);color:var(--green);font-weight:700">$${z.tp2||'—'}</span>
+            </div>
+            ${z.tp3?`<div style="display:flex;justify-content:space-between;font-size:.76rem;padding:3px 0">
+              <span style="color:var(--text2)">🚀 TP3</span>
+              <span style="font-family:var(--font-mono);color:var(--green)">$${z.tp3}</span>
+            </div>`:''}
+            ${z.rrr?`<div style="display:flex;justify-content:space-between;font-size:.76rem;padding:4px 0;border-top:1px solid rgba(255,255,255,.07);margin-top:4px">
+              <span style="color:var(--text2)">⚖️ RRR</span>
+              <span style="font-family:var(--font-mono);color:${parseFloat(z.rrr)>=2?'var(--green)':parseFloat(z.rrr)>=1.5?'var(--yellow)':'var(--red)'}">
+                ${z.rrr}:1 ${parseFloat(z.rrr)>=2?'✅':''}
+              </span>
+            </div>`:''}
+          </div>
+
+          <button class="btn btn-primary" style="width:100%;font-size:.8rem;padding:9px"
+            onclick="placeLimitOrder(${JSON.stringify(z).replace(/"/g,'&quot;')})">
+            📌 Place Limit Order — Wait for Zone
+          </button>
+          <div style="font-size:.68rem;color:var(--text2);margin-top:6px;text-align:center">
+            ⏰ Watcher checks every 3 min — WhatsApp alert when triggered
+          </div>
+        </div>`;
+      })() : ''}
 
       <!-- ✅ NEW: BTC Context -->
       ${a.btcContext && a.btcContext.trend !== 'UNKNOWN' ? `<div style="margin-top:8px;padding:7px 12px;border-radius:6px;background:rgba(255,165,0,.06);border:1px solid rgba(255,165,0,.15);font-size:.76rem">
@@ -286,7 +344,10 @@ function renderScanResult(a) {
 
     </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px">
-      <button class="btn btn-warn" onclick="openPaperFromScan()">📄 Open Paper Trade</button>
+      ${!a.mtfFibEntry?.zoneBypassed
+        ? `<button class="btn btn-warn" onclick="openPaperFromScan()">📄 Open Paper Trade</button>`
+        : `<button class="btn btn-ghost" onclick="openPaperFromScan()" style="font-size:.77rem">📄 Market Trade (risky)</button>`
+      }
       <button class="btn btn-ghost" onclick="document.getElementById('scan-result').style.display='none'">✕ Clear</button>
     </div>`;
   window._lastScan = a;
@@ -297,6 +358,123 @@ async function openPaperFromScan() {
   const a=window._lastScan;
   const d=await apiFetch('/app/api/paper/open',{method:'POST',body:JSON.stringify({coin:a.coin,direction:a.direction,entry:a.entryPrice,tp2:a.tp2,sl:a.sl,leverage:a.leverage||10})});
   if(d.ok)showToast('✅ Paper trade opened! View in Paper tab.');else showToast('❌ '+(d.error||'Failed'),'err');
+}
+
+// ── Place Smart Limit Order at best Fib zone ────────────────────────────
+async function placeLimitOrder(zone) {
+  if(!window._lastScan){showToast('❌ No scan data','err');return;}
+  const a   = window._lastScan;
+  const lev = a.leverage || 10;
+
+  // Show confirmation modal
+  const confirmed = await showLimitConfirmModal({
+    coin:      a.coin,
+    direction: a.direction,
+    zone,
+    leverage:  lev,
+  });
+  if (!confirmed) return;
+
+  const payload = {
+    coin:        a.coin,
+    direction:   a.direction,
+    limitPrice:  zone.price,
+    tp1:         zone.tp1,
+    tp2:         zone.tp2,
+    tp3:         zone.tp3,
+    sl:          zone.newSL,
+    leverage:    lev,
+    zoneLabel:   zone.label,
+    zoneStrength:zone.strength,
+  };
+
+  const btn = document.getElementById('limit-confirm-btn');
+  if(btn){btn.disabled=true;btn.textContent='Placing...';}
+  const d = await apiFetch('/app/api/paper/open-limit', {method:'POST', body:JSON.stringify(payload)});
+  closeLimitModal();
+
+  if(d.ok){
+    showToast('📌 Limit order placed! Watching for zone hit — WhatsApp alert when triggered.');
+  } else {
+    showToast('❌ '+(d.error||'Failed'),'err');
+  }
+}
+
+// ── Limit Order Confirmation Modal ─────────────────────────────────────
+function showLimitConfirmModal({coin, direction, zone, leverage}) {
+  return new Promise(resolve => {
+    // Remove existing
+    const old = document.getElementById('limit-modal-overlay');
+    if(old) old.remove();
+
+    const isL  = direction === 'LONG';
+    const rrrN = parseFloat(zone.rrr||0);
+    const rrrColor = rrrN>=2?'#00e676':rrrN>=1.5?'#ffd740':'#ff5252';
+
+    const overlay = document.createElement('div');
+    overlay.id = 'limit-modal-overlay';
+    overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+    overlay.innerHTML=`
+      <div style="background:#131a23;border:1px solid rgba(0,200,255,.25);border-radius:14px;padding:22px 20px;max-width:360px;width:100%">
+        <div style="font-size:.72rem;font-weight:700;color:#00b8d4;text-transform:uppercase;letter-spacing:.08em;margin-bottom:14px">
+          📌 Confirm Limit Order
+        </div>
+
+        <div style="background:rgba(0,0,0,.3);border-radius:8px;padding:12px 14px;margin-bottom:14px">
+          <div style="display:flex;justify-content:space-between;margin-bottom:8px;align-items:center">
+            <strong style="font-size:1rem">${coin}</strong>
+            <span style="background:${isL?'rgba(0,230,118,.15)':'rgba(255,82,82,.15)'};color:${isL?'#00e676':'#ff5252'};padding:3px 10px;border-radius:5px;font-size:.76rem;font-weight:700">
+              ${isL?'▲ LONG':'▼ SHORT'}
+            </span>
+          </div>
+          <div style="font-size:.73rem;color:#90a4ae;margin-bottom:10px">${zone.strength==='STRONG'?'💪 Strong':'📌 Medium'} zone — ${zone.label}</div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 14px;font-size:.75rem">
+            <div style="color:#90a4ae">Limit Entry</div>
+            <div style="font-family:monospace;color:#e0f7fa;font-weight:700">$${zone.price}</div>
+            <div style="color:#90a4ae">Stop Loss</div>
+            <div style="font-family:monospace;color:#ff5252">$${zone.newSL}</div>
+            ${zone.tp1?`<div style="color:#90a4ae">TP1</div><div style="font-family:monospace;color:#00e676">$${zone.tp1}</div>`:''}
+            <div style="color:#90a4ae">TP2</div>
+            <div style="font-family:monospace;color:#00e676;font-weight:700">$${zone.tp2||'—'}</div>
+            ${zone.tp3?`<div style="color:#90a4ae">TP3 🚀</div><div style="font-family:monospace;color:#00e676">$${zone.tp3}</div>`:''}
+            <div style="color:#90a4ae">RRR</div>
+            <div style="font-family:monospace;color:${rrrColor};font-weight:700">${zone.rrr||'—'}:1</div>
+            <div style="color:#90a4ae">Leverage</div>
+            <div style="font-family:monospace;color:#ffd740">${leverage}x</div>
+          </div>
+        </div>
+
+        <div style="background:rgba(255,215,64,.07);border:1px solid rgba(255,215,64,.2);border-radius:7px;padding:9px 12px;font-size:.72rem;color:#b0bec5;margin-bottom:16px;line-height:1.6">
+          ⏰ Watcher checks every <strong style="color:#ffd740">3 minutes</strong>.<br>
+          📲 You'll get a <strong style="color:#ffd740">WhatsApp alert</strong> when price hits this zone.<br>
+          ✏️ You can <strong>edit or cancel</strong> this order from the Paper tab.
+        </div>
+
+        <div style="display:flex;gap:10px">
+          <button onclick="document.getElementById('limit-modal-overlay').remove();window._limitResolve&&window._limitResolve(false)"
+            style="flex:1;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,.15);background:transparent;color:#90a4ae;cursor:pointer;font-size:.82rem">
+            Cancel
+          </button>
+          <button id="limit-confirm-btn"
+            onclick="window._limitResolve&&window._limitResolve(true)"
+            style="flex:2;padding:10px;border-radius:8px;border:none;background:linear-gradient(135deg,#00b8d4,#0091ea);color:#fff;font-weight:700;cursor:pointer;font-size:.84rem">
+            📌 Place Limit Order
+          </button>
+        </div>
+      </div>`;
+
+    window._limitResolve = resolve;
+    document.body.appendChild(overlay);
+    // Close on outside click
+    overlay.addEventListener('click', e => { if(e.target===overlay){overlay.remove();resolve(false);} });
+  });
+}
+
+function closeLimitModal() {
+  const m = document.getElementById('limit-modal-overlay');
+  if(m) m.remove();
+  delete window._limitResolve;
 }
 
 async function loadMarketScan() {

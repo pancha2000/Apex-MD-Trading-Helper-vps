@@ -958,6 +958,20 @@ app.post('/app/api/paper/update-limit/:tradeId', saasAuth.requireUserAuth, async
 });
 
 // ── Background Zone Watcher — every 3 min (Oracle free tier safe) ──────
+// ════════════════════════════════════════════════════════════════════════
+//  SMART ZONE WATCHER v2 — Oracle Cloud friendly (3min interval)
+//
+//  Edge cases handled:
+//  1. FAKEOUT PROTECTION   — requires 2 consecutive checks in zone before triggering
+//  2. APPROACHING WARNING  — WA alert when price < 1.5% from zone
+//  3. STALE ORDER ALERT    — if price moves >6% AWAY from zone (wrong direction)
+//  4. ZONE BLOWN THROUGH   — price shot past zone toward TP without touching (re-entry miss)
+//  5. ENTRY MISS           — small correction but not enough → zone still valid, wait
+// ════════════════════════════════════════════════════════════════════════
+
+// In-memory fakeout counter (resets on restart — safe, just slightly more patient after restart)
+const _triggerCount = {}; // tradeId → consecutive hit count
+
 let _watcherRunning = false;
 async function runLimitOrderWatcher() {
     if (_watcherRunning) return;
@@ -965,7 +979,8 @@ async function runLimitOrderWatcher() {
     try {
         const pending = await db.Trade.find({status:'pending',orderType:'LIMIT',isPaper:true}).lean();
         if (!pending.length) return;
-        const coins   = [...new Set(pending.map(t=>t.coin))];
+
+        const coins    = [...new Set(pending.map(t=>t.coin))];
         const priceMap = {};
         await Promise.all(coins.map(async coin => {
             try {
@@ -973,58 +988,151 @@ async function runLimitOrderWatcher() {
                 priceMap[coin] = parseFloat(r.data.price);
             } catch(_) {}
         }));
+
         for (const trade of pending) {
             const curP = priceMap[trade.coin]; if (!curP) continue;
             const limP = trade.limitPrice || trade.entry;
             const isL  = trade.direction === 'LONG';
-            const dist = Math.abs(curP-limP)/limP*100;
-            const hit  = isL ? curP <= limP*1.005 : curP >= limP*0.995;
+            const tp2  = trade.tp2 || trade.tp;
+            const id   = trade._id.toString();
 
-            if (!hit) {
-                // Approaching warning (1.5% away, once per 30min)
-                if (dist < 1.5) {
-                    const sinceWarn = trade.lastWatchAt ? Date.now()-new Date(trade.lastWatchAt).getTime() : Infinity;
-                    if (sinceWarn > 30*60*1000) {
-                        await db.Trade.findByIdAndUpdate(trade._id,{lastWatchAt:new Date()});
-                        const conn = global._botConn;
-                        if (conn && trade.userJid) {
-                            conn.sendMessage(trade.userJid,{text:
-                                `⚠️ *Limit Order Approaching!*\n\n`+
-                                `📌 *${trade.coin.replace('USDT','')}* ${trade.direction}\n`+
-                                `🎯 Zone: *$${limP}* (${trade.zoneLabel||'Fib Zone'})\n`+
-                                `💰 Current: *$${curP}* — *${dist.toFixed(2)}% away*\n\n`+
-                                `Price approaching your limit zone. Get ready!`
-                            }).catch(()=>{});
-                        }
+            // Distance from limit zone (%)
+            const distFromZone = Math.abs(curP - limP) / limP * 100;
+
+            // ── 1. Check if price is AT zone (within 0.5% tolerance) ────────
+            const inZone = isL ? curP <= limP * 1.005 : curP >= limP * 0.995;
+
+            // ── 2. FAKEOUT PROTECTION: count consecutive hits ────────────────
+            if (inZone) {
+                _triggerCount[id] = (_triggerCount[id] || 0) + 1;
+            } else {
+                // Price left zone — reset counter (fakeout, didn't hold)
+                if (_triggerCount[id] > 0 && _triggerCount[id] < 2) {
+                    const conn = global._botConn;
+                    if (conn && trade.userJid) {
+                        conn.sendMessage(trade.userJid, {text:
+                            `⚡ *Fakeout Detected — Held!*\n\n` +
+                            `*${trade.coin.replace('USDT','')}* touched $${limP} briefly but left zone.\n` +
+                            `Limit order NOT triggered. Waiting for proper candle close in zone.\n\n` +
+                            `💡 This is normal — fakeout protection saved you from a bad fill.`
+                        }).catch(()=>{});
+                    }
+                }
+                _triggerCount[id] = 0;
+            }
+
+            if (inZone && _triggerCount[id] >= 2) {
+                // ✅ CONFIRMED TRIGGER — 2 consecutive checks in zone = real entry
+                delete _triggerCount[id];
+                await db.Trade.findByIdAndUpdate(trade._id, {
+                    status: 'active', fillPrice: curP, entry: curP, lastWatchAt: new Date()
+                });
+                const rr = tp2 && trade.sl ? (Math.abs(tp2-curP)/Math.abs(curP-trade.sl)).toFixed(2) : '—';
+                const conn = global._botConn;
+                if (conn && trade.userJid) {
+                    conn.sendMessage(trade.userJid, {text:
+                        `✅ *Limit Order TRIGGERED!* (Confirmed)\n\n` +
+                        `🪙 *${trade.coin.replace('USDT','')}* ${isL?'🟢 LONG':'🔴 SHORT'}\n` +
+                        `📍 Zone: *${trade.zoneLabel||'Fib Zone'}* ${trade.zoneStrength==='STRONG'?'💪 STRONG':'📌 MEDIUM'}\n\n` +
+                        `💵 Fill Price: *$${curP}*\n` +
+                        `🎯 TP1: $${trade.tp1||'—'} | TP2: $${tp2||'—'} | TP3: $${trade.tp3||'—'}\n` +
+                        `🛡️ SL: $${trade.sl} | ⚖️ RRR: ${rr}:1 | 💡 ${trade.leverage}x\n\n` +
+                        `📊 Paper trade now ACTIVE — track in dashboard!`
+                    }).catch(()=>{});
+                }
+                console.log(`[LimitWatcher] ✅ CONFIRMED TRIGGER ${trade.coin} ${trade.direction} @ $${curP}`);
+                continue;
+            }
+
+            if (inZone) {
+                // First check in zone — log and wait for confirmation next cycle
+                console.log(`[LimitWatcher] 🕐 ${trade.coin} in zone (check ${_triggerCount[id]}/2) @ $${curP}`);
+                continue;
+            }
+
+            // ── 3. APPROACHING WARNING (< 1.5% away, alert once per 30min) ──
+            if (distFromZone < 1.5) {
+                const sinceWarn = trade.lastWatchAt ? Date.now()-new Date(trade.lastWatchAt).getTime() : Infinity;
+                if (sinceWarn > 30*60*1000) {
+                    await db.Trade.findByIdAndUpdate(trade._id, {lastWatchAt: new Date()});
+                    const conn = global._botConn;
+                    if (conn && trade.userJid) {
+                        conn.sendMessage(trade.userJid, {text:
+                            `📍 *Limit Order Approaching!*\n\n` +
+                            `*${trade.coin.replace('USDT','')}* ${trade.direction}\n` +
+                            `🎯 Zone: $${limP} (${trade.zoneLabel||''})\n` +
+                            `💰 Current: $${curP} — *${distFromZone.toFixed(2)}% away*\n\n` +
+                            `Price getting close! Ready to enter? Check dashboard.`
+                        }).catch(()=>{});
                     }
                 }
                 continue;
             }
 
-            // TRIGGERED — activate trade
-            await db.Trade.findByIdAndUpdate(trade._id,{status:'active',fillPrice:curP,entry:curP,lastWatchAt:new Date()});
-            const conn = global._botConn;
-            if (conn && trade.userJid) {
-                const tp2 = trade.tp2||trade.tp;
-                const rr  = Math.abs(tp2-curP)/Math.abs(curP-trade.sl);
-                conn.sendMessage(trade.userJid,{text:
-                    `✅ *Limit Order TRIGGERED!*\n\n`+
-                    `🪙 *${trade.coin.replace('USDT','')}* ${isL?'🟢 LONG':'🔴 SHORT'}\n`+
-                    `📍 Zone: *${trade.zoneLabel||'Fib Zone'}* ${trade.zoneStrength==='STRONG'?'💪':''}\n\n`+
-                    `💵 Fill: *$${curP}*\n`+
-                    `🎯 TP1: $${trade.tp1||'—'} | TP2: $${tp2} | TP3: $${trade.tp3||'—'}\n`+
-                    `🛡️ SL: $${trade.sl} | ⚖️ RRR: ${rr.toFixed(2)}:1 | 💡 ${trade.leverage}x\n\n`+
-                    `Paper trade ACTIVE — track it in your dashboard!`
-                }).catch(()=>{});
+            // ── 4. STALE ORDER — price moved > 6% AWAY from zone ────────────
+            const movingAway = isL
+                ? curP > limP * 1.06   // LONG: price way above zone (no pullback)
+                : curP < limP * 0.94;  // SHORT: price way below zone (no bounce)
+
+            if (movingAway) {
+                const sinceCreate = trade.openTime ? Date.now()-new Date(trade.openTime).getTime() : 0;
+                const sinceWarn   = trade.lastWatchAt ? Date.now()-new Date(trade.lastWatchAt).getTime() : Infinity;
+                // Only warn once per 2h and if order is older than 30min
+                if (sinceCreate > 30*60*1000 && sinceWarn > 2*60*60*1000) {
+                    await db.Trade.findByIdAndUpdate(trade._id, {lastWatchAt: new Date()});
+                    const conn = global._botConn;
+                    if (conn && trade.userJid) {
+                        conn.sendMessage(trade.userJid, {text:
+                            `⚠️ *Limit Order May Be Stale*\n\n` +
+                            `*${trade.coin.replace('USDT','')}* ${trade.direction}\n` +
+                            `🎯 Your zone: $${limP} | Current: $${curP}\n` +
+                            `📏 Distance: *${distFromZone.toFixed(1)}% away* from zone\n\n` +
+                            `Price moved far from your limit zone.\n` +
+                            `*Options:*\n` +
+                            `• Wait — price may still pull back\n` +
+                            `• ✏️ Update entry in Paper tab\n` +
+                            `• ✕ Cancel if setup is no longer valid\n\n` +
+                            `Check dashboard → Paper tab to manage.`
+                        }).catch(()=>{});
+                    }
+                }
+                continue;
             }
-            console.log(`[LimitWatcher] ✅ TRIGGERED ${trade.coin} ${trade.direction} @ $${curP}`);
+
+            // ── 5. ZONE BLOWN THROUGH — price shot past zone toward TP ──────
+            // i.e. entry zone was supposed to be a pullback, but price went straight to TP
+            // For LONG: zone was below current, but now price is between zone and TP2 → bypassed
+            const blownThrough = tp2 && (
+                isL  ? (curP > limP * 1.01 && curP < tp2) // LONG: above zone, below TP
+                     : (curP < limP * 0.99 && curP > tp2) // SHORT: below zone, above TP
+            );
+
+            if (blownThrough) {
+                const sinceWarn = trade.lastWatchAt ? Date.now()-new Date(trade.lastWatchAt).getTime() : Infinity;
+                if (sinceWarn > 4*60*60*1000) { // warn once per 4h
+                    await db.Trade.findByIdAndUpdate(trade._id, {lastWatchAt: new Date()});
+                    const conn = global._botConn;
+                    if (conn && trade.userJid) {
+                        conn.sendMessage(trade.userJid, {text:
+                            `🔄 *Zone Bypassed Again — Re-entry Needed*\n\n` +
+                            `*${trade.coin.replace('USDT','')}* ${trade.direction}\n` +
+                            `Your limit zone $${limP} was skipped — price went straight toward TP.\n\n` +
+                            `💡 *What to do:*\n` +
+                            `• Run a fresh analysis in Scanner\n` +
+                            `• A new limit zone will be suggested\n` +
+                            `• Cancel this order and place a new one\n\n` +
+                            `Current price: $${curP} (between zone and TP)`
+                        }).catch(()=>{});
+                    }
+                }
+            }
         }
-    } catch(e) { console.error('[LimitWatcher]',e.message); }
+    } catch(e) { console.error('[LimitWatcher]', e.message); }
     finally { _watcherRunning = false; }
 }
 setInterval(runLimitOrderWatcher, 3*60*1000);
 setTimeout(runLimitOrderWatcher, 15000);
-console.log('[LimitWatcher] ✅ Zone watcher started (3min interval)');
+console.log('[LimitWatcher] ✅ Smart Zone Watcher v2 started (fakeout protection + stale detection)');
 
 
 }; // end registerApp

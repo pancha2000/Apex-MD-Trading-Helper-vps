@@ -2,7 +2,7 @@
 /**
  * APEX-MD · render.js
  * Reads an HTML view file and injects window.__DATA__ as JSON.
- * Usage: res.send(renderView('admin/dashboard', { trades, waConnected, ... }))
+ * Supports server-side includes: <!--INCLUDE:app/analysis-detail-->
  */
 
 const fs   = require('fs');
@@ -16,18 +16,21 @@ function renderView(viewPath, data = {}) {
     try {
         html = fs.readFileSync(fullPath, 'utf8');
     } catch (e) {
-        return `<!DOCTYPE html><html><body><pre style="color:red;padding:40px">
-View not found: ${viewPath}.html\n${e.message}
-        </pre></body></html>`;
+        return `<!DOCTYPE html><html><body><pre style="color:red;padding:40px">\nView not found: ${viewPath}.html\n${e.message}\n        </pre></body></html>`;
     }
-    // Safely serialize — escape </script> to prevent injection
-    const json = JSON.stringify(data).replace(/<\/script>/gi, '<\\/script>');
+
+    // Server-side includes: <!--INCLUDE:app/analysis-detail-->
+    html = html.replace(/<!--INCLUDE:([^-]+)-->/g, (_, incPath) => {
+        try {
+            return fs.readFileSync(path.join(VIEWS_DIR, incPath.trim() + '.html'), 'utf8');
+        } catch (e) {
+            return `<!-- Include failed: ${incPath} -->`;
+        }
+    });
+
+    const json   = JSON.stringify(data).replace(/<\/script>/gi, '<\\/script>');
     const inject = `<script>window.__DATA__=${json};</script>`;
-    // Inject just before </head>
-    if (html.includes('</head>')) {
-        return html.replace('</head>', inject + '</head>');
-    }
-    // Fallback: inject at start of body
+    if (html.includes('</head>')) return html.replace('</head>', inject + '</head>');
     return html.replace('<body>', '<body>' + inject);
 }
 

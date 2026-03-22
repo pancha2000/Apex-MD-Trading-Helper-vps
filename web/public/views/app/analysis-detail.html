@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Analysis Detail · Apex-MD</title>
+<link rel="stylesheet" href="/css/main.css">
+<style>
+  /* ── Drawer Overlay ─────────────────────────────────── */
+  #detail-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.65);
+    z-index: 8000;
+    backdrop-filter: blur(2px);
+  }
+  #detail-overlay.open { display: block; }
+
+  /* ── Drawer Panel ───────────────────────────────────── */
+  #detail-drawer {
+    position: fixed;
+    top: 0; right: 0; bottom: 0;
+    width: min(480px, 100vw);
+    background: var(--bg1, #0d1420);
+    border-left: 1px solid rgba(255,255,255,.08);
+    z-index: 8001;
+    display: flex;
+    flex-direction: column;
+    transform: translateX(100%);
+    transition: transform .3s cubic-bezier(.4,0,.2,1);
+    overflow: hidden;
+  }
+  #detail-drawer.open { transform: translateX(0); }
+
+  /* ── Drawer Header ──────────────────────────────────── */
+  .drawer-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 18px;
+    border-bottom: 1px solid rgba(255,255,255,.07);
+    background: var(--bg2, #131d2e);
+    flex-shrink: 0;
+  }
+  .drawer-coin {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: var(--font-head, sans-serif);
+    font-size: 1.1rem;
+    font-weight: 800;
+    color: #fff;
+  }
+  .drawer-close {
+    background: rgba(255,255,255,.07);
+    border: none;
+    color: var(--text2, #90a4ae);
+    cursor: pointer;
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: .85rem;
+    transition: background .15s;
+  }
+  .drawer-close:hover { background: rgba(255,255,255,.13); }
+
+  /* ── Drawer Body Scroll ─────────────────────────────── */
+  .drawer-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    -webkit-overflow-scrolling: touch;
+  }
+  .drawer-body::-webkit-scrollbar { width: 4px; }
+  .drawer-body::-webkit-scrollbar-track { background: transparent; }
+  .drawer-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,.12); border-radius: 2px; }
+
+  /* ── Section styles ─────────────────────────────────── */
+  .d-sec {
+    margin-bottom: 16px;
+    background: rgba(255,255,255,.03);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .d-sec-head {
+    font-size: .65rem;
+    font-weight: 700;
+    color: var(--text2, #90a4ae);
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    padding: 10px 14px 8px;
+    background: rgba(255,255,255,.02);
+    border-bottom: 1px solid rgba(255,255,255,.05);
+  }
+  .d-sec-body { padding: 4px 14px 10px; }
+  .d-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 5px 0;
+    font-size: .79rem;
+    border-bottom: 1px solid rgba(255,255,255,.04);
+  }
+  .d-row:last-child { border-bottom: none; }
+  .d-row-label { color: var(--text2, #90a4ae); }
+  .d-row-val { font-family: var(--font-mono, monospace); }
+
+  /* ── Score bar ──────────────────────────────────────── */
+  .score-bar-wrap {
+    background: rgba(255,255,255,.07);
+    border-radius: 99px;
+    height: 5px;
+    overflow: hidden;
+    margin-top: 4px;
+  }
+  .score-bar-fill {
+    height: 100%;
+    border-radius: 99px;
+    transition: width .6s;
+  }
+
+  /* ── Fib Zone item ──────────────────────────────────── */
+  .fib-zone-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: .75rem;
+    padding: 5px 0;
+    border-bottom: 1px solid rgba(255,255,255,.04);
+  }
+  .fib-zone-row:last-child { border-bottom: none; }
+
+  @media (max-width: 480px) {
+    #detail-drawer { width: 100vw; border-left: none; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ── Backdrop ─────────────────────────────────────── -->
+<div id="detail-overlay" onclick="closeDrawer()"></div>
+
+<!-- ── Drawer ───────────────────────────────────────── -->
+<div id="detail-drawer">
+
+  <!-- Header -->
+  <div class="drawer-head">
+    <div class="drawer-coin" id="drawer-coin-header">
+      <span id="dh-coin">—</span>
+      <span id="dh-dir-pill" class="pill">—</span>
+      <span id="dh-score" style="font-size:.85rem;opacity:.7"></span>
+    </div>
+    <button class="drawer-close" onclick="closeDrawer()">✕ Close</button>
+  </div>
+
+  <!-- Score bar -->
+  <div style="padding:8px 16px 0;background:var(--bg2,#131d2e);border-bottom:1px solid rgba(255,255,255,.07);flex-shrink:0">
+    <div style="font-size:.68rem;color:var(--text2);margin-bottom:3px" id="dh-trend"></div>
+    <div class="score-bar-wrap"><div class="score-bar-fill" id="dh-score-bar"></div></div>
+    <div style="font-size:.67rem;color:var(--text2);margin:4px 0 6px" id="dh-conf"></div>
+  </div>
+
+  <!-- Scrollable body -->
+  <div class="drawer-body" id="drawer-body-content">
+    <div style="color:var(--text2);font-size:.85rem;padding:40px;text-align:center">
+      Run an analysis first, then tap More Info.
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ── Public API ────────────────────────────────────────────────────────
+// Called from scanner.html: openAnalysisDrawer(analysisData)
+window.openAnalysisDrawer = function(a) {
+  if (!a) return;
+  _renderDrawer(a);
+  document.getElementById('detail-overlay').classList.add('open');
+  document.getElementById('detail-drawer').classList.add('open');
+  document.body.style.overflow = 'hidden';
+};
+
+window.closeDrawer = function() {
+  document.getElementById('detail-overlay').classList.remove('open');
+  document.getElementById('detail-drawer').classList.remove('open');
+  document.body.style.overflow = '';
+};
+
+// Close on Escape
+document.addEventListener('keydown', e => { if(e.key==='Escape') closeDrawer(); });
+
+// ── Helpers ───────────────────────────────────────────────────────────
+function fmtP(n) {
+  if(!n||isNaN(n)) return '—';
+  const p=parseFloat(n);
+  if(p>=1000) return '$'+p.toFixed(2);
+  if(p>=1)    return '$'+p.toFixed(4);
+  return '$'+p.toFixed(6);
+}
+function dRow(label, val, col) {
+  return `<div class="d-row">
+    <span class="d-row-label">${label}</span>
+    <span class="d-row-val"${col?` style="color:${col}"`:''}>${val||'—'}</span>
+  </div>`;
+}
+function dSec(title, content) {
+  return `<div class="d-sec">
+    <div class="d-sec-head">${title}</div>
+    <div class="d-sec-body">${content}</div>
+  </div>`;
+}
+
+// ── Main Render ───────────────────────────────────────────────────────
+function _renderDrawer(a) {
+  const isL   = a.direction === 'LONG';
+  const sc    = a.score>=70?'var(--green)':a.score>=45?'var(--yellow)':'var(--red)';
+  const sent  = a.sentiment||{};
+  const conf  = a.confirmation||{};
+  const fib   = a.mtfFibEntry||null;
+  const ww    = a.whaleWalls||{};
+  const liq   = a.liquidation||{};
+
+  // Header
+  document.getElementById('dh-coin').textContent = a.coin || '—';
+  const dirPill = document.getElementById('dh-dir-pill');
+  dirPill.textContent = (isL?'▲ LONG':'▼ SHORT');
+  dirPill.className   = 'pill '+(isL?'pill-long':'pill-short');
+  document.getElementById('dh-score').textContent = 'Score: '+a.score;
+  document.getElementById('dh-trend').textContent =
+    `4H: ${a.trend4H||'—'} · 1H: ${a.trend1H||'—'} · Current: $${parseFloat(a.currentPrice||0).toFixed(4)}`;
+  const bar = document.getElementById('dh-score-bar');
+  bar.style.width = Math.min(a.score,100)+'%';
+  bar.style.background = sc;
+  document.getElementById('dh-conf').textContent =
+    `Confirmation: ${conf.strength||'—'} · ${conf.verdict||''}`;
+
+  // ── Build sections ────────────────────────────────────────────────
+  let html = '';
+
+  // 1. Trade Setup Summary
+  html += dSec('📋 Trade Setup',
+    dRow('Entry Price', fmtP(a.entryPrice), 'var(--accent)') +
+    dRow('Stop Loss',   fmtP(a.sl), 'var(--red)') +
+    dRow('TP 1', fmtP(a.tp1)+(a.tp1Label?' ('+a.tp1Label+')':''), 'var(--green)') +
+    dRow('TP 2', fmtP(a.tp2)+(a.tp2Label?' ('+a.tp2Label+')':''), 'var(--green)') +
+    dRow('TP 3 🚀', fmtP(a.tp3), 'var(--green)') +
+    dRow('DCA 1', fmtP(a.dca1), 'var(--yellow)') +
+    dRow('DCA 2', fmtP(a.dca2), 'var(--yellow)') +
+    dRow('Leverage', (a.leverage||1)+'x', 'var(--yellow)') +
+    dRow('RRR', (a.rrr||'—')+':1',
+      parseFloat(a.rrr||0)>=2?'var(--green)':parseFloat(a.rrr||0)>=1.5?'var(--yellow)':'var(--red)') +
+    dRow('Order Type', a.orderType||'MARKET') +
+    dRow('SL Type', a.slLabel||'ATR')
+  );
+
+  // 2. MTF Fibonacci
+  if (fib) {
+    let fibHtml = '';
+    if (fib.zones?.length) {
+      fib.zones.slice(0,3).forEach(z => {
+        const dist = (Math.abs(z.price - parseFloat(a.currentPrice||0)) / parseFloat(a.currentPrice||1) * 100).toFixed(1);
+        fibHtml += `<div class="fib-zone-row">
+          <span style="color:${z.strength==='STRONG'?'var(--accent)':'var(--text2)'}">${z.strength==='STRONG'?'💪':'📌'} ${z.label}</span>
+          <span style="font-family:var(--font-mono)">$${parseFloat(z.price).toFixed(4)} <span style="color:var(--text2);font-size:.68rem">(${dist}% away)</span></span>
+        </div>`;
+      });
+    }
+    if (fib.tps?.length) {
+      fibHtml += `<div style="font-size:.67rem;color:var(--text2);text-transform:uppercase;margin:8px 0 4px;letter-spacing:.08em">Fib Extension TPs</div>`;
+      fib.tps.slice(0,3).forEach(t => {
+        fibHtml += `<div class="fib-zone-row">
+          <span style="color:var(--text2)">${t.label}</span>
+          <span style="font-family:var(--font-mono);color:var(--green)">$${parseFloat(t.price).toFixed(4)}</span>
+        </div>`;
+      });
+    }
+    if (fib.zoneBypassed) {
+      fibHtml += `<div style="margin-top:8px;padding:8px 10px;border-radius:7px;background:rgba(255,171,0,.07);border:1px solid rgba(255,171,0,.2);font-size:.73rem;color:var(--yellow)">
+        ⚠️ Zone bypassed — see Limit Zone suggestion on main page
+      </div>`;
+    }
+    if (fib.atZone) {
+      fibHtml += `<div style="margin-top:8px;padding:8px 10px;border-radius:7px;background:rgba(0,230,118,.07);border:1px solid rgba(0,230,118,.2);font-size:.73rem;color:var(--green)">
+        ✅ Price is AT a Fib zone — good entry window
+      </div>`;
+    }
+    html += dSec('📐 MTF Fibonacci Zones', fibHtml || '<div style="color:var(--text2);font-size:.75rem">No Fib data</div>');
+  }
+
+  // 3. BTC Context + Hidden Divergence
+  if (a.btcContext && a.btcContext.trend !== 'UNKNOWN') {
+    const btcCol = a.btcContext.trend==='BULL'?'var(--green)':a.btcContext.trend==='BEAR'?'var(--red)':'var(--yellow)';
+    html += dSec('₿ BTC Context',
+      `<div style="padding:6px 0;font-size:.79rem">
+        <strong style="color:${btcCol}">${a.btcContext.display}</strong>
+        <div style="font-size:.72rem;color:var(--text2);margin-top:3px">
+          Score: ${a.btcContext.score||0} · 4H ${a.btcContext.bull4H?'Bullish':'Bearish'} · 1H ${a.btcContext.bull1H?'Bullish':'Bearish'}
+        </div>
+      </div>`
+    );
+  }
+  if (a.hiddenDivergence && (a.hiddenDivergence.bull || a.hiddenDivergence.bear)) {
+    html += dSec('🔀 Hidden Divergence',
+      `<div style="padding:6px 0;font-size:.79rem;color:var(--green)">${a.hiddenDivergence.display}</div>`
+    );
+  }
+
+  // 4. Technical Indicators
+  const rsiVal = a.rsi ? parseFloat(a.rsi).toFixed(1) : '—';
+  const rsiCol = parseFloat(a.rsi||50)>70?'var(--red)':parseFloat(a.rsi||50)<30?'var(--green)':'';
+  html += dSec('📊 Technical Indicators',
+    dRow('RSI', rsiVal, rsiCol) +
+    dRow('MACD', a.macd||'—') +
+    dRow('Bollinger', typeof a.bb==='object'?'see below':a.bb||a.bbands?.signal||'—') +
+    dRow('ADX', a.adx||'—') +
+    dRow('StochRSI', a.stochRSI?.signal||'—') +
+    dRow('Supertrend', a.supertrend?.signal||'—',
+      a.supertrend?.isBull?'var(--green)':a.supertrend?.isBear?'var(--red)':'') +
+    dRow('EMA Ribbon', a.emaRibbon?.signal||'—',
+      a.emaRibbon?.isStrongBull?'var(--green)':a.emaRibbon?.isStrongBear?'var(--red)':'') +
+    dRow('ChoCH', a.choch||'—') +
+    dRow('Liq Sweep', a.liquiditySweep||'—') +
+    dRow('VWAP', a.vwap?fmtP(a.vwap):'—')
+  );
+
+  // 5. Advanced SMC Intelligence
+  html += dSec('🧠 Advanced SMC Intelligence',
+    dRow('Wyckoff Phase', a.wyckoff?.phase||'—',
+      a.wyckoff?.phase==='ACCUMULATION'||a.wyckoff?.phase==='SPRING'?'var(--green)':
+      a.wyckoff?.phase==='DISTRIBUTION'||a.wyckoff?.phase==='UPTHRUST'?'var(--red)':'') +
+    dRow('Breaker Block', a.breakers?.display||'None') +
+    dRow('EQH/EQL', a.equalHL?.display||'None') +
+    dRow('Ichimoku', a.ichimoku?.signal||'—',
+      a.ichimoku?.signal?.includes('Bull')?'var(--green)':a.ichimoku?.signal?.includes('Bear')?'var(--red)':'') +
+    dRow('CVD', a.cvd?.trend||'—',
+      a.cvd?.trend==='Rising'?'var(--green)':a.cvd?.trend==='Falling'?'var(--red)':'') +
+    dRow('Heikin Ashi', a.heikinAshi?.signal||'—',
+      a.heikinAshi?.isBull?'var(--green)':a.heikinAshi?.isBear?'var(--red)':'') +
+    dRow('Williams %R', a.williamsR?.value||'—') +
+    dRow('Pivot Signal', a.pivotSignal?.display||'—') +
+    dRow('Fib Confluence', a.fibConf?.hasConfluence?a.fibConf.count+'× at $'+a.fibConf.zone:'None',
+      a.fibConf?.hasConfluence?'var(--accent)':'') +
+    dRow('OTE Zone', a.fibLevels?.isAtOTE?'🎯 AT OTE':'Not at OTE',
+      a.fibLevels?.isAtOTE?'var(--green)':'') +
+    dRow('Dynamic S/R', a.dynamicSR?.nearSupport?'At Support 📊':a.dynamicSR?.nearResist?'At Resistance 📊':'Neutral')
+  );
+
+  // 6. Momentum & Volatility
+  html += dSec('⚡ Momentum & Volatility',
+    dRow('BB Squeeze', a.bbSqueeze?.isSqueezing?'⚡ SQUEEZING':a.bbSqueeze?.exploding?'💥 EXPLOSION':'Normal',
+      a.bbSqueeze?.exploding?'var(--accent)':a.bbSqueeze?.isSqueezing?'var(--yellow)':'') +
+    dRow('Vol Expansion', a.volExpansion?.expanding?'📈 Expanding':'Stable',
+      a.volExpansion?.expanding?'var(--green)':'') +
+    dRow('MM Trap', a.mmTrap?.display||'None',
+      a.mmTrap?.isTrap?'var(--red)':'') +
+    dRow('Momentum', a.momentumShift?.isBull?'BULL '+a.momentumShift.bullSignals+'/6':
+      a.momentumShift?.isBear?'BEAR '+a.momentumShift.bearSignals+'/6':'Neutral',
+      a.momentumShift?.isBull?'var(--green)':a.momentumShift?.isBear?'var(--red)':'') +
+    dRow('BOS', a.bos?.bullBOS?'🔺 Bullish BOS':a.bos?.bearBOS?'🔻 Bearish BOS':'None',
+      a.bos?.bullBOS?'var(--green)':a.bos?.bearBOS?'var(--red)':'') +
+    dRow('MFI', a.mfi?.value?a.mfi.value.toFixed(0)+' ('+a.mfi.signal+')':'—') +
+    dRow('CCI', a.cci?.value?a.cci.value.toFixed(0):'—') +
+    dRow('ROC', a.roc?.value?a.roc.value.toFixed(2)+'%':'—')
+  );
+
+  // 7. v7 PRO
+  html += dSec('🔮 v7 PRO Signals',
+    dRow('3TF Aligned', a.tf3Align?.aligned?(a.tf3Align.allBull?'🟢🟢🟢 All Bull':'🔴🔴🔴 All Bear'):'Partial',
+      a.tf3Align?.allBull?'var(--green)':a.tf3Align?.allBear?'var(--red)':'') +
+    dRow('Gann', a.gannAngles?.signal||'—') +
+    dRow('Renko', a.renko?.isBull?'🧱 Bull '+a.renko.streak+'x':a.renko?.isBear?'🧱 Bear '+a.renko.streak+'x':'Neutral',
+      a.renko?.isBull?'var(--green)':a.renko?.isBear?'var(--red)':'') +
+    dRow('Candle Pattern', a.advCandles?.pattern||'None',
+      a.advCandles?.isBullish?'var(--green)':a.advCandles?.isBearish?'var(--red)':'') +
+    dRow('Daily Trend', (a.dailyTrend||'—')+' '+(a.dailyAligned?'✅':'⚠️'),
+      a.dailyAligned?'var(--green)':'var(--yellow)')
+  );
+
+  // 8. Market Context
+  html += dSec('🌊 Market Context',
+    dRow('🐋 Buy Wall', ww.supportWall&&ww.supportWall!=='N/A'?
+      fmtP(ww.supportWall)+(ww.supportVol?' ('+ww.supportVol+')':''):'N/A') +
+    dRow('🔴 Sell Wall', ww.resistWall&&ww.resistWall!=='N/A'?
+      fmtP(ww.resistWall)+(ww.resistVol?' ('+ww.resistVol+')':''):'N/A') +
+    dRow('Liquidation', liq.sentiment||'N/A') +
+    dRow('Funding Rate', a.fundingRate!=null?
+      (parseFloat(a.fundingRate)>=0?'+':'')+parseFloat(a.fundingRate).toFixed(3)+'%':'N/A',
+      a.fundingRate!=null&&parseFloat(a.fundingRate)>0.1?'var(--red)':
+      a.fundingRate!=null&&parseFloat(a.fundingRate)<-0.1?'var(--green)':'') +
+    dRow('F&G Index', (sent.fngEmoji||'')+' '+(sent.fng||'N/A')+
+      ' ('+(parseInt(sent.fng||50)>=60?'Greed':parseInt(sent.fng||50)<=40?'Fear':'Neutral')+')') +
+    dRow('BTC Dominance', sent.btcDom?sent.btcDom+'%':'N/A') +
+    dRow('News Score', sent.newsSentimentScore!=null?
+      (sent.newsSentimentScore>0?'+':'')+sent.newsSentimentScore:'N/A',
+      sent.newsSentimentScore>0?'var(--green)':sent.newsSentimentScore<0?'var(--red)':'') +
+    dRow('Market Bias', sent.overall||'—')
+  );
+
+  // 9. Entry Confirmation
+  if (conf.totalScore != null) {
+    const cCol = conf.strength==='STRONG'?'var(--green)':conf.strength==='WEAK'?'var(--red)':'var(--yellow)';
+    html += dSec('🔬 Entry Confirmation (8-Factor)',
+      dRow('Total Score', (conf.totalScore>=0?'+':'')+conf.totalScore+' ('+conf.strength+')', cCol) +
+      dRow('Verdict', conf.verdict||'—') +
+      dRow('Detail', conf.detail||'—') +
+      dRow('Stablecoin Flow', conf.usdtDom||'N/A') +
+      dRow('Open Interest', conf.oiChange||'N/A') +
+      dRow('CVD Signal', conf.cvd||'N/A') +
+      dRow('BTC Correlation', conf.btcCorr||'N/A') +
+      dRow('Put/Call Ratio', conf.pcr||'N/A') +
+      dRow('Exchange Netflow', conf.netflow||'N/A')
+    );
+  }
+
+  // 10. Entry Quality
+  if (a.entryQuality) {
+    const eq = a.entryQuality;
+    const eqCol = eq.color==='green'?'var(--green)':eq.color==='red'?'var(--red)':'var(--yellow)';
+    html += dSec('🎯 Entry Quality Gate',
+      `<div style="padding:8px 0">
+        <div style="font-size:.82rem;font-weight:700;color:${eqCol};margin-bottom:4px">${eq.action} [${eq.grade}]</div>
+        <div style="font-size:.74rem;color:var(--text2);line-height:1.6">${eq.detail}</div>
+        ${eq.blockEntry?`<div style="margin-top:6px;font-size:.72rem;color:var(--red);font-weight:600">⛔ Do not enter at market now</div>`:''}
+      </div>`
+    );
+  }
+
+  document.getElementById('drawer-body-content').innerHTML = html;
+}
+</script>
+</body>
+</html>

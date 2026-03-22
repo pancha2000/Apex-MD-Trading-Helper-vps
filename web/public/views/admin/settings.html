@@ -9,10 +9,8 @@
 <body>
 <div id="nav-root"></div>
 <div class="wrap">
-
   <h1 class="page-title">⚙️ Bot Settings</h1>
 
-  <!-- ── Module Toggles + Core Trading ── -->
   <div class="g-2" style="margin-bottom:20px">
     <div class="panel">
       <div class="panel-head"><div class="panel-title">🧩 Module Toggles</div></div>
@@ -24,40 +22,93 @@
     </div>
   </div>
 
-  <!-- ── Notifications ── -->
+  <!-- ✅ NEW: Protection System Settings -->
+  <div class="panel" style="margin-bottom:20px">
+    <div class="panel-head">
+      <div class="panel-title">🛡️ Protection System</div>
+      <div id="prot-status-badge" style="font-size:.72rem;padding:2px 8px;border-radius:4px;background:rgba(0,230,118,.12);color:var(--green)">Loading...</div>
+    </div>
+    <div class="panel-body">
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;margin-bottom:16px">
+        <div>
+          <label class="field-label">Cooldown Hours (same coin)</label>
+          <input type="number" class="inp" id="prot-cooldown" min="0" max="48" step="0.5" style="width:100px">
+          <span style="font-size:.72rem;color:var(--text2)">0 = disabled</span>
+        </div>
+        <div>
+          <label class="field-label">Max Daily Loss Gate %</label>
+          <input type="number" class="inp" id="prot-daily-loss" min="0" max="50" step="1" style="width:100px">
+          <span style="font-size:.72rem;color:var(--text2)">0 = disabled</span>
+        </div>
+        <div>
+          <label class="field-label">Low Win Rate Alert %</label>
+          <input type="number" class="inp" id="prot-win-rate" min="10" max="70" step="5" style="width:100px">
+        </div>
+        <div>
+          <label class="field-label">Win Rate Lookback (trades)</label>
+          <input type="number" class="inp" id="prot-lookback" min="5" max="50" step="1" style="width:100px">
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+        <label style="display:flex;align-items:center;gap:8px;font-size:.85rem">
+          <input type="checkbox" id="prot-enabled">
+          <span>Protection System Enabled</span>
+        </label>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="saveProtection()">💾 Save Protection Settings</button>
+
+      <!-- Active cooldowns -->
+      <div id="prot-cooldowns" style="margin-top:16px;display:none">
+        <div style="font-size:.72rem;color:var(--text2);margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em">Active Cooldowns</div>
+        <div id="prot-cooldowns-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ✅ NEW: Backtest Settings -->
+  <div class="panel" style="margin-bottom:20px">
+    <div class="panel-head"><div class="panel-title">🧪 Backtest Defaults</div></div>
+    <div class="panel-body">
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end">
+        <div>
+          <label class="field-label">Taker Fee % (per side)</label>
+          <input type="number" class="inp" id="bt-fee" min="0" max="0.5" step="0.01" style="width:100px" placeholder="0.04">
+          <span style="font-size:.72rem;color:var(--text2)">Binance futures = 0.04%</span>
+        </div>
+        <div>
+          <label class="field-label">Slippage % (per side)</label>
+          <input type="number" class="inp" id="bt-slip" min="0" max="1" step="0.01" style="width:100px" placeholder="0.05">
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="saveBtSettings()">💾 Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Notifications -->
   <div class="panel">
     <div class="panel-head"><div class="panel-title">🔔 Notifications</div></div>
     <div class="panel-body">
       <div class="toggle-row">
-        <div class="toggle-info">
-          <h3>📊 Auto Daily P&amp;L Report</h3>
-          <p>Send P&L summary to owner every midnight UTC</p>
-        </div>
-        <label class="toggle">
-          <input type="checkbox" id="daily-toggle" onchange="toggleMod('DAILY_REPORT',this.checked)">
-          <span class="slider"></span>
-        </label>
+        <div class="toggle-info"><h3>📊 Auto Daily P&L Report</h3><p>Send P&L summary to owner every midnight UTC</p></div>
+        <label class="toggle"><input type="checkbox" id="daily-toggle" onchange="toggleMod('DAILY_REPORT',this.checked)"><span class="slider"></span></label>
       </div>
     </div>
   </div>
 
 </div>
-
 <script src="/js/admin.js"></script>
 <script>
 const D = window.__DATA__ || {};
 renderAdminNav('settings');
-
 const m = D.modules || {};
 const t = D.trading || {};
-
 document.getElementById('daily-toggle').checked = D.dailyReportEnabled !== false;
 
-// ── Modules ─────────────────────────────────────────────────
+// Modules
 const mods = [
-  { id:'AI_MODEL',        label:'🤖 AI Model',        desc:'Local Python LSTM prediction server',      val:m.AI_MODEL },
-  { id:'BYBIT',           label:'🐋 Bybit Layer',      desc:'Cross-exchange OB + volume validation',    val:m.BYBIT },
-  { id:'DYNAMIC_WEIGHTS', label:'🧠 Dynamic Weights',  desc:'ADX/ATR adaptive score multipliers',       val:m.DYNAMIC_WEIGHTS },
+  { id:'AI_MODEL',        label:'🤖 AI Model',        desc:'Local Python LSTM prediction server', val:m.AI_MODEL },
+  { id:'BYBIT',           label:'🐋 Bybit Layer',      desc:'Cross-exchange OB + volume validation', val:m.BYBIT },
+  { id:'DYNAMIC_WEIGHTS', label:'🧠 Dynamic Weights',  desc:'ADX/ATR adaptive score multipliers', val:m.DYNAMIC_WEIGHTS },
   { id:'SMC',             label:'🔮 SMC Scoring',      desc:'ChoCH, Sweep, OB, Wyckoff, BOS, Breakers', val:m.SMC },
 ];
 document.getElementById('modules-panel').innerHTML = mods.map(x => `
@@ -66,14 +117,14 @@ document.getElementById('modules-panel').innerHTML = mods.map(x => `
   <label class="toggle"><input type="checkbox" ${x.val?'checked':''} onchange="toggleMod('${x.id}',this.checked)"><span class="slider"></span></label>
 </div>`).join('');
 
-// ── Core Trading ─────────────────────────────────────────────
+// Core trading
 const tradRows = [
-  { key:'DEFAULT_RISK_PCT',      label:'💰 Risk per Trade',   val:t.DEFAULT_RISK_PCT??2,      min:0.1, max:10,  step:0.1, unit:'%' },
-  { key:'DEFAULT_LEVERAGE',      label:'⚡ Default Leverage',  val:t.DEFAULT_LEVERAGE??10,    min:1,   max:125, step:1,   unit:'x' },
-  { key:'MAX_OPEN_TRADES',       label:'📂 Max Open Trades',   val:t.MAX_OPEN_TRADES??5,      min:1,   max:20,  step:1 },
-  { key:'MIN_SCORE_THRESHOLD',   label:'📊 Min Signal Score',  val:t.MIN_SCORE_THRESHOLD??20, min:5,   max:80,  step:1,   unit:'/100' },
-  { key:'SIGNAL_COOLDOWN_HOURS', label:'⏱️ Cooldown',          val:t.SIGNAL_COOLDOWN_HOURS??4, min:0.5, max:48, step:0.5, unit:'hr' },
-  { key:'WS_WATCH_COUNT',        label:'🪙 Watched Coins',     val:t.WS_WATCH_COUNT??30,       min:5,   max:100,step:1 },
+  { key:'DEFAULT_RISK_PCT',      label:'💰 Risk per Trade', val:t.DEFAULT_RISK_PCT??2, min:0.1, max:10, step:0.1, unit:'%' },
+  { key:'DEFAULT_LEVERAGE',      label:'⚡ Default Leverage', val:t.DEFAULT_LEVERAGE??10, min:1, max:125, step:1, unit:'x' },
+  { key:'MAX_OPEN_TRADES',       label:'📂 Max Open Trades', val:t.MAX_OPEN_TRADES??5, min:1, max:20, step:1 },
+  { key:'MIN_SCORE_THRESHOLD',   label:'📊 Min Signal Score', val:t.MIN_SCORE_THRESHOLD??20, min:5, max:80, step:1, unit:'/100' },
+  { key:'SIGNAL_COOLDOWN_HOURS', label:'⏱️ Cooldown', val:t.SIGNAL_COOLDOWN_HOURS??4, min:0.5, max:48, step:0.5, unit:'hr' },
+  { key:'WS_WATCH_COUNT',        label:'🪙 Watched Coins', val:t.WS_WATCH_COUNT??30, min:5, max:100, step:1 },
 ];
 document.getElementById('trading-panel').innerHTML = tradRows.map(r => `
 <div class="param-row">
@@ -85,12 +136,71 @@ document.getElementById('trading-panel').innerHTML = tradRows.map(r => `
     onchange="setTradingParam('${r.key}',this.value)">
 </div>`).join('');
 
+// Load protection settings
+async function loadProtection() {
+  const d = await apiFetch('/admin/api/protection');
+  if (!d.ok) return;
+  const s = d.settings || {};
+  document.getElementById('prot-cooldown').value    = s.cooldownHours ?? 2;
+  document.getElementById('prot-daily-loss').value  = s.maxDailyLossPct ?? 10;
+  document.getElementById('prot-win-rate').value    = s.lowWinRateThreshold ?? 40;
+  document.getElementById('prot-lookback').value    = s.lowWinRateLookback ?? 10;
+  document.getElementById('prot-enabled').checked   = s.enabled !== false;
+  const badge = document.getElementById('prot-status-badge');
+  const gateActive = d.status?.gateActive;
+  badge.textContent  = gateActive ? '🛑 GATE ACTIVE' : s.enabled!==false ? '✅ Active' : '⚪ Disabled';
+  badge.style.background = gateActive ? 'rgba(255,51,85,.15)' : s.enabled!==false ? 'rgba(0,230,118,.12)' : 'rgba(255,255,255,.06)';
+  badge.style.color = gateActive ? 'var(--red)' : s.enabled!==false ? 'var(--green)' : 'var(--text2)';
+  // Show active cooldowns
+  const cooldowns = d.status?.cooldowns || [];
+  if (cooldowns.length) {
+    document.getElementById('prot-cooldowns').style.display = 'block';
+    document.getElementById('prot-cooldowns-list').innerHTML = cooldowns.map(c =>
+      `<div style="display:flex;justify-content:space-between;font-size:.78rem;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.04)">
+        <span style="color:var(--yellow)">${c.coin}</span><span style="color:var(--text2)">${c.remainingHours}h remaining</span>
+      </div>`).join('');
+  }
+}
+
+// Load backtest settings
+async function loadBtSettings() {
+  const d = await apiFetch('/admin/api/backtest-settings');
+  if (d.ok) {
+    document.getElementById('bt-fee').value  = d.feePct ?? 0.04;
+    document.getElementById('bt-slip').value = d.slippagePct ?? 0.05;
+  }
+}
+
+async function saveProtection() {
+  const body = {
+    protectionEnabled:       document.getElementById('prot-enabled').checked,
+    cooldownHours:           parseFloat(document.getElementById('prot-cooldown').value)||0,
+    maxDailyLossPct:         parseFloat(document.getElementById('prot-daily-loss').value)||0,
+    lowWinRateThreshold:     parseFloat(document.getElementById('prot-win-rate').value)||40,
+    lowWinRateLookback:      parseInt(document.getElementById('prot-lookback').value)||10,
+  };
+  const d = await apiFetch('/admin/api/protection', {method:'POST', body:JSON.stringify(body)});
+  showToast(d.ok ? '✅ Protection settings saved' : '❌ '+d.error, d.ok?'ok':'err');
+}
+
+async function saveBtSettings() {
+  const body = {
+    feePct:      parseFloat(document.getElementById('bt-fee').value)||0.04,
+    slippagePct: parseFloat(document.getElementById('bt-slip').value)||0.05,
+  };
+  const d = await apiFetch('/admin/api/backtest-settings', {method:'POST', body:JSON.stringify(body)});
+  showToast(d.ok ? '✅ Backtest settings saved' : '❌ '+d.error, d.ok?'ok':'err');
+}
+
 async function apiPost(url, body) {
-  const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+  const r = await fetch(url, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   return r.json();
 }
-async function toggleMod(id, val)        { const d=await apiPost('/admin/api/modules/'+id,{enabled:val}); showToast(d.ok?'✅ '+id+' → '+(val?'ON':'OFF'):'❌ '+d.error, d.ok?'ok':'err'); }
-async function setTradingParam(key, val) { const d=await apiPost('/admin/api/params/'+key,{value:parseFloat(val)}); showToast(d.ok?'✅ '+key+' = '+val:'❌ '+d.error, d.ok?'ok':'err'); }
+async function toggleMod(id, val) { const d=await apiPost('/admin/api/modules/'+id,{enabled:val}); showToast(d.ok?'✅ '+id+' → '+(val?'ON':'OFF'):'❌ '+d.error,d.ok?'ok':'err'); }
+async function setTradingParam(key, val) { const d=await apiPost('/admin/api/params/'+key,{value:parseFloat(val)}); showToast(d.ok?'✅ '+key+' = '+val:'❌ '+d.error,d.ok?'ok':'err'); }
+
+loadProtection();
+loadBtSettings();
 </script>
 </body>
 </html>

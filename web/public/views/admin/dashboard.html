@@ -15,6 +15,28 @@
   <!-- ── Stat Cards ── -->
   <div class="g-stats" id="stats-grid"></div>
 
+  <!-- ✅ NEW: Protection Status Widget -->
+  <div class="g-2" style="margin-bottom:20px" id="protection-row">
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-title">🛡️ Protection Status</div>
+        <div id="prot-gate-badge" style="font-size:.72rem;padding:2px 8px;border-radius:4px;background:rgba(0,230,118,.12);color:var(--green)">Loading...</div>
+      </div>
+      <div class="panel-body" id="prot-widget">
+        <div class="loading-center"><div class="spinner"></div></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-title">🏆 Top Pairs by Win Rate</div>
+        <button class="btn btn-ghost btn-sm" onclick="loadCoinStats()">↻</button>
+      </div>
+      <div class="panel-body" id="coinstat-widget">
+        <div class="loading-center"><div class="spinner"></div></div>
+      </div>
+    </div>
+  </div>
+
   <!-- ── Bot Controls + Scanner ── -->
   <div class="g-2" style="margin-bottom:20px">
 
@@ -342,6 +364,55 @@ setInterval(async () => {
     if (typeof d.waCommandsEnabled !== 'undefined') updateWaCmdUI(d.waCommandsEnabled);
   } catch(_) {}
 }, 10000);
+
+// ── Protection Status Widget ─────────────────────────────────
+async function loadProtectionStatus() {
+  try {
+    const d = await apiFetch('/admin/api/protection-status');
+    if (!d.ok) return;
+    const badge = document.getElementById('prot-gate-badge');
+    badge.textContent  = d.gateActive ? '🛑 GATE ACTIVE' : d.enabled!==false ? '✅ Active' : '⚪ Disabled';
+    badge.style.background = d.gateActive ? 'rgba(255,51,85,.15)' : 'rgba(0,230,118,.12)';
+    badge.style.color  = d.gateActive ? 'var(--red)' : 'var(--green)';
+    const dl = d.dailyLoss || {};
+    const cooldowns = d.cooldowns || [];
+    document.getElementById('prot-widget').innerHTML = `
+      <div class="stat-row"><span>Daily P&L</span><span style="color:${parseFloat(dl.totalPnlPct)>=0?'var(--green)':'var(--red)'};font-weight:600">${parseFloat(dl.totalPnlPct)>=0?'+':''}${dl.totalPnlPct||'0.00'}%</span></div>
+      <div class="stat-row"><span>Trades Today</span><span style="color:var(--text2)">${dl.tradesCount||0}</span></div>
+      <div class="stat-row"><span>Daily Loss Gate</span><span style="color:${dl.gateTriggered?'var(--red)':'var(--green)'}">${dl.gateTriggered?'🛑 TRIGGERED':'✅ OK'}</span></div>
+      <div class="stat-row"><span>Active Cooldowns</span><span style="color:var(--yellow)">${cooldowns.length}</span></div>
+      ${cooldowns.length?`<div style="margin-top:8px;font-size:.75rem;color:var(--text2)">${cooldowns.map(c=>`${c.coin}: ${c.remainingHours}h`).join(' · ')}</div>`:''}
+      <div style="margin-top:10px"><a href="/admin/settings" style="font-size:.75rem;color:var(--accent)">⚙️ Configure →</a></div>`;
+  } catch(e) {}
+}
+
+// ── Coin Stats Widget ─────────────────────────────────────────
+async function loadCoinStats() {
+  try {
+    const d = await apiFetch('/admin/api/coin-stats');
+    if (!d.ok) return;
+    const coins = d.coinPerformance || [];
+    if (!coins.length) { document.getElementById('coinstat-widget').innerHTML='<div class="empty-state"><div class="empty-msg">No closed trades yet</div></div>'; return; }
+    document.getElementById('coinstat-widget').innerHTML = `
+      <table style="width:100%;border-collapse:collapse;font-size:.79rem">
+        <tr style="color:var(--text2);font-size:.68rem;text-transform:uppercase">
+          <th style="text-align:left;padding:4px 6px">Coin</th>
+          <th style="padding:4px">Trades</th>
+          <th style="padding:4px">Win%</th>
+          <th style="padding:4px">Avg PnL</th>
+        </tr>
+        ${coins.slice(0,8).map(c=>`<tr style="border-top:1px solid rgba(255,255,255,.05)">
+          <td style="padding:4px 6px;font-weight:600;font-family:var(--font-mono)">${c.coin} ${c.tag}</td>
+          <td style="text-align:center;padding:4px;color:var(--text2)">${c.trades}</td>
+          <td style="text-align:center;padding:4px;color:${parseFloat(c.winRate)>=55?'var(--green)':parseFloat(c.winRate)>=45?'var(--yellow)':'var(--red)'}">${c.winRate}%</td>
+          <td style="text-align:center;padding:4px;color:${parseFloat(c.avgPnl)>=0?'var(--green)':'var(--red)'}">${parseFloat(c.avgPnl)>=0?'+':''}${c.avgPnl}%</td>
+        </tr>`).join('')}
+      </table>`;
+  } catch(e) {}
+}
+
+loadProtectionStatus();
+loadCoinStats();
 </script>
 </body>
 </html>

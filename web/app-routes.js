@@ -721,6 +721,121 @@ app.post('/app/api/user-settings/min-score', saasAuth.requireUserAuth, async (re
     } catch(e) { res.status(500).json({ok:false,error:e.message}); }
 });
 
+// ✅ Protection System APIs
+app.get('/app/api/protection/status', saasAuth.requireUserAuth, async (req, res) => {
+    try {
+        const protection = require('../lib/protection');
+        const [status, wrAlert] = await Promise.all([
+            protection.getStatus(),
+            protection.checkWinRateAlert(req.saasUser.userId),
+        ]);
+        res.json({ ok:true, status, winRateAlert: wrAlert });
+    } catch(e) { res.status(500).json({ ok:false, error:e.message }); }
+});
+
+// ✅ Pairlist Ranker APIs
+app.get('/app/api/pairrank', saasAuth.requireUserAuth, async (req, res) => {
+    try {
+        const pairrank = require('../lib/pairrank');
+        const data = await pairrank.getTopRankedPairs(30);
+        res.json({ ok:true, ...data });
+    } catch(e) { res.status(500).json({ ok:false, error:e.message }); }
+});
+app.post('/app/api/pairrank/refresh', saasAuth.requireUserAuth, async (req, res) => {
+    try {
+        const pairrank = require('../lib/pairrank');
+        pairrank.clearCache();
+        const data = await pairrank.getTopRankedPairs(30);
+        res.json({ ok:true, ...data });
+    } catch(e) { res.status(500).json({ ok:false, error:e.message }); }
+});
+
+// ✅ Advanced Stats APIs
+app.get('/app/api/stats/advanced', saasAuth.requireUserAuth, async (req, res) => {
+    try {
+        const coinStats = require('../lib/coinStats');
+        const uid = req.saasUser.userId;
+        const [metrics, coinPerf, tfStats, monthlyStats] = await Promise.all([
+            coinStats.getAdvancedMetrics(uid),
+            coinStats.getCoinPerformance(uid, 20),
+            coinStats.getTimeframeStats(uid),
+            coinStats.getMonthlyStats(uid),
+        ]);
+        res.json({ ok:true, metrics, coinPerformance:coinPerf.coins, timeframes:tfStats, monthly:monthlyStats });
+    } catch(e) { res.status(500).json({ ok:false, error:e.message }); }
+});
+app.get('/app/api/stats/confluence', saasAuth.requireUserAuth, async (req, res) => {
+    try {
+        const coinStats = require('../lib/coinStats');
+        const data = await coinStats.getConfluenceWinRates(req.saasUser.userId);
+        res.json({ ok:true, ...data });
+    } catch(e) { res.status(500).json({ ok:false, error:e.message }); }
+});
+app.get('/app/api/stats/score-analysis', saasAuth.requireUserAuth, async (req, res) => {
+    try {
+        const coinStats = require('../lib/coinStats');
+        const data = await coinStats.getScoreAnalysis(req.saasUser.userId);
+        res.json({ ok:true, ...data });
+    } catch(e) { res.status(500).json({ ok:false, error:e.message }); }
+});
+
+// ✅ Monte Carlo API
+app.post('/app/api/montecarlo', saasAuth.requireUserAuth, async (req, res) => {
+    try {
+        const { scenarios=1000, useBacktest, coin, timeframe, days } = req.body;
+        const mc = require('../lib/montecarlo');
+        let trades;
+        if (useBacktest && coin) {
+            const bt = require('../plugins/backtest');
+            const r  = await bt.runBacktest((coin.endsWith('USDT')?coin:coin+'USDT'), timeframe||'15m', days||30);
+            trades   = (r.trades||[]).map(t=>({ pnlPct: parseFloat(t.pnlPct||t.pnlR||0) }));
+        } else {
+            const dbTrades = await db.Trade.find({ userId:req.saasUser.userId, isPaper:true, status:'closed' }).lean();
+            trades = dbTrades.map(t=>({ pnlPct: t.pnlPct||0 }));
+        }
+        if (!trades||trades.length<5) return res.status(400).json({ ok:false, error:'Need at least 5 trades' });
+        const result = mc.runMonteCarlo(trades, Math.min(parseInt(scenarios)||1000,2000), 2);
+        res.json({ ok:true, ...result, tradesUsed:trades.length });
+    } catch(e) { res.status(500).json({ ok:false, error:e.message }); }
+});
+
+// ✅ Walk-Forward API
+app.post('/app/api/walkforward', saasAuth.requireUserAuth, async (req, res) => {
+    try {
+        let { coin='BTC', timeframe='15m', days=90, folds=3 } = req.body;
+        coin = coin.toUpperCase(); if (!coin.endsWith('USDT')) coin += 'USDT';
+        folds = Math.min(Math.max(parseInt(folds)||3,2),5);
+        const bt = require('../plugins/backtest');
+        const results = [];
+        for (let f=0; f<folds; f++) {
+            try {
+                const r = await bt.runBacktest(coin, timeframe, Math.floor(Math.min(parseInt(days)||90,180)/folds));
+                results.push({ fold:f+1, winRate:r.winRate, sharpe:r.sharpeRatio, calmar:r.calmarRatio,
+                    profitFactor:r.profitFactor, totalReturn:r.totalReturnPct, trades:r.total });
+            } catch(_) { results.push({ fold:f+1, error:'Insufficient data' }); }
+        }
+        const valid = results.filter(r=>!r.error);
+        const avgWR = valid.length?(valid.reduce((s,r)=>s+parseFloat(r.winRate||0),0)/valid.length).toFixed(1):0;
+        const avgSharpe = valid.length?(valid.reduce((s,r)=>s+(r.sharpe||0),0)/valid.length).toFixed(2):0;
+        const consistent = valid.length>=2 && valid.every(r=>parseFloat(r.winRate||0)>=45);
+        res.json({ ok:true, coin:coin.replace('USDT',''), timeframe, folds, results,
+            summary:{ avgWinRate:avgWR, avgSharpe, consistent,
+                verdict:consistent?'✅ Consistent across folds':'⚠️ Inconsistent — possible overfitting' }});
+    } catch(e) { res.status(500).json({ ok:false, error:e.message }); }
+});
+
+// ✅ Backtest with settings
+app.post('/app/api/backtest/run', saasAuth.requireUserAuth, async (req, res) => {
+    try {
+        let { coin='BTC', timeframe='15m', days=30 } = req.body;
+        coin = coin.toUpperCase(); if (!coin.endsWith('USDT')) coin += 'USDT';
+        const bt  = require('../plugins/backtest');
+        const cfg = await db.getBacktestSettings();
+        const result = await bt.runBacktest(coin, timeframe, Math.min(parseInt(days)||30,90));
+        res.json({ ok:true, ...result, settings:{ fee:cfg.feePct, slippage:cfg.slippagePct } });
+    } catch(e) { res.status(500).json({ ok:false, error:e.message }); }
+});
+
 // ── User Signals (from shared signal buffer) ─────────────────
 app.get('/app/api/signals/recent', saasAuth.requireUserAuth, (req, res) => {
     try {

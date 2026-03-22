@@ -213,34 +213,51 @@ function backtestScore(candles, i, candles1H) {
 }
 
 // ─── Simulate one trade with partial TPs ──────────────────────
-function simTrade(candles, idx, entry, sl, tp1, tp2, tp3, isLong) {
+function simTrade(candles, idx, entry, sl, tp1, tp2, tp3, isLong, opts = {}) {
     const slD = Math.abs(entry - sl);
-    if (slD === 0) return { result: 'SKIP', pnlR: 0 };
-    let tp1Hit = false, tp2Hit = false, pnlR = 0;
+    if (slD === 0) return { result: 'SKIP', pnlR: 0, pnlPct: 0 };
+    const feePct      = opts.fee      ?? 0.0004;
+    const slippagePct = opts.slippage ?? 0.0005;
+    const totalCost   = (feePct + slippagePct) * 2;
+    const effEntry    = isLong ? entry * (1 + slippagePct) : entry * (1 - slippagePct);
+    let tp1Hit = false, tp2Hit = false, pnlR = 0, pnlPct = 0;
     for (let j = idx; j < Math.min(idx + 200, candles.length); j++) {
         const hi = parseFloat(candles[j][2]), lo = parseFloat(candles[j][3]);
         if (isLong) {
-            if (lo <= sl)    { pnlR += (tp1Hit ? 0.67 : 1.0) * -1; return { result: 'LOSS', pnlR: pnlR + (tp1Hit ? 0.33*1.5:0) + (tp2Hit ? 0.33*3:0) }; }
-            if (!tp1Hit && hi >= tp1)  { tp1Hit = true;  pnlR += 0.33 * 1.5; }
-            if (tp1Hit && !tp2Hit && hi >= tp2) { tp2Hit = true; pnlR += 0.33 * 3; }
-            if (tp2Hit && hi >= tp3) { pnlR += 0.34 * 5; return { result: 'WIN', pnlR }; }
+            if (lo <= sl) {
+                const p = tp1Hit ? 0.67 : 1.0;
+                pnlPct += ((sl - effEntry) / effEntry) * p - totalCost * p;
+                pnlR   += p * -1;
+                return { result: 'LOSS', pnlR: pnlR + (tp1Hit?0.33*1.5:0) + (tp2Hit?0.33*3:0), pnlPct: parseFloat((pnlPct*100).toFixed(2)) };
+            }
+            if (!tp1Hit && hi >= tp1)  { tp1Hit=true;  pnlR+=0.33*1.5; pnlPct+=((tp1-effEntry)/effEntry)*0.33-totalCost*0.33; }
+            if (tp1Hit && !tp2Hit && hi >= tp2) { tp2Hit=true; pnlR+=0.33*3; pnlPct+=((tp2-effEntry)/effEntry)*0.33-totalCost*0.33; }
+            if (tp2Hit && hi >= tp3) { pnlR+=0.34*5; pnlPct+=((tp3-effEntry)/effEntry)*0.34-totalCost*0.34; return { result:'WIN', pnlR, pnlPct:parseFloat((pnlPct*100).toFixed(2)) }; }
         } else {
-            if (hi >= sl)    { pnlR += (tp1Hit ? 0.67 : 1.0) * -1; return { result: 'LOSS', pnlR: pnlR + (tp1Hit ? 0.33*1.5:0) + (tp2Hit ? 0.33*3:0) }; }
-            if (!tp1Hit && lo <= tp1)  { tp1Hit = true;  pnlR += 0.33 * 1.5; }
-            if (tp1Hit && !tp2Hit && lo <= tp2) { tp2Hit = true; pnlR += 0.33 * 3; }
-            if (tp2Hit && lo <= tp3) { pnlR += 0.34 * 5; return { result: 'WIN', pnlR }; }
+            if (hi >= sl) {
+                const p = tp1Hit ? 0.67 : 1.0;
+                pnlPct += ((effEntry - sl) / effEntry) * p - totalCost * p;
+                pnlR   += p * -1;
+                return { result: 'LOSS', pnlR: pnlR + (tp1Hit?0.33*1.5:0) + (tp2Hit?0.33*3:0), pnlPct: parseFloat((pnlPct*100).toFixed(2)) };
+            }
+            if (!tp1Hit && lo <= tp1)  { tp1Hit=true;  pnlR+=0.33*1.5; pnlPct+=((effEntry-tp1)/effEntry)*0.33-totalCost*0.33; }
+            if (tp1Hit && !tp2Hit && lo <= tp2) { tp2Hit=true; pnlR+=0.33*3; pnlPct+=((effEntry-tp2)/effEntry)*0.33-totalCost*0.33; }
+            if (tp2Hit && lo <= tp3) { pnlR+=0.34*5; pnlPct+=((effEntry-tp3)/effEntry)*0.34-totalCost*0.34; return { result:'WIN', pnlR, pnlPct:parseFloat((pnlPct*100).toFixed(2)) }; }
         }
     }
-    const lastP = parseFloat(candles[Math.min(idx + 199, candles.length - 1)][4]);
-    const openR = isLong ? (lastP - entry) / slD : (entry - lastP) / slD;
-    return { result: 'OPEN', pnlR: pnlR + openR * (tp2Hit ? 0.34 : tp1Hit ? 0.67 : 1.0) };
+    const lastP  = parseFloat(candles[Math.min(idx+199, candles.length-1)][4]);
+    const openR  = isLong ? (lastP-effEntry)/slD : (effEntry-lastP)/slD;
+    const openPct= isLong ? (lastP-effEntry)/effEntry : (effEntry-lastP)/effEntry;
+    const p      = tp2Hit?0.34:tp1Hit?0.67:1.0;
+    return { result:'OPEN', pnlR:pnlR+openR*p, pnlPct:parseFloat(((pnlPct+openPct*p)*100).toFixed(2)) };
 }
 
 // ─── Full backtest run ────────────────────────────────────────
-function runBacktest(candles, minScore, candles1H) {
+function runBacktest(candles, minScore, candles1H, opts = {}) {
     const MIN_SCORE = minScore || 12;
     let trades = [], equity = 0, maxEq = 0, maxDD = 0;
     let wins = 0, losses = 0, longT = 0, shortT = 0;
+    let capital = 100, peakCap = 100, maxCapDD = 0;
     let i = 200;
     while (i < candles.length - 25) {
         const { longScore, shortScore, bestDir, atr, adx, currentPrice } = backtestScore(candles, i, candles1H);
@@ -257,12 +274,17 @@ function runBacktest(candles, minScore, candles1H) {
         const tp2    = isLong ? entry + atr * 3   : entry - atr * 3;
         const tp3    = isLong ? entry + atr * 5   : entry - atr * 5;
 
-        const { result, pnlR } = simTrade(candles, i, entry, sl, tp1, tp2, tp3, isLong);
-        trades.push({ dir: isLong ? 'L' : 'S', entry, result, pnlR, score, idx: i });
+        const simOpts = { fee: opts.fee??0.0004, slippage: opts.slippage??0.0005 };
+        const { result, pnlR, pnlPct } = simTrade(candles, i, entry, sl, tp1, tp2, tp3, isLong, simOpts);
+        trades.push({ dir: isLong?'L':'S', entry, result, pnlR, pnlPct:pnlPct||0, score, idx:i });
         equity += pnlR;
+        capital *= (1 + (pnlPct||0)/100);
         if (equity > maxEq) maxEq = equity;
+        if (capital > peakCap) peakCap = capital;
         const dd = maxEq - equity;
+        const capDD = (peakCap-capital)/peakCap*100;
         if (dd > maxDD) maxDD = dd;
+        if (capDD > maxCapDD) maxCapDD = capDD;
         if (result === 'WIN')  wins++;
         if (result === 'LOSS') losses++;
         if (isLong) longT++; else shortT++;
@@ -273,20 +295,34 @@ function runBacktest(candles, minScore, candles1H) {
     const gW  = trades.filter(t=>t.pnlR>0).reduce((s,t)=>s+t.pnlR,0);
     const gL  = Math.abs(trades.filter(t=>t.pnlR<0).reduce((s,t)=>s+t.pnlR,0));
     const pf  = gL > 0 ? (gW/gL).toFixed(2) : '∞';
-    let conL = 0, maxCL = 0;
-    [...trades].sort((a,b)=>a.idx-b.idx).forEach(t => {
-        if(t.result==='LOSS'){conL++;if(conL>maxCL)maxCL=conL;}else conL=0;
+    let conL=0, maxCL=0, conW=0, maxCW=0;
+    [...trades].sort((a,b)=>a.idx-b.idx).forEach(t=>{
+        if(t.result==='LOSS'){conL++;if(conL>maxCL)maxCL=conL;conW=0;}
+        else{conW++;if(conW>maxCW)maxCW=conW;conL=0;}
     });
     const sortedByPnl = [...trades].sort((a,b)=>b.pnlR-a.pnlR);
+    const pnlPcts = trades.map(t=>t.pnlPct||0);
+    const meanP = pnlPcts.length ? pnlPcts.reduce((s,v)=>s+v,0)/pnlPcts.length : 0;
+    const stdP  = pnlPcts.length>1 ? Math.sqrt(pnlPcts.reduce((s,v)=>s+Math.pow(v-meanP,2),0)/pnlPcts.length) : 0;
+    const sharpe = stdP>0 ? parseFloat((meanP/stdP*Math.sqrt(252)).toFixed(2)) : 0;
+    const totalReturn = capital-100;
+    const calmar = maxCapDD>0 ? parseFloat((totalReturn/maxCapDD).toFixed(2)) : 0;
+    const wPnls  = trades.filter(t=>t.pnlPct>0).map(t=>t.pnlPct);
+    const lPnls  = trades.filter(t=>t.pnlPct<0).map(t=>t.pnlPct);
+    const avgWin  = wPnls.length ? wPnls.reduce((s,v)=>s+v,0)/wPnls.length : 0;
+    const avgLoss = lPnls.length ? Math.abs(lPnls.reduce((s,v)=>s+v,0)/lPnls.length) : 0;
+    const wr = total>0?wins/total:0;
+    const expectancy = parseFloat(((wr*avgWin)-((1-wr)*avgLoss)).toFixed(2));
     return {
-        trades, wins, losses, longT, shortT, total,
-        winRate, pf,
-        gW: gW.toFixed(2), gL: gL.toFixed(2),
-        maxDD: maxDD.toFixed(2),
-        netR: equity.toFixed(2),
-        maxCL,
-        best:  sortedByPnl[0],
-        worst: sortedByPnl[sortedByPnl.length-1],
+        trades, wins, losses, longT, shortT, total, winRate, pf,
+        gW: gW.toFixed(2), gL: gL.toFixed(2), maxDD: maxDD.toFixed(2),
+        netR: equity.toFixed(2), maxCL, maxCW,
+        best: sortedByPnl[0], worst: sortedByPnl[sortedByPnl.length-1],
+        sharpe, calmar, expectancy: expectancy,
+        finalCapital: parseFloat(capital.toFixed(2)),
+        maxCapDD: parseFloat(maxCapDD.toFixed(2)),
+        totalReturnPct: parseFloat(totalReturn.toFixed(2)),
+        avgWinPct: parseFloat(avgWin.toFixed(2)), avgLossPct: parseFloat(avgLoss.toFixed(2)),
     };
 }
 
@@ -469,17 +505,18 @@ module.exports = {
         }));
         return {
             coin: coin.replace('USDT',''), timeframe, days,
-            total:     r.total,
-            wins:      r.wins,
-            losses:    r.losses,
-            winRate:   parseFloat(r.winRate),
-            totalPnl:  parseFloat(r.netR),
-            avgPnl:    r.total>0 ? (parseFloat(r.netR)/r.total).toFixed(2) : '0.00',
+            total: r.total, wins: r.wins, losses: r.losses,
+            winRate: parseFloat(r.winRate), totalPnl: parseFloat(r.netR),
+            avgPnl: r.total>0?(parseFloat(r.netR)/r.total).toFixed(2):'0.00',
             maxDrawdown: parseFloat(r.maxDD),
             bestTrade:  r.best  ? parseFloat(r.best.pnlR).toFixed(2)  : null,
             worstTrade: r.worst ? parseFloat(r.worst.pnlR).toFixed(2) : null,
-            profitFactor: r.pf,
-            maxConsecLoss: r.maxCL,
+            profitFactor: r.pf, maxConsecLoss: r.maxCL, maxConsecWins: r.maxCW,
+            sharpeRatio: r.sharpe, calmarRatio: r.calmar, expectancy: r.expectancy,
+            finalCapital: r.finalCapital, maxCapDrawdown: r.maxCapDD,
+            totalReturnPct: r.totalReturnPct,
+            avgWinPct: r.avgWinPct, avgLossPct: r.avgLossPct,
+            feeIncluded: true, slippageIncluded: true,
             trades: tradeLog,
         };
     }

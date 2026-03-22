@@ -18,20 +18,77 @@
         style='border:0;padding:0;width:100%;height:auto;overflow:hidden;display:block;margin:auto'></iframe>
     </div>
   </div>
+
   <div class="g-stats" style="margin-bottom:20px">
     <div class="stat-card"><div class="stat-label">Paper Balance</div><div class="stat-val c-yellow" id="paper-bal"></div></div>
   </div>
 
-  <!-- Equity Curve Chart -->
-  <div class="panel" style="margin-bottom:20px" id="equity-panel">
-    <div class="panel-head"><div class="panel-title">📈 Equity Curve</div><span style="font-size:.75rem;color:var(--text2)">Cumulative PnL %</span></div>
-    <div class="panel-body" style="padding:14px">
-      <canvas id="equity-chart" height="120"></canvas>
-      <div id="equity-empty" class="empty-state" style="display:none"><div class="empty-msg">No closed trades yet</div></div>
+  <!-- Tabs -->
+  <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+    <button class="btn btn-primary btn-sm" onclick="showTab('overview')" id="tab-overview">📊 Overview</button>
+    <button class="btn btn-ghost btn-sm" onclick="showTab('advanced')" id="tab-advanced">📐 Advanced Metrics</button>
+    <button class="btn btn-ghost btn-sm" onclick="showTab('coins')" id="tab-coins">🪙 By Coin</button>
+    <button class="btn btn-ghost btn-sm" onclick="showTab('confluence')" id="tab-confluence">🔬 Confluence Analysis</button>
+    <button class="btn btn-ghost btn-sm" onclick="showTab('score')" id="tab-score">🎯 Score Analysis</button>
+  </div>
+
+  <!-- Overview Tab -->
+  <div id="tab-content-overview">
+    <!-- Equity Curve -->
+    <div class="panel" style="margin-bottom:20px" id="equity-panel">
+      <div class="panel-head"><div class="panel-title">📈 Equity Curve</div><span style="font-size:.75rem;color:var(--text2)">Cumulative PnL %</span></div>
+      <div class="panel-body" style="padding:14px">
+        <canvas id="equity-chart" height="120"></canvas>
+        <div id="equity-empty" class="empty-state" style="display:none"><div class="empty-msg">No closed trades yet</div></div>
+      </div>
+    </div>
+    <div id="stats-content"></div>
+  </div>
+
+  <!-- Advanced Metrics Tab -->
+  <div id="tab-content-advanced" style="display:none">
+    <div class="panel" style="margin-bottom:16px">
+      <div class="panel-head"><div class="panel-title">📐 Advanced Metrics</div><button class="btn btn-ghost btn-sm" onclick="loadAdvanced()">↻ Refresh</button></div>
+      <div class="panel-body" id="advanced-content">
+        <div class="empty-state"><div class="empty-msg">Loading...</div></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title">📅 Monthly Performance</div></div>
+      <div class="panel-body" id="monthly-content"></div>
     </div>
   </div>
 
-  <div id="stats-content"></div>
+  <!-- By Coin Tab -->
+  <div id="tab-content-coins" style="display:none">
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title">🪙 Performance by Coin</div><button class="btn btn-ghost btn-sm" onclick="loadAdvanced()">↻ Refresh</button></div>
+      <div class="panel-body" id="coins-content">
+        <div class="empty-state"><div class="empty-msg">Loading...</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confluence Analysis Tab -->
+  <div id="tab-content-confluence" style="display:none">
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title">🔬 Which Signals Actually Win?</div><button class="btn btn-ghost btn-sm" onclick="loadConfluence()">↻ Refresh</button></div>
+      <div class="panel-body" id="confluence-content">
+        <div class="empty-state"><div class="empty-msg">Click Refresh to analyze your trades</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Score Analysis Tab -->
+  <div id="tab-content-score" style="display:none">
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title">🎯 Optimal Score Threshold</div><button class="btn btn-ghost btn-sm" onclick="loadScoreAnalysis()">↻ Refresh</button></div>
+      <div class="panel-body" id="score-content">
+        <div class="empty-state"><div class="empty-msg">Click Refresh to find your optimal score</div></div>
+      </div>
+    </div>
+  </div>
+
   <div style="margin-top:20px;text-align:right">
     <button class="btn btn-ghost btn-sm" onclick="resetStats()">↺ Reset Stats</button>
   </div>
@@ -41,6 +98,17 @@
 const D = window.__DATA__ || {};
 renderUserNav('stats');
 document.getElementById('paper-bal').textContent = '$'+(D.paperBalance||'0.00');
+
+function showTab(name) {
+  ['overview','advanced','coins','confluence','score'].forEach(t => {
+    document.getElementById('tab-content-'+t).style.display = t===name?'block':'none';
+    const btn = document.getElementById('tab-'+t);
+    if(btn) btn.className = t===name?'btn btn-primary btn-sm':'btn btn-ghost btn-sm';
+  });
+  if (name==='advanced' && !window._advLoaded) loadAdvanced();
+  if (name==='confluence' && !window._confLoaded) loadConfluence();
+  if (name==='score' && !window._scoreLoaded) loadScoreAnalysis();
+}
 
 // ── Equity Curve ─────────────────────────────────────────────
 const eq = D.equityCurve || [];
@@ -58,31 +126,23 @@ if (eq.length < 2) {
   const W = canvas.width, H = canvas.height, pad = 30;
   const x = i => pad + (i/(eq.length-1))*(W-pad*2);
   const y = v => H - pad - ((v-mn)/range)*(H-pad*2);
-  // Grid lines
-  ctx.strokeStyle = 'rgba(255,255,255,.06)';
-  ctx.lineWidth = 1;
+  ctx.strokeStyle = 'rgba(255,255,255,.06)'; ctx.lineWidth = 1;
   for(let i=0;i<4;i++){const yy=pad+(i/3)*(H-pad*2);ctx.beginPath();ctx.moveTo(pad,yy);ctx.lineTo(W-pad,yy);ctx.stroke();}
-  // Zero line
   if (mn < 0 && mx > 0) {
     ctx.strokeStyle='rgba(255,255,255,.2)';ctx.setLineDash([4,4]);
-    ctx.beginPath();ctx.moveTo(pad,y(0));ctx.lineTo(W-pad,y(0));ctx.stroke();
-    ctx.setLineDash([]);
+    ctx.beginPath();ctx.moveTo(pad,y(0));ctx.lineTo(W-pad,y(0));ctx.stroke();ctx.setLineDash([]);
   }
-  // Area fill
   const grad = ctx.createLinearGradient(0,pad,0,H-pad);
   grad.addColorStop(0,'rgba(0,200,255,.25)');grad.addColorStop(1,'rgba(0,200,255,.02)');
   ctx.beginPath();ctx.moveTo(x(0),y(vals[0]));
   eq.forEach((_,i)=>{if(i>0)ctx.lineTo(x(i),y(vals[i]));});
   ctx.lineTo(x(eq.length-1),H-pad);ctx.lineTo(x(0),H-pad);ctx.closePath();
   ctx.fillStyle=grad;ctx.fill();
-  // Line
   ctx.beginPath();ctx.moveTo(x(0),y(vals[0]));
   eq.forEach((_,i)=>{if(i>0)ctx.lineTo(x(i),y(vals[i]));});
   ctx.strokeStyle='rgba(0,200,255,.9)';ctx.lineWidth=2;ctx.stroke();
-  // Dots on last
   ctx.beginPath();ctx.arc(x(eq.length-1),y(vals[vals.length-1]),4,0,Math.PI*2);
   ctx.fillStyle=vals[vals.length-1]>=0?'var(--green)':'var(--red)';ctx.fill();
-  // Labels
   ctx.fillStyle='rgba(255,255,255,.4)';ctx.font='10px monospace';
   ctx.fillText((mn>=0?'+':'')+mn.toFixed(1)+'%',2,H-pad);
   ctx.fillText((mx>=0?'+':'')+mx.toFixed(1)+'%',2,pad+4);
@@ -92,29 +152,159 @@ if (eq.length < 2) {
   ctx.fillText((last>=0?'+':'')+last.toFixed(2)+'%',W-pad-60,y(last)-6);
 }
 
-// ── Stat blocks ──────────────────────────────────────────────
+// ── Basic stat blocks ──────────────────────────────────────────
 function statBlock(s, title, emoji) {
   if (!s) return `<div class="panel" style="margin-bottom:20px"><div class="panel-head"><div class="panel-title">${emoji} ${title}</div></div><div class="panel-body empty-state"><div class="empty-icon">🛑</div><div class="empty-msg">No closed trades yet.</div></div></div>`;
   const wrNum=parseFloat(s.wr), pnlNum=parseFloat(s.totalPnl);
   const wrCol=wrNum>=55?'var(--green)':wrNum>=45?'var(--yellow)':'var(--red)';
   const pnlCol=pnlNum>=0?'var(--green)':'var(--red)';
-  const avgCol=parseFloat(s.avgPnl)>=0?'var(--green)':'var(--red)';
   return `<div class="panel" style="margin-bottom:20px">
     <div class="panel-head"><div class="panel-title">${emoji} ${title}</div></div>
     <div class="panel-body">
-      <div class="g-stats" style="margin-bottom:20px">
-        <div class="stat-card"><div class="stat-label">Total Trades</div><div class="stat-val c-cyan">${s.total}</div></div>
+      <div class="g-stats" style="margin-bottom:16px">
+        <div class="stat-card"><div class="stat-label">Total</div><div class="stat-val c-cyan">${s.total}</div></div>
         <div class="stat-card"><div class="stat-label">Win Rate</div><div class="stat-val" style="color:${wrCol}">${s.wr}%</div></div>
-        <div class="stat-card"><div class="stat-label">Wins / Losses</div><div class="stat-val c-green">${s.wins}<span style="color:var(--text2);font-size:1rem"> W</span></div><div class="stat-sub" style="color:var(--red)">${s.loss} losses</div></div>
+        <div class="stat-card"><div class="stat-label">W/L</div><div class="stat-val c-green">${s.wins}W <span style="color:var(--red)">${s.loss}L</span></div></div>
         <div class="stat-card"><div class="stat-label">Total PnL</div><div class="stat-val" style="color:${pnlCol}">${pnlNum>=0?'+':''}${s.totalPnl}%</div></div>
-        <div class="stat-card"><div class="stat-label">Avg PnL/Trade</div><div class="stat-val" style="color:${avgCol}">${parseFloat(s.avgPnl)>=0?'+':''}${s.avgPnl}%</div></div>
+        <div class="stat-card"><div class="stat-label">Avg/Trade</div><div class="stat-val" style="color:${parseFloat(s.avgPnl)>=0?'var(--green)':'var(--red)'}">${parseFloat(s.avgPnl)>=0?'+':''}${s.avgPnl}%</div></div>
       </div>
-      <div class="stat-row"><span>🏆 Best Trade</span><span class="stat-row-val c-green">${s.best?s.best.coin+' +'+s.best.pnl+'%':'—'}</span></div>
-      <div class="stat-row"><span>💀 Worst Trade</span><span class="stat-row-val c-red">${s.worst?s.worst.coin+' '+s.worst.pnl+'%':'—'}</span></div>
+      <div class="stat-row"><span>🏆 Best</span><span class="stat-row-val c-green">${s.best?s.best.coin+' +'+s.best.pnl+'%':'—'}</span></div>
+      <div class="stat-row"><span>💀 Worst</span><span class="stat-row-val c-red">${s.worst?s.worst.coin+' '+s.worst.pnl+'%':'—'}</span></div>
     </div>
   </div>`;
 }
 document.getElementById('stats-content').innerHTML = statBlock(D.liveStats,'Live Trades','💰') + statBlock(D.paperStats,'Paper Trades','📄');
+
+// ── Advanced Metrics ──────────────────────────────────────────
+async function loadAdvanced() {
+  window._advLoaded = true;
+  const [adv, ranked] = await Promise.all([
+    apiFetch('/app/api/stats/advanced'),
+    apiFetch('/app/api/pairrank'),
+  ]);
+  const m = adv.metrics || {};
+  const ratingCol = m.rating?.includes('Strong') ? 'var(--green)' : m.rating?.includes('Moderate') ? 'var(--yellow)' : 'var(--red)';
+
+  if (!m.error) {
+    document.getElementById('advanced-content').innerHTML = `
+      <div class="g-stats" style="margin-bottom:16px">
+        <div class="stat-card"><div class="stat-label">Profit Factor</div><div class="stat-val" style="color:${parseFloat(m.profitFactor)>=1.5?'var(--green)':parseFloat(m.profitFactor)>=1.2?'var(--yellow)':'var(--red)'}">${m.profitFactor||'—'}</div><div class="stat-sub">≥1.5 = Good</div></div>
+        <div class="stat-card"><div class="stat-label">Sharpe Ratio</div><div class="stat-val" style="color:${parseFloat(m.sharpeRatio)>=1?'var(--green)':parseFloat(m.sharpeRatio)>=0?'var(--yellow)':'var(--red)'}">${m.sharpeRatio||'—'}</div><div class="stat-sub">≥1.0 = Good</div></div>
+        <div class="stat-card"><div class="stat-label">Calmar Ratio</div><div class="stat-val c-cyan">${m.calmarRatio||'—'}</div><div class="stat-sub">Return/MaxDD</div></div>
+        <div class="stat-card"><div class="stat-label">Max Drawdown</div><div class="stat-val c-red">${m.maxDrawdownPct||'—'}%</div></div>
+        <div class="stat-card"><div class="stat-label">Expectancy</div><div class="stat-val" style="color:${parseFloat(m.expectancyPct)>=0?'var(--green)':'var(--red)'}">${(parseFloat(m.expectancyPct)>=0?'+':'')+m.expectancyPct||'—'}%</div></div>
+        <div class="stat-card"><div class="stat-label">Max Consec W</div><div class="stat-val c-green">${m.maxConsecWins||'—'}</div></div>
+        <div class="stat-card"><div class="stat-label">Max Consec L</div><div class="stat-val c-red">${m.maxConsecLosses||'—'}</div></div>
+        <div class="stat-card"><div class="stat-label">Avg Hold</div><div class="stat-val c-yellow">${m.avgHoldHours||'—'}h</div></div>
+      </div>
+      <div style="background:rgba(0,0,0,.15);border-radius:8px;padding:10px 14px;font-size:.82rem">
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+          <span style="color:var(--text2)">Avg Win</span><span style="color:var(--green)">+${m.avgWinPct||0}%</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+          <span style="color:var(--text2)">Avg Loss</span><span style="color:var(--red)">-${m.avgLossPct||0}%</span>
+        </div>
+        <div style="display:flex;justify-content:space-between">
+          <span style="color:var(--text2)">Overall Rating</span><strong style="color:${ratingCol}">${m.rating||'—'}</strong>
+        </div>
+      </div>`;
+  }
+
+  // Monthly
+  const monthly = adv.monthly || [];
+  if (monthly.length) {
+    document.getElementById('monthly-content').innerHTML = monthly.map(m =>
+      `<div class="stat-row"><span>${m.month}</span>
+       <span style="display:flex;gap:12px;font-size:.8rem">
+         <span style="color:var(--text2)">${m.trades} trades</span>
+         <span style="color:${parseFloat(m.winRate)>=50?'var(--green)':'var(--red)'}">${m.winRate}%</span>
+         <span style="color:${parseFloat(m.pnl)>=0?'var(--green)':'var(--red)'}">${parseFloat(m.pnl)>=0?'+':''}${m.pnl}%</span>
+       </span></div>`).join('');
+  }
+
+  // Timeframes
+  const tfs = adv.timeframes || [];
+  // Coins
+  const coins = adv.coinPerformance || [];
+  if (coins.length) {
+    document.getElementById('coins-content').innerHTML = `
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:.8rem">
+          <tr style="color:var(--text2);font-size:.72rem;text-transform:uppercase">
+            <th style="text-align:left;padding:6px 8px">Coin</th>
+            <th style="padding:6px 8px">Trades</th>
+            <th style="padding:6px 8px">Win Rate</th>
+            <th style="padding:6px 8px">Avg PnL</th>
+            <th style="padding:6px 8px">Score</th>
+            <th style="padding:6px 8px">Rating</th>
+          </tr>
+          ${coins.map(c=>`<tr style="border-top:1px solid rgba(255,255,255,.05)">
+            <td style="padding:6px 8px;font-weight:600">${c.coin}</td>
+            <td style="text-align:center;padding:6px 8px;color:var(--text2)">${c.trades}</td>
+            <td style="text-align:center;padding:6px 8px;color:${parseFloat(c.winRate)>=55?'var(--green)':parseFloat(c.winRate)>=45?'var(--yellow)':'var(--red)'}">${c.winRate}%</td>
+            <td style="text-align:center;padding:6px 8px;color:${parseFloat(c.avgPnl)>=0?'var(--green)':'var(--red)'}">${parseFloat(c.avgPnl)>=0?'+':''}${c.avgPnl}%</td>
+            <td style="text-align:center;padding:6px 8px;color:var(--yellow)">${c.avgScore||'—'}</td>
+            <td style="text-align:center;padding:6px 8px">${c.tag}</td>
+          </tr>`).join('')}
+        </table>
+      </div>`;
+  }
+}
+
+// ── Confluence Analysis ───────────────────────────────────────
+async function loadConfluence() {
+  window._confLoaded = true;
+  document.getElementById('confluence-content').innerHTML = '<div class="empty-state"><div class="empty-msg">⏳ Analyzing...</div></div>';
+  const d = await apiFetch('/app/api/stats/confluence');
+  if (!d.ok || d.error) { document.getElementById('confluence-content').innerHTML = `<div class="empty-state"><div class="empty-msg">❌ ${d.error||'Failed'}</div></div>`; return; }
+  const tags = d.tags || [];
+  if (!tags.length) { document.getElementById('confluence-content').innerHTML = '<div class="empty-state"><div class="empty-msg">Not enough closed trades (need 3+ per signal)</div></div>'; return; }
+  document.getElementById('confluence-content').innerHTML = `
+    <div style="font-size:.75rem;color:var(--text2);margin-bottom:12px">Analyzed ${d.tradesAnalyzed} closed trades • Signals with ≥3 occurrences shown</div>
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:.79rem">
+        <tr style="color:var(--text2);font-size:.7rem;text-transform:uppercase">
+          <th style="text-align:left;padding:5px 8px">Signal</th>
+          <th style="padding:5px">Trades</th>
+          <th style="padding:5px">Win %</th>
+          <th style="padding:5px">Avg PnL</th>
+          <th style="padding:5px">Rating</th>
+        </tr>
+        ${tags.map(t=>`<tr style="border-top:1px solid rgba(255,255,255,.05)">
+          <td style="padding:5px 8px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.tag}</td>
+          <td style="text-align:center;padding:5px;color:var(--text2)">${t.total}</td>
+          <td style="text-align:center;padding:5px;color:${parseFloat(t.winRate)>=60?'var(--green)':parseFloat(t.winRate)>=50?'var(--yellow)':'var(--red)'};font-weight:600">${t.winRate}%</td>
+          <td style="text-align:center;padding:5px;color:${parseFloat(t.avgPnl)>=0?'var(--green)':'var(--red)'}">${parseFloat(t.avgPnl)>=0?'+':''}${t.avgPnl}%</td>
+          <td style="text-align:center;padding:5px">${t.rating}</td>
+        </tr>`).join('')}
+      </table>
+    </div>`;
+}
+
+// ── Score Analysis ────────────────────────────────────────────
+async function loadScoreAnalysis() {
+  window._scoreLoaded = true;
+  document.getElementById('score-content').innerHTML = '<div class="empty-state"><div class="empty-msg">⏳ Analyzing...</div></div>';
+  const d = await apiFetch('/app/api/stats/score-analysis');
+  if (!d.ok || d.error) { document.getElementById('score-content').innerHTML = `<div class="empty-state"><div class="empty-msg">❌ ${d.error||'Failed'}</div></div>`; return; }
+  const buckets = d.buckets || [];
+  document.getElementById('score-content').innerHTML = `
+    ${d.recommendation ? `<div style="background:rgba(0,200,255,.08);border:1px solid rgba(0,200,255,.2);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:.82rem;color:var(--accent)">🎯 ${d.recommendation}</div>` : ''}
+    <table style="width:100%;border-collapse:collapse;font-size:.8rem">
+      <tr style="color:var(--text2);font-size:.7rem;text-transform:uppercase">
+        <th style="text-align:left;padding:6px 8px">Score Range</th>
+        <th style="padding:6px">Trades</th>
+        <th style="padding:6px">Win Rate</th>
+        <th style="padding:6px">Avg PnL</th>
+      </tr>
+      ${buckets.map(b=>`<tr style="border-top:1px solid rgba(255,255,255,.05);${b.min===d.optimalThreshold?'background:rgba(0,200,255,.06)':''}">
+        <td style="padding:6px 8px;font-weight:${b.min===d.optimalThreshold?'700':'400'}">${b.label}${b.min===d.optimalThreshold?' ⭐':''}</td>
+        <td style="text-align:center;padding:6px;color:var(--text2)">${b.trades}</td>
+        <td style="text-align:center;padding:6px;color:${parseFloat(b.winRate)>=55?'var(--green)':parseFloat(b.winRate)>=45?'var(--yellow)':'var(--red)'};">${b.winRate}%</td>
+        <td style="text-align:center;padding:6px;color:${parseFloat(b.avgPnl)>=0?'var(--green)':'var(--red)'}">${parseFloat(b.avgPnl)>=0?'+':''}${b.avgPnl}%</td>
+      </tr>`).join('')}
+    </table>`;
+}
 
 async function resetStats(){if(!confirm('Reset trade stats?'))return;const d=await apiFetch('/app/api/stats/reset',{method:'POST',body:'{}'});if(d.ok){showToast('✅ Stats reset');setTimeout(()=>location.reload(),800);}else showToast('❌ '+d.error,'err');}
 </script>

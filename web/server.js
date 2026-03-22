@@ -616,6 +616,50 @@ function start() {
     });
 
     // ── System info ──────────────────────────────────────────────
+    // ✅ Admin Protection Settings
+    app.get('/admin/api/protection', requireAdminAuth, async (req, res) => {
+        try {
+            const protection = require('../lib/protection');
+            const settings = await db.getProtectionSettings();
+            res.json({ ok:true, settings, status: protection.getStatus() });
+        } catch(e) { res.status(500).json({ ok:false, error:e.message }); }
+    });
+    app.post('/admin/api/protection', requireAdminAuth, async (req, res) => {
+        try {
+            await db.updateProtectionSettings(req.body);
+            const updated = await db.getProtectionSettings();
+            try { const p=require('../lib/protection'); p.updateConfig(updated); } catch(_){}
+            res.json({ ok:true, settings: updated });
+        } catch(e) { res.status(500).json({ ok:false, error:e.message }); }
+    });
+    app.get('/admin/api/backtest-settings', requireAdminAuth, async (req, res) => {
+        try { const s=await db.getBacktestSettings(); res.json({ ok:true, ...s }); }
+        catch(e) { res.status(500).json({ ok:false, error:e.message }); }
+    });
+    app.post('/admin/api/backtest-settings', requireAdminAuth, async (req, res) => {
+        try {
+            const { feePct, slippagePct } = req.body;
+            await db.updateSettings({ backtestFeePct:parseFloat(feePct)||0.04, backtestSlippagePct:parseFloat(slippagePct)||0.05 });
+            res.json({ ok:true });
+        } catch(e) { res.status(500).json({ ok:false, error:e.message }); }
+    });
+    app.get('/admin/api/coin-stats', requireAdminAuth, async (req, res) => {
+        try {
+            const coinStats = require('../lib/coinStats');
+            const pairrank  = require('../lib/pairrank');
+            const [metrics, coinPerf, ranked] = await Promise.all([
+                coinStats.getAdvancedMetrics(null),
+                coinStats.getCoinPerformance(null, 20),
+                pairrank.getTopRankedPairs(15),
+            ]);
+            res.json({ ok:true, metrics, coinPerformance:coinPerf.coins||[], pairrank:ranked.ranked?.slice(0,10)||[] });
+        } catch(e) { res.status(500).json({ ok:false, error:e.message }); }
+    });
+    app.get('/admin/api/protection-status', requireAdminAuth, (req, res) => {
+        try { const p=require('../lib/protection'); res.json({ ok:true, ...p.getStatus() }); }
+        catch(e) { res.status(500).json({ ok:false, error:e.message }); }
+    });
+
     app.get('/admin/api/system', requireAdminAuth, async (req, res) => {
         try {
             const os = require('os');

@@ -16,11 +16,13 @@ function renderView(viewPath, data = {}) {
     try {
         html = fs.readFileSync(fullPath, 'utf8');
     } catch (e) {
-        return `<!DOCTYPE html><html><body><pre style="color:red;padding:40px">\nView not found: ${viewPath}.html\n${e.message}\n        </pre></body></html>`;
+        return `<!DOCTYPE html><html><body><pre style="color:red;padding:40px">
+View not found: ${viewPath}.html\n${e.message}
+        </pre></body></html>`;
     }
 
     // Server-side includes: <!--INCLUDE:app/analysis-detail-->
-    html = html.replace(/<!--INCLUDE:([^-]+)-->/g, (_, incPath) => {
+    html = html.replace(/<!--INCLUDE:([^>]+?)-->/g, (_, incPath) => {
         try {
             return fs.readFileSync(path.join(VIEWS_DIR, incPath.trim() + '.html'), 'utf8');
         } catch (e) {

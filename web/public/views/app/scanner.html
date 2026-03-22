@@ -155,6 +155,41 @@ function renderScanResult(a) {
       <!-- Confirmation Verdict -->
       ${conf.verdict?`<div style="margin-top:10px;font-size:.78rem;padding:8px 12px;background:rgba(0,0,0,.2);border-radius:6px;border-left:3px solid var(--accent)">${conf.verdict}${conf.detail?' — '+conf.detail:''}</div>`:''}
 
+      <!-- ✅ NEW: Entry Quality Gate -->
+      ${a.entryQuality ? `<div style="margin-top:10px;padding:10px 14px;border-radius:8px;border-left:4px solid ${
+          a.entryQuality.color==='green'?'var(--green)':a.entryQuality.color==='red'?'var(--red)':'var(--yellow)'};background:rgba(0,0,0,.15)">
+        <div style="font-size:.75rem;font-weight:700;color:${a.entryQuality.color==='green'?'var(--green)':a.entryQuality.color==='red'?'var(--red)':'var(--yellow)'}">
+          ${a.entryQuality.action} <span style="font-size:.68rem;opacity:.7;margin-left:6px">[${a.entryQuality.grade}]</span>
+        </div>
+        <div style="font-size:.74rem;color:var(--text2);margin-top:3px">${a.entryQuality.detail}</div>
+        ${a.entryQuality.blockEntry?`<div style="font-size:.72rem;color:var(--red);margin-top:4px;font-weight:600">⛔ Do not enter at market now</div>`:''}
+      </div>` : ''}
+
+      <!-- ✅ NEW: BTC Context -->
+      ${a.btcContext && a.btcContext.trend !== 'UNKNOWN' ? `<div style="margin-top:8px;padding:7px 12px;border-radius:6px;background:rgba(255,165,0,.06);border:1px solid rgba(255,165,0,.15);font-size:.76rem">
+        <span style="color:var(--text2)">BTC Context: </span><strong style="color:${a.btcContext.trend==='BULL'?'var(--green)':a.btcContext.trend==='BEAR'?'var(--red)':'var(--yellow)'}">${a.btcContext.display}</strong>
+      </div>` : ''}
+
+      <!-- ✅ NEW: Hidden Divergence -->
+      ${a.hiddenDivergence && (a.hiddenDivergence.bull || a.hiddenDivergence.bear) ? `<div style="margin-top:8px;padding:7px 12px;border-radius:6px;background:rgba(0,200,100,.06);border:1px solid rgba(0,200,100,.15);font-size:.76rem">
+        <strong style="color:var(--green)">${a.hiddenDivergence.display}</strong>
+      </div>` : ''}
+
+      <!-- ✅ NEW: MTF Fibonacci Zones -->
+      ${a.mtfFibEntry && a.mtfFibEntry.zones?.length ? `<div style="margin-top:10px;background:rgba(0,0,0,.15);border-radius:8px;padding:10px 14px">
+        <div style="font-size:.68rem;color:var(--text2);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">📐 MTF Fibonacci Zones</div>
+        ${a.mtfFibEntry.zones.slice(0,3).map(z=>`<div style="display:flex;justify-content:space-between;font-size:.76rem;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.04)">
+          <span style="color:${z.strength==='STRONG'?'var(--accent)':'var(--text2)'}">${z.label}</span>
+          <span style="font-family:var(--font-mono);color:${Math.abs(z.price-parseFloat(a.currentPrice||0))/parseFloat(a.currentPrice||1)*100<1?'var(--green)':'var(--text)'}">$${parseFloat(z.price).toFixed(4)} ${Math.abs(z.price-parseFloat(a.currentPrice||0))/parseFloat(a.currentPrice||1)*100<1?'← HERE':'('+((Math.abs(z.price-parseFloat(a.currentPrice||0))/parseFloat(a.currentPrice||1))*100).toFixed(1)+'% away)'}</span>
+        </div>`).join('')}
+        ${a.mtfFibEntry.tps?.length ? `<div style="margin-top:8px"><div style="font-size:.68rem;color:var(--text2);text-transform:uppercase;margin-bottom:4px">Fib TP Targets</div>
+          ${a.mtfFibEntry.tps.slice(0,3).map(t=>`<div style="display:flex;justify-content:space-between;font-size:.75rem;padding:2px 0">
+            <span style="color:var(--text2)">${t.label}</span>
+            <span style="font-family:var(--font-mono);color:var(--green)">$${parseFloat(t.price).toFixed(4)}</span>
+          </div>`).join('')}
+        </div>` : ''}
+      </div>` : ''}
+
       <!-- Position Size -->
       ${sec('💼 Position Size',
         row('Leverage', (a.leverage||1)+'x', 'var(--yellow)') +

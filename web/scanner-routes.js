@@ -160,9 +160,13 @@ app.post('/app/api/scan', saasAuth.requireUserAuth, async (req, res) => {
                 const a = await withTimeout(analyzer.run14FactorAnalysis(coin, timeframe), 25000, null);
                 if (!a) throw new Error('Analysis timeout');
                 const f = calcFutures(a);
-                const [conf, sent] = await Promise.all([
+                const fallWalls = { supportWall:'N/A', resistWall:'N/A', supportVol:'N/A', resistVol:'N/A' };
+                const fallLiq   = { sentiment:'N/A', liqLevel:'N/A' };
+                const [conf, sent, whaleWalls, liqData] = await Promise.all([
                     withTimeout(confirmations.runAllConfirmations(coin, a.direction, null, a), 12000, { totalScore:0, confirmationStrength:'WEAK', verdict:'⚪ NEUTRAL', verdictDetail:'Timeout' }),
                     withTimeout(binance.getMarketSentiment(coin).catch(()=>fallSent), 8000, fallSent),
+                    withTimeout(binance.getLiquidityWalls(coin).catch(()=>fallWalls), 8000, fallWalls),
+                    withTimeout(binance.getLiquidationData(coin).catch(()=>fallLiq), 8000, fallLiq),
                 ]);
                 let aiSummary = null;
                 // Resolve GROQ key: user key > system key
@@ -203,8 +207,15 @@ app.post('/app/api/scan', saasAuth.requireUserAuth, async (req, res) => {
             dailyAligned: a.dailyAligned,
             dailyTrend: a.dailyTrend,
             reasons: a.reasons,
-            confirmation: { strength: conf.confirmationStrength, verdict: conf.verdict, detail: conf.verdictDetail },
-            sentiment: { fng: sent.fngValue, fngEmoji: sent.fngEmoji, overall: sent.overallSentiment, bias: sent.tradingBias, btcDom: sent.btcDominance },
+            confirmation: { strength: conf.confirmationStrength, verdict: conf.verdict, detail: conf.verdictDetail,
+                usdtDom: conf.usdtDom?.signal||'N/A', oiChange: conf.oiChange?.signal||'N/A',
+                cvd: conf.cvd?.signal||'N/A', btcCorr: conf.btcCorr?.signal||'N/A',
+                pcr: conf.pcr?.signal||'N/A', netflow: conf.netflow?.signal||'N/A', totalScore: conf.totalScore },
+            sentiment: { fng: sent.fngValue, fngEmoji: sent.fngEmoji, overall: sent.overallSentiment, bias: sent.tradingBias, btcDom: sent.btcDominance,
+                newsSentimentScore: sent.newsSentimentScore, coinNewsHits: sent.coinNewsHits },
+            whaleWalls: { supportWall: whaleWalls.supportWall, resistWall: whaleWalls.resistWall,
+                supportVol: whaleWalls.supportVol, resistVol: whaleWalls.resistVol },
+            liquidation: { sentiment: liqData.sentiment, liqLevel: liqData.liqLevel },
             ai: aiSummary,
         }});
     } catch(e) { console.error('[Scan API]', e.message); res.status(500).json({ok:false,error:e.message}); }

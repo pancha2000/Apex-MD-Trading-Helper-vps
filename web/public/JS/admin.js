@@ -14,7 +14,7 @@ function renderAdminNav(active) {
     document.getElementById('nav-root').innerHTML = `
     <nav class="nav">
         <div class="nav-logo">
-            <span>⚡</span> Apex-MD
+            <span>⚡</span> ApexIQ
             <span class="nav-logo-badge" style="background:linear-gradient(135deg,#3d1a1a,#5c2020);color:#ff6b6b">ADMIN</span>
         </div>
         <button class="nav-hamburger" id="nav-hbg" onclick="_navToggle()" aria-label="Menu">
@@ -108,7 +108,7 @@ function showSignalToast(sig) {
             Entry: <span style="color:var(--accent)">$${parseFloat(sig.price||0).toFixed(4)}</span>
             &nbsp;|&nbsp; SL: <span style="color:var(--red)">$${parseFloat(sig.sl||0).toFixed(4)}</span>
         </div>
-        <div style="font-size:.7rem;color:var(--text2);margin-top:6px">New signal via Apex-MD 🚀</div>`;
+        <div style="font-size:.7rem;color:var(--text2);margin-top:6px">New signal via ApexIQ 🚀</div>`;
     document.body.appendChild(el);
     setTimeout(() => { el.style.transition = 'opacity .5s'; el.style.opacity = '0'; }, 7000);
     setTimeout(() => el.remove(), 7600);

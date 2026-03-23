@@ -893,7 +893,7 @@ app.post('/app/api/trades/cleanup', saasAuth.requireUserAuth, async (req, res) =
 
 
 // ════════════════════════════════════════════════════════════════════════
-//  ZONE BYPASS LIMIT ORDER
+//  ZONE BYPASS LIMIT ORDER — v2 (deepEntry auto-fill + full metadata)
 // ════════════════════════════════════════════════════════════════════════
 
 app.post('/app/api/paper/open-limit', saasAuth.requireUserAuth, async (req, res) => {
@@ -901,29 +901,112 @@ app.post('/app/api/paper/open-limit', saasAuth.requireUserAuth, async (req, res)
         const fullUser = await db.getSaasUserById(req.saasUser.userId);
         const waJid   = fullUser?.whatsappJid;
         if (!waJid) return res.status(400).json({ok:false,error:'WhatsApp not linked.'});
-        const { coin='', direction='LONG', limitPrice, tp1, tp2, tp3, sl, leverage=10, zoneLabel='', zoneStrength='' } = req.body;
-        if (!limitPrice||!tp2||!sl) return res.status(400).json({ok:false,error:'limitPrice, tp2, sl required'});
+
+        const {
+            coin='', direction='LONG', tp1, tp2, tp3, sl, leverage=10,
+            zoneLabel='', zoneStrength='',
+            // deepEntry auto-fill fields (sent from scanner UI)
+            limitPrice,        // manual override — if omitted, we run analysis
+            deepEntryPrice,    // from deepEntry.optimalEntry
+            deepEntryLabel,    // from deepEntry.entryLabel
+            deepEntryConf,     // from deepEntry.confluence (number)
+            deepEntryEta,      // from deepEntry.eta (string)
+            deepEntryScore,    // from deepEntry.entryConfScore
+            analysisScore,     // from a.score
+            analysisTimeframe, // from scanner timeframe
+        } = req.body;
+
+        if (!tp2||!sl) return res.status(400).json({ok:false,error:'tp2 and sl required'});
+
         const coinFull = coin.toUpperCase().replace(/[^A-Z0-9]/g,'') + (coin.includes('USDT')?'':'USDT');
         const existing = await db.Trade.countDocuments({userJid:waJid,isPaper:true,status:{$in:['active','pending']}});
         if (existing >= 5) return res.status(400).json({ok:false,error:'Max 5 open paper trades'});
+
         const wu     = await db.getUser(waJid);
         const margin = wu?.margin || 100;
-        const limF   = parseFloat(limitPrice), tp2F = parseFloat(tp2), slF = parseFloat(sl);
-        const tp1F   = tp1 ? parseFloat(tp1) : (limF+tp2F)/2;
-        const tp3F   = tp3 ? parseFloat(tp3) : (direction==='LONG' ? tp2F+(tp2F-limF)*0.5 : tp2F-(limF-tp2F)*0.5);
-        const slDist = Math.abs(limF-slF);
-        const qty    = slDist>0 ? (margin*0.02)/slDist : 0;
-        const riskD  = Math.abs(limF-slF), rewardD = Math.abs(tp2F-limF);
-        const rrr    = riskD>0 ? (rewardD/riskD).toFixed(2)+':1' : '—';
-        await db.saveTrade({ userJid:waJid, userId:req.saasUser.userId, coin:coinFull, type:'future', direction,
-            entry:limF, tp:tp2F, tp1:tp1F, tp2:tp2F, tp3:tp3F, sl:slF,
-            status:'pending', orderType:'LIMIT', isPaper:true, source:'WEB_LIMIT',
-            leverage:parseInt(leverage), quantity:qty, marginUsed:qty>0?(qty*limF)/leverage:0,
-            score:0, timeframe:'15m', rrr, limitPrice:limF, zoneLabel, zoneStrength });
-        res.json({ok:true, msg:`Limit order placed at $${limF} — watching for price to reach zone.`});
+
+        // ── Determine actual limit price ─────────────────────────────────
+        // Priority: manual limitPrice > deepEntry optimalEntry > run live analysis
+        let limF, resolvedLabel, resolvedConf, resolvedEta, resolvedScore, resolvedTF;
+
+        if (limitPrice && parseFloat(limitPrice) > 0) {
+            // Manual override
+            limF            = parseFloat(limitPrice);
+            resolvedLabel   = zoneLabel   || deepEntryLabel   || 'Manual Entry';
+            resolvedConf    = deepEntryConf   ? parseInt(deepEntryConf)   : 0;
+            resolvedEta     = deepEntryEta    || '—';
+            resolvedScore   = analysisScore   ? parseInt(analysisScore)   : 0;
+            resolvedTF      = analysisTimeframe || '15m';
+        } else if (deepEntryPrice && parseFloat(deepEntryPrice) > 0) {
+            // Auto-fill from deepEntry (frontend passes this)
+            limF            = parseFloat(deepEntryPrice);
+            resolvedLabel   = deepEntryLabel  || 'Auto DeepEntry';
+            resolvedConf    = deepEntryConf   ? parseInt(deepEntryConf)   : 0;
+            resolvedEta     = deepEntryEta    || '—';
+            resolvedScore   = analysisScore   ? parseInt(analysisScore)   : 0;
+            resolvedTF      = analysisTimeframe || '15m';
+        } else {
+            // No price provided — run fresh analysis to get optimal entry
+            try {
+                const analyzer = require('../lib/analyzer');
+                const a = await Promise.race([
+                    analyzer.run14FactorAnalysis(coinFull, '15m'),
+                    new Promise((_,rej) => setTimeout(() => rej(new Error('timeout')), 20000))
+                ]);
+                if (!a?.deepEntry?.optimalEntry) throw new Error('Analysis failed');
+                limF          = parseFloat(a.deepEntry.optimalEntry);
+                resolvedLabel = a.deepEntry.entryLabel     || a.bestEntry?.name || 'Live Analysis';
+                resolvedConf  = a.deepEntry.confluence     || 0;
+                resolvedEta   = a.deepEntry.eta            || '—';
+                resolvedScore = a.score                    || 0;
+                resolvedTF    = '15m';
+                console.log(`[LimitOrder] Auto-analyzed ${coinFull}: deepEntry @ $${limF} (${resolvedLabel})`);
+            } catch (err) {
+                return res.status(400).json({ok:false, error:`No limitPrice provided and live analysis failed: ${err.message}`});
+            }
+        }
+
+        const tp2F = parseFloat(tp2), slF = parseFloat(sl);
+        const tp1F = tp1 ? parseFloat(tp1) : (limF+tp2F)/2;
+        const tp3F = tp3 ? parseFloat(tp3) : (direction==='LONG' ? tp2F+(tp2F-limF)*0.5 : tp2F-(limF-tp2F)*0.5);
+
+        // ── RRR validation ────────────────────────────────────────────────
+        const riskD   = Math.abs(limF - slF);
+        const rewardD = Math.abs(tp2F - limF);
+        if (riskD === 0) return res.status(400).json({ok:false,error:'SL = Entry price. Risk is zero.'});
+        const rrr = (rewardD/riskD).toFixed(2) + ':1';
+        if (rewardD/riskD < 1.0) {
+            return res.status(400).json({ok:false, error:`RRR ${(rewardD/riskD).toFixed(2)}:1 is too low (min 1.0:1). Adjust TP or SL.`});
+        }
+
+        const qty        = (margin * 0.02) / riskD;
+        const marginUsed = qty > 0 ? (qty * limF) / parseInt(leverage) : 0;
+
+        // ── Save with full metadata ───────────────────────────────────────
+        await db.saveTrade({
+            userJid: waJid, userId: req.saasUser.userId,
+            coin: coinFull, type: 'future', direction,
+            entry: limF, tp: tp2F, tp1: tp1F, tp2: tp2F, tp3: tp3F, sl: slF,
+            status: 'pending', orderType: 'LIMIT', isPaper: true, source: 'WEB_LIMIT',
+            leverage: parseInt(leverage), quantity: qty, marginUsed, rrr,
+            limitPrice: limF,
+            // ── deepEntry metadata ────
+            zoneLabel:       resolvedLabel,
+            zoneStrength:    deepEntryConf >= 15 ? 'STRONG' : deepEntryConf >= 8 ? 'MEDIUM' : 'WEAK',
+            score:           resolvedScore,
+            timeframe:       resolvedTF,
+            entryEta:        resolvedEta,         // ATR-based time estimate
+            entryConfluence: resolvedConf,        // confluence score
+            deepEntryScore:  deepEntryScore ? parseInt(deepEntryScore) : 0,
+        });
+
+        res.json({ok:true,
+            msg: `✅ Limit order placed at $${limF.toFixed(4)} — ${resolvedLabel}`,
+            limitPrice: limF, zoneLabel: resolvedLabel,
+            rrr, eta: resolvedEta, confluenceScore: resolvedConf,
+        });
     } catch(e) { res.status(500).json({ok:false,error:e.message}); }
 });
-
 app.post('/app/api/paper/cancel-limit/:tradeId', saasAuth.requireUserAuth, async (req, res) => {
     try {
         const trade = await db.Trade.findById(req.params.tradeId);

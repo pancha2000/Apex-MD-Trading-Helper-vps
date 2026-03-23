@@ -367,8 +367,10 @@ EXACT JSON (copy this structure, fill values):
 ║ 🎯 *PRO SNIPER ANALYSIS* ║
 ╚═══════════════════════════╝
 ${dangerWarning}${_paperBanner}${_proModeTag}
+${aData.signalGrade === 'A+' ? '🏆 *ELITE A+ SETUP* 🏆' : aData.signalGrade === 'A' ? '🥇 *HIGH QUALITY A SETUP*' : aData.signalGrade === 'B' ? '🥈 *STANDARD B SETUP*' : ''}
 🪙 *${coin.replace('USDT','')} / USDT*  ${data.emoji} *${data.direction}*  💵 $${aData.priceStr}
 📌 *Market:* ${aData.marketState} | *ADX:* ${aData.adxData.status}
+${aData.dynRegime ? `🌊 *Regime:* CHOP=${aData.dynRegime.chop?.toFixed(1)||'?'} H=${aData.dynRegime.hurst?.toFixed(2)||'?'} MTF=${aData.mtfAlignCount||0}/4` : ''}
 ⏱️ ${aData.marketSMC.killzone}${asianWarning}
 
 ━━━━━━━━━━━━━━━━━━
@@ -398,7 +400,7 @@ ${aData.cmeGap && aData.cmeGap.hasGap ? aData.cmeGap.display : ''}
 🔥 Confidence: ${data.confidence}${extraInfo}
 
 ━━━━━━━━━━━━━━━━━━
-*📊 TECHNICAL (Score: ${aData.score}/${aData.maxScore})*
+*📊 TECHNICAL (Score: ${aData.score}/${aData.maxScore}) ${aData.signalGradeEmoji||''} ${aData.signalGrade||''} ${aData.signalGradeLabel||''}*
 ━━━━━━━━━━━━━━━━━━
 ✔️ ${aData.reasons}
 

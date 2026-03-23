@@ -80,29 +80,28 @@ async function getTopDownSetups(ignoreCooldown = false) {
 
             const aData = await analyzer.run14FactorAnalysis(coin, '15m');
 
-            // ── SCORE GATE ───────────────────────────────────────────────
-            // v7 maxScore = 100. Old threshold was 12/70 (17%).
-            // Proportional equivalent: 17/100 ≈ 17. Raised to 20 for quality.
-            // This prevents low-quality setups from flooding results.
-            if (aData.score >= 20) {
-                const sent     = await getSentimentCached();
-                const sentBias = parseFloat(sent.totalBias) || 0;
+            // ── SCORE GATE v8 (High-Accuracy) ────────────────────────────────
+            // Score normalized 0-100. Threshold raised 20→35.
+            // Grades: A+(Elite) / A(High) / B(Standard) only pass auto-scan.
+            // C/D grade always blocked. Asian session (00-08 UTC): C/D blocked.
+            if (aData.score >= 35) {
+                const sent      = await getSentimentCached();
+                const sentBias  = parseFloat(sent.totalBias) || 0;
                 const sentBonus =
                     (aData.direction === 'LONG'  && sentBias >= 1)  ?  1 :
                     (aData.direction === 'SHORT' && sentBias <= -1) ?  1 :
                     (aData.direction === 'LONG'  && sentBias <= -1) ? -1 :
                     (aData.direction === 'SHORT' && sentBias >= 1)  ? -1 : 0;
 
-                const adjustedScore = aData.score + sentBonus;
+                const adjustedScore   = aData.score + sentBonus;
+                const confScore       = aData.confScore || 0;
+                const confGate        = aData.confGate  || false;
+                const signalGrade     = aData.signalGrade || 'C';
+                const mtfAlign        = aData.mtfAlignCount || 0;
 
-                // ── ENHANCED CONFIRMATION GATE ────────────────────────────
-                // Uses the new confScore from analyzer (0-13 confirmations).
-                // A signal with score 12 but 0 confirmations = noise.
-                // A signal with score 12 and 3+ confirmations = real setup.
-                const confScore = aData.confScore || 0;
-                const confGate  = aData.confGate || false;
+                // Block C/D grades during Asian session low-liquidity hours
+                if (aData.sessionBlocked) continue;
 
-                // Legacy 4-factor core check (backward compat)
                 const coreConf = [
                     aData.choch && aData.choch.includes(aData.direction === 'LONG' ? 'Bullish' : 'Bearish'),
                     aData.liquiditySweep && aData.liquiditySweep.includes(aData.direction === 'LONG' ? 'Bullish' : 'Bearish'),
@@ -110,49 +109,55 @@ async function getTopDownSetups(ignoreCooldown = false) {
                     aData.sweep5m && aData.sweep5m.includes(aData.direction === 'LONG' ? 'Bullish' : 'Bearish'),
                 ].filter(Boolean).length;
 
-                // ── QUALITY GATE: require score + confirmations ───────────
-                // v7 thresholds (maxScore = 100):
-                //   High score  (≥30): accept with 1+ confirmation  — elite setup
-                //   Normal score(20-29): require 2+ confirmations   — solid setup
-                //   Both gates: confGate (2+ broad) OR coreConf (2+ SMC core)
+                // Grade-based thresholds:
+                // A+: score≥60, MTF≥3, conf≥8  → ELITE always passes
+                // A:  score≥50, MTF≥2, conf≥5  → HIGH quality passes
+                // B:  score≥35 + confGate/core  → STANDARD passes
+                // C/D: never pass auto-scan
                 const qualityPass =
-                    adjustedScore >= 30 ? (confScore >= 1 || coreConf >= 1) :
-                    adjustedScore >= 20 ? (confGate  || coreConf >= 2) : false;
+                    (signalGrade === 'A+') ? (adjustedScore >= 60 && mtfAlign >= 3 && confScore >= 8) :
+                    (signalGrade === 'A')  ? (adjustedScore >= 50 && mtfAlign >= 2 && confScore >= 5) :
+                    (signalGrade === 'B')  ? (adjustedScore >= 35 && (confGate || coreConf >= 2)) :
+                    false;
 
                 if (!qualityPass) continue;
 
-                // Mark this coin — won't appear again for 4h in auto-scan
                 markSignalSent(coin);
 
                 foundSetups.push({
-                    coin:           coin.replace('USDT', ''),
-                    type:           aData.direction === 'LONG' ? 'LONG 🟢' : 'SHORT 🔴',
-                    rawScore:       adjustedScore,
-                    score:          `${adjustedScore}/${aData.maxScore}`,
-                    price:          aData.priceStr,
-                    tp1:            aData.tp1,
-                    tp2:            aData.tp2,
-                    tp3:            aData.tp3,
-                    tp:             aData.tp2,
-                    sl:             aData.sl,
-                    adx:            aData.adxData.value,
-                    reasons:        aData.reasons,
-                    liquiditySweep: aData.liquiditySweep || 'None',
-                    choch:          aData.choch || 'None',
-                    choch5m:        aData.choch5m || 'None',
-                    sweep5m:        aData.sweep5m || 'None',
-                    sentEmoji:      sentBonus > 0 ? '📰✅' : sentBonus < 0 ? '📰⚠️' : '',
-                    tradeCategory:  aData.tradeCategory ? aData.tradeCategory.label : null,
-                    orderType:      aData.orderSuggestion ? aData.orderSuggestion.type : null,
-                    dailyTrend:     aData.dailyTrend || '',
-                    dailyAligned:   aData.dailyAligned,
-                    bbSqueeze:      aData.bbSqueeze,
-                    volExpansion:   aData.volExpansion,
-                    mmTrap:         aData.mmTrap,
-                    tf3Align:       aData.tf3Align,
+                    coin:             coin.replace('USDT', ''),
+                    type:             aData.direction === 'LONG' ? 'LONG 🟢' : 'SHORT 🔴',
+                    rawScore:         adjustedScore,
+                    score:            `${adjustedScore}/${aData.maxScore}`,
+                    signalGrade,
+                    signalGradeEmoji: aData.signalGradeEmoji || '📊',
+                    signalGradeLabel: aData.signalGradeLabel || 'STANDARD',
+                    price:            aData.priceStr,
+                    tp1:              aData.tp1,
+                    tp2:              aData.tp2,
+                    tp3:              aData.tp3,
+                    tp:               aData.tp2,
+                    sl:               aData.sl,
+                    adx:              aData.adxData.value,
+                    reasons:          aData.reasons,
+                    liquiditySweep:   aData.liquiditySweep || 'None',
+                    choch:            aData.choch || 'None',
+                    choch5m:          aData.choch5m || 'None',
+                    sweep5m:          aData.sweep5m || 'None',
+                    sentEmoji:        sentBonus > 0 ? '📰✅' : sentBonus < 0 ? '📰⚠️' : '',
+                    tradeCategory:    aData.tradeCategory ? aData.tradeCategory.label : null,
+                    orderType:        aData.orderSuggestion ? aData.orderSuggestion.type : null,
+                    dailyTrend:       aData.dailyTrend || '',
+                    dailyAligned:     aData.dailyAligned,
+                    mtfAlignCount:    mtfAlign,
+                    bbSqueeze:        aData.bbSqueeze,
+                    volExpansion:     aData.volExpansion,
+                    mmTrap:           aData.mmTrap,
+                    tf3Align:         aData.tf3Align,
                     coreConf,
-                    confScore:      confScore,   // ✅ NEW: full confirmation count
-                    confGate:       confGate,    // ✅ NEW: passed quality gate
+                    confScore,
+                    confGate,
+                    dynRegime:        aData.dynRegime || null,
                 });
             }
         } catch (_e) { /* skip failed coin */ }
@@ -513,7 +518,8 @@ async function runSignalScan() {
             const trapTag  = s.mmTrap && (s.mmTrap.bullTrap || s.mmTrap.bearTrap) ? ` 🪤` : '';
             const sqzTag   = s.bbSqueeze && s.bbSqueeze.exploding ? ` 💥` : '';
             summaryMsg +=
-                `*${i + 1}. #${s.coin}* - ${s.type} (Score: ${s.score} ⭐) ${s.sentEmoji || ''}${orderTag}${trapTag}${sqzTag}${catTag}\n` +
+                `*${i + 1}. ${s.signalGradeEmoji||'📊'} ${s.signalGrade||'B'} | #${s.coin}* - ${s.type} (${s.score} ⭐) ${s.sentEmoji || ''}${orderTag}${trapTag}${sqzTag}\n` +
+                `   ${s.signalGradeLabel||''} | MTF ${s.mtfAlignCount||0}/4 aligned | Conf: ${s.confScore||0}${catTag}\n` +
                 `   📍 $${s.price} | ADX: ${s.adx}${dayTag}\n` +
                 `   ✔️ ${s.reasons}\n` +
                 `   🤖 .future ${s.coin} 15m\n\n`;
@@ -744,5 +750,43 @@ function stopScannerFromSettings() {
 function autoStartTradeManager(conn) {
     startTradeManager(conn);
 }
+
+// ── Weekly Adaptive Weight Cron ───────────────────────────────────────────
+// Every Sunday at 00:05 UTC, analyze last 7 days of closed paper trades
+// and update indicator weights for the coming week.
+async function runWeeklyAdaptiveUpdate() {
+    try {
+        const db = require('../lib/database');
+        const { computeAndSaveAdaptiveWeights } = require('../lib/dynamicWeights');
+
+        const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        const trades = await db.Trade.find({
+            status: 'closed',
+            isPaper: true,
+            result: { $in: ['WIN', 'LOSS'] },
+            closedAt: { $gte: since },
+            reasons: { $exists: true, $ne: '' },
+        }).lean();
+
+        if (trades.length >= 10) {
+            const result = await computeAndSaveAdaptiveWeights(trades);
+            if (result) {
+                console.log(`[AdaptiveWeights] Weekly update: ${result.sampleSize} trades, WR=${result.winRate?.toFixed(1)}%, ${Object.keys(result.weights).length} indicators`);
+            }
+        } else {
+            console.log(`[AdaptiveWeights] Skipping — only ${trades.length} trades (need 10+)`);
+        }
+    } catch(e) {
+        console.warn('[AdaptiveWeights] Weekly update failed:', e.message);
+    }
+}
+
+// Schedule: check every hour, run on Sundays at 00:xx UTC
+setInterval(() => {
+    const now = new Date();
+    if (now.getUTCDay() === 0 && now.getUTCHours() === 0) {
+        runWeeklyAdaptiveUpdate();
+    }
+}, 60 * 60 * 1000);
 
 module.exports = { getScannerStatus, startScannerFromSettings, stopScannerFromSettings, autoStartTradeManager };

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>AI Chat · Apex-MD</title>
+<title>AI Chat · ApexIQ</title>
 <link rel="stylesheet" href="/css/main.css">
 </head>
 <body>
@@ -30,7 +30,7 @@
 const D = window.__DATA__ || {};
 renderUserNav('ai');
 if (!D.hasGroq) document.getElementById('no-groq').style.display = 'block';
-const history = [{role:'system',content:'You are an expert cryptocurrency trading analyst assistant for the Apex-MD trading bot. Be concise, practical, and data-driven. Focus on actionable trading insights.'}];
+const history = [{role:'system',content:'You are an expert cryptocurrency trading analyst assistant for the ApexIQ trading bot. Be concise, practical, and data-driven. Focus on actionable trading insights.'}];
 const box = document.getElementById('chat-box');
 function addMsg(role, text) {
   const isUser = role==='user';

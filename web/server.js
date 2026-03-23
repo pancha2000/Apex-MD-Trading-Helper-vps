@@ -2,7 +2,7 @@
 
 /**
  * ════════════════════════════════════════════════════════════════════════
- *  APEX-MD v7.2 PRO VVIP  ·  web/server.js  ·  CLEAN ARCHITECTURE
+ *  APEXIQ v7.2 PRO VVIP  ·  web/server.js  ·  CLEAN ARCHITECTURE
  *  ──────────────────────────────────────────────────────────────────────
  *  ✅ Zero HTML strings in JS — all views are real .html files
  *  ✅ CSS in /public/css/   JS in /public/js/
@@ -193,19 +193,19 @@ function start() {
     }
 
     app.get('/', optionalAuth, (req, res) => {
-        res.send(renderView('public/landing', { loggedIn: Boolean(req.saasUser), username: req.saasUser?.username || '' }));
+        res.send(renderView('public/landing', { loggedIn: Boolean(req.saasUser), username: req.saasUser?.username || '' }, req.path));
     });
 
     app.get('/about', optionalAuth, (req, res) => {
-        res.send(renderView('public/landing', { loggedIn: Boolean(req.saasUser), username: req.saasUser?.username || '' }));
+        res.send(renderView('public/landing', { loggedIn: Boolean(req.saasUser), username: req.saasUser?.username || '' }, req.path));
     });
 
     app.get('/privacy', optionalAuth, (req, res) => {
-        res.send(renderView('public/privacy', { loggedIn: Boolean(req.saasUser), username: req.saasUser?.username || '' }));
+        res.send(renderView('public/privacy', { loggedIn: Boolean(req.saasUser), username: req.saasUser?.username || '' }, req.path));
     });
 
     app.get('/terms', optionalAuth, (req, res) => {
-        res.send(renderView('public/terms', { loggedIn: Boolean(req.saasUser), username: req.saasUser?.username || '' }));
+        res.send(renderView('public/terms', { loggedIn: Boolean(req.saasUser), username: req.saasUser?.username || '' }, req.path));
     });
 
     app.get('/robots.txt', (req, res) => {
@@ -219,12 +219,12 @@ function start() {
             'Disallow: /auth/',
             'Disallow: /app/api/',
             '',
-            'Sitemap: ' + (process.env.SITE_URL || 'https://apextradingfree.duckdns.org') + '/sitemap.xml',
+            'Sitemap: ' + (process.env.SITE_URL || 'https://apexiq.trading') + '/sitemap.xml',
         ].join('\n'));
     });
 
     app.get('/sitemap.xml', (req, res) => {
-        const base = process.env.SITE_URL || 'https://apextradingfree.duckdns.org';
+        const base = process.env.SITE_URL || 'https://apexiq.trading';
         res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>${base}/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>

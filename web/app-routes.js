@@ -959,19 +959,63 @@ app.post('/app/api/paper/update-limit/:tradeId', saasAuth.requireUserAuth, async
 
 // ── Background Zone Watcher — every 3 min (Oracle free tier safe) ──────
 // ════════════════════════════════════════════════════════════════════════
-//  SMART ZONE WATCHER v2 — Oracle Cloud friendly (3min interval)
+//  SMART ZONE WATCHER v3 — Full Edge Case Coverage
 //
-//  Edge cases handled:
-//  1. FAKEOUT PROTECTION   — requires 2 consecutive checks in zone before triggering
-//  2. APPROACHING WARNING  — WA alert when price < 1.5% from zone
-//  3. STALE ORDER ALERT    — if price moves >6% AWAY from zone (wrong direction)
-//  4. ZONE BLOWN THROUGH   — price shot past zone toward TP without touching (re-entry miss)
-//  5. ENTRY MISS           — small correction but not enough → zone still valid, wait
+//  PENDING ORDER scenarios:
+//  1. FAKEOUT PROTECTION    — requires 2 consecutive checks in zone before triggering
+//  2. APPROACHING WARNING   — alert when price < 1.5% from zone
+//  3. STALE ORDER ALERT     — price moves >6% AWAY from zone (wrong direction)
+//  4. ZONE BLOWN THROUGH    — price >3% past zone toward TP (real bypass, not tiny correction)
+//  5. ZONE RECOVERY         — was blown through, but price returned near zone (re-entry chance)
+//  6. DEEP FAKEOUT BELOW    — LONG: price drops >3% below zone toward SL (wick warning)
+//  7. MIDWAY REVERSAL       — was approaching zone (<5% away), reversed without touching
+//
+//  ACTIVE TRADE scenarios (SL hit / DCA logic):
+//  8. SL APPROACH WARNING   — active trade price within 1% of SL
+//  9. SL HIT → DCA ZONES    — SL triggered: suggest 3 DCA levels with avg entry + new TP/SL
 // ════════════════════════════════════════════════════════════════════════
 
-// In-memory fakeout counter (resets on restart — safe, just slightly more patient after restart)
-const _triggerCount = {}; // tradeId → consecutive hit count
+// Per-trade state tracker (resets on restart — fine, just slightly more patient)
+// tradeId → { triggerCount, wasBlownThrough, wasApproaching, approachMinDist,
+//             deepFakeoutAlerted, zoneRecoveryAlerted, midwayReversalAlerted,
+//             slApproachAlerted, slHitAlerted }
+const _tradeState = {};
 
+// ── Helper: send bot message safely ─────────────────────────────────────
+function _botSend(jid, text) {
+    const conn = global._botConn;
+    if (conn && jid) conn.sendMessage(jid, {text}).catch(()=>{});
+}
+
+// ── Helper: calculate DCA zones when entry fails ─────────────────────────
+// Returns { dca1, dca2, dca3, avgEntry, newTP, newSL, riskNote }
+function calcDcaZones(entry, sl, tp2, direction) {
+    const isL   = direction === 'LONG';
+    const risk  = Math.abs(entry - sl);                // original risk per unit
+    const sign  = isL ? -1 : 1;                        // DCA is below entry for LONG
+
+    // DCA levels — deeper each time, same unit-risk spacing as original
+    const dca1  = +(entry + sign * risk * 1.0).toFixed(4);  // 1× risk below entry (at SL)
+    const dca2  = +(entry + sign * risk * 1.618).toFixed(4);// 1.618× (fib extension)
+    const dca3  = +(entry + sign * risk * 2.0).toFixed(4);  // 2× (deep accumulation)
+
+    // Average entry if all 3 DCAs filled (equal size assumed)
+    const avgEntry = +((entry + dca1 + dca2 + dca3) / 4).toFixed(4);
+
+    // New SL: just past DCA3
+    const newSL = +(dca3 + sign * risk * 0.5).toFixed(4);
+
+    // New TP: maintain original RRR from avg entry
+    const origRRR  = tp2 ? Math.abs(tp2 - entry) / risk : 2;
+    const newRange = Math.abs(avgEntry - newSL);
+    const newTP    = +(avgEntry - sign * newRange * origRRR).toFixed(4);
+
+    // Risk note
+    const riskNote = `DCA1→${dca1} | DCA2→${dca2} | DCA3→${dca3}\nAvg Entry: $${avgEntry} | New SL: $${newSL} | New TP: $${newTP}`;
+    return { dca1, dca2, dca3, avgEntry, newTP, newSL, riskNote };
+}
+
+// ── PENDING ORDER WATCHER ────────────────────────────────────────────────
 let _watcherRunning = false;
 async function runLimitOrderWatcher() {
     if (_watcherRunning) return;
@@ -996,57 +1040,93 @@ async function runLimitOrderWatcher() {
             const tp2  = trade.tp2 || trade.tp;
             const id   = trade._id.toString();
 
+            // Init per-trade state
+            if (!_tradeState[id]) _tradeState[id] = {
+                triggerCount:0, wasBlownThrough:false, wasApproaching:false,
+                approachMinDist:Infinity, deepFakeoutAlerted:false,
+                zoneRecoveryAlerted:false, midwayReversalAlerted:false
+            };
+            const st = _tradeState[id];
+
             // Distance from limit zone (%)
             const distFromZone = Math.abs(curP - limP) / limP * 100;
 
-            // ── 1. Check if price is AT zone (within 0.5% tolerance) ────────
-            const inZone = isL ? curP <= limP * 1.005 : curP >= limP * 0.995;
+            // ── Track approaching state ──────────────────────────────────────
+            if (distFromZone < st.approachMinDist) st.approachMinDist = distFromZone;
+            if (distFromZone < 5) st.wasApproaching = true;
 
-            // ── 2. FAKEOUT PROTECTION: count consecutive hits ────────────────
-            if (inZone) {
-                _triggerCount[id] = (_triggerCount[id] || 0) + 1;
-            } else {
-                // Price left zone — reset counter (fakeout, didn't hold)
-                if (_triggerCount[id] > 0 && _triggerCount[id] < 2) {
-                    const conn = global._botConn;
-                    if (conn && trade.userJid) {
-                        conn.sendMessage(trade.userJid, {text:
-                            `⚡ *Fakeout Detected — Held!*\n\n` +
-                            `*${trade.coin.replace('USDT','')}* touched $${limP} briefly but left zone.\n` +
-                            `Limit order NOT triggered. Waiting for proper candle close in zone.\n\n` +
-                            `💡 This is normal — fakeout protection saved you from a bad fill.`
-                        }).catch(()=>{});
-                    }
-                }
-                _triggerCount[id] = 0;
+            // ── 1. Check if price is AT zone (within 0.5% tolerance) ────────
+            // For LONG: also detects deep fakeout below zone (wick past SL direction)
+            const inZone     = isL ? curP <= limP * 1.005 : curP >= limP * 0.995;
+            const deepFakeout = trade.sl && (
+                isL ? curP < trade.sl * 1.01   // LONG: price near/below SL = deep wick
+                    : curP > trade.sl * 0.99   // SHORT: price near/above SL = deep wick
+            );
+
+            // ── SCENARIO 6: DEEP FAKEOUT BELOW ZONE ─────────────────────────
+            // Price wicked far below zone (toward SL) but may still recover
+            if (inZone && deepFakeout && !st.deepFakeoutAlerted) {
+                st.deepFakeoutAlerted = true;
+                _botSend(trade.userJid,
+                    `⚠️ *Deep Fakeout Wick Detected!*\n\n` +
+                    `*${trade.coin.replace('USDT','')}* ${trade.direction}\n` +
+                    `📍 Your zone: $${limP} | Current: $${curP}\n` +
+                    `🛡️ SL level: $${trade.sl}\n\n` +
+                    `Price wicked very close to SL — this is a deep fakeout.\n\n` +
+                    `💡 *What to do:*\n` +
+                    `• Wait for candle to *CLOSE* back above zone ($${limP})\n` +
+                    `• If close confirms → strong entry (trapped shorts/longs liquidated)\n` +
+                    `• If close stays below zone → consider cancelling\n\n` +
+                    `Do NOT panic — deep wicks below demand zones are often traps.`
+                );
+                console.log(`[LimitWatcher] ⚠️ Deep fakeout ${trade.coin} @ $${curP} (zone $${limP})`);
             }
 
-            if (inZone && _triggerCount[id] >= 2) {
+            // ── 2. FAKEOUT PROTECTION: count consecutive hits ────────────────
+            if (inZone && !deepFakeout) {
+                st.triggerCount = (st.triggerCount || 0) + 1;
+                // If price was blown-through zone but came back → reset bypass flag
+                if (st.wasBlownThrough) {
+                    st.wasBlownThrough = false;
+                    st.zoneRecoveryAlerted = false; // allow re-alert next cycle
+                    console.log(`[LimitWatcher] 🔄 Zone recovered ${trade.coin} after bypass`);
+                }
+            } else if (!inZone) {
+                // Price left zone — check for fakeout (touched but didn't hold)
+                if (st.triggerCount > 0 && st.triggerCount < 2) {
+                    _botSend(trade.userJid,
+                        `⚡ *Fakeout Detected — Held!*\n\n` +
+                        `*${trade.coin.replace('USDT','')}* touched $${limP} briefly but left zone.\n` +
+                        `Limit order NOT triggered. Waiting for proper candle close in zone.\n\n` +
+                        `💡 Fakeout protection saved you from a bad fill.`
+                    );
+                }
+                st.triggerCount = 0;
+                st.deepFakeoutAlerted = false; // reset so we can warn again on next wick
+            }
+
+            if (inZone && !deepFakeout && st.triggerCount >= 2) {
                 // ✅ CONFIRMED TRIGGER — 2 consecutive checks in zone = real entry
-                delete _triggerCount[id];
+                delete _tradeState[id];
                 await db.Trade.findByIdAndUpdate(trade._id, {
                     status: 'active', fillPrice: curP, entry: curP, lastWatchAt: new Date()
                 });
                 const rr = tp2 && trade.sl ? (Math.abs(tp2-curP)/Math.abs(curP-trade.sl)).toFixed(2) : '—';
-                const conn = global._botConn;
-                if (conn && trade.userJid) {
-                    conn.sendMessage(trade.userJid, {text:
-                        `✅ *Limit Order TRIGGERED!* (Confirmed)\n\n` +
-                        `🪙 *${trade.coin.replace('USDT','')}* ${isL?'🟢 LONG':'🔴 SHORT'}\n` +
-                        `📍 Zone: *${trade.zoneLabel||'Fib Zone'}* ${trade.zoneStrength==='STRONG'?'💪 STRONG':'📌 MEDIUM'}\n\n` +
-                        `💵 Fill Price: *$${curP}*\n` +
-                        `🎯 TP1: $${trade.tp1||'—'} | TP2: $${tp2||'—'} | TP3: $${trade.tp3||'—'}\n` +
-                        `🛡️ SL: $${trade.sl} | ⚖️ RRR: ${rr}:1 | 💡 ${trade.leverage}x\n\n` +
-                        `📊 Paper trade now ACTIVE — track in dashboard!`
-                    }).catch(()=>{});
-                }
+                _botSend(trade.userJid,
+                    `✅ *Limit Order TRIGGERED!* (Confirmed)\n\n` +
+                    `🪙 *${trade.coin.replace('USDT','')}* ${isL?'🟢 LONG':'🔴 SHORT'}\n` +
+                    `📍 Zone: *${trade.zoneLabel||'Fib Zone'}* ${trade.zoneStrength==='STRONG'?'💪 STRONG':'📌 MEDIUM'}\n\n` +
+                    `💵 Fill Price: *$${curP}*\n` +
+                    `🎯 TP1: $${trade.tp1||'—'} | TP2: $${tp2||'—'} | TP3: $${trade.tp3||'—'}\n` +
+                    `🛡️ SL: $${trade.sl} | ⚖️ RRR: ${rr}:1 | 💡 ${trade.leverage}x\n\n` +
+                    `📊 Paper trade now ACTIVE — track in dashboard!`
+                );
                 console.log(`[LimitWatcher] ✅ CONFIRMED TRIGGER ${trade.coin} ${trade.direction} @ $${curP}`);
                 continue;
             }
 
             if (inZone) {
-                // First check in zone — log and wait for confirmation next cycle
-                console.log(`[LimitWatcher] 🕐 ${trade.coin} in zone (check ${_triggerCount[id]}/2) @ $${curP}`);
+                console.log(`[LimitWatcher] 🕐 ${trade.coin} in zone (check ${st.triggerCount}/2) @ $${curP}`);
                 continue;
             }
 
@@ -1055,16 +1135,13 @@ async function runLimitOrderWatcher() {
                 const sinceWarn = trade.lastWatchAt ? Date.now()-new Date(trade.lastWatchAt).getTime() : Infinity;
                 if (sinceWarn > 30*60*1000) {
                     await db.Trade.findByIdAndUpdate(trade._id, {lastWatchAt: new Date()});
-                    const conn = global._botConn;
-                    if (conn && trade.userJid) {
-                        conn.sendMessage(trade.userJid, {text:
-                            `📍 *Limit Order Approaching!*\n\n` +
-                            `*${trade.coin.replace('USDT','')}* ${trade.direction}\n` +
-                            `🎯 Zone: $${limP} (${trade.zoneLabel||''})\n` +
-                            `💰 Current: $${curP} — *${distFromZone.toFixed(2)}% away*\n\n` +
-                            `Price getting close! Ready to enter? Check dashboard.`
-                        }).catch(()=>{});
-                    }
+                    _botSend(trade.userJid,
+                        `📍 *Limit Order Approaching!*\n\n` +
+                        `*${trade.coin.replace('USDT','')}* ${trade.direction}\n` +
+                        `🎯 Zone: $${limP} (${trade.zoneLabel||''})\n` +
+                        `💰 Current: $${curP} — *${distFromZone.toFixed(2)}% away*\n\n` +
+                        `Price getting close! Ready to enter? Check dashboard.`
+                    );
                 }
                 continue;
             }
@@ -1077,62 +1154,198 @@ async function runLimitOrderWatcher() {
             if (movingAway) {
                 const sinceCreate = trade.openTime ? Date.now()-new Date(trade.openTime).getTime() : 0;
                 const sinceWarn   = trade.lastWatchAt ? Date.now()-new Date(trade.lastWatchAt).getTime() : Infinity;
-                // Only warn once per 2h and if order is older than 30min
                 if (sinceCreate > 30*60*1000 && sinceWarn > 2*60*60*1000) {
                     await db.Trade.findByIdAndUpdate(trade._id, {lastWatchAt: new Date()});
-                    const conn = global._botConn;
-                    if (conn && trade.userJid) {
-                        conn.sendMessage(trade.userJid, {text:
-                            `⚠️ *Limit Order May Be Stale*\n\n` +
-                            `*${trade.coin.replace('USDT','')}* ${trade.direction}\n` +
-                            `🎯 Your zone: $${limP} | Current: $${curP}\n` +
-                            `📏 Distance: *${distFromZone.toFixed(1)}% away* from zone\n\n` +
-                            `Price moved far from your limit zone.\n` +
-                            `*Options:*\n` +
-                            `• Wait — price may still pull back\n` +
-                            `• ✏️ Update entry in Paper tab\n` +
-                            `• ✕ Cancel if setup is no longer valid\n\n` +
-                            `Check dashboard → Paper tab to manage.`
-                        }).catch(()=>{});
-                    }
+                    _botSend(trade.userJid,
+                        `⚠️ *Limit Order May Be Stale*\n\n` +
+                        `*${trade.coin.replace('USDT','')}* ${trade.direction}\n` +
+                        `🎯 Your zone: $${limP} | Current: $${curP}\n` +
+                        `📏 Distance: *${distFromZone.toFixed(1)}% away* from zone\n\n` +
+                        `Price moved far from your limit zone.\n` +
+                        `*Options:*\n` +
+                        `• Wait — price may still pull back\n` +
+                        `• ✏️ Update entry in Paper tab\n` +
+                        `• ✕ Cancel if setup is no longer valid\n\n` +
+                        `Check dashboard → Paper tab to manage.`
+                    );
                 }
                 continue;
             }
 
-            // ── 5. ZONE BLOWN THROUGH — price shot past zone toward TP ──────
-            // i.e. entry zone was supposed to be a pullback, but price went straight to TP
-            // For LONG: zone was below current, but now price is between zone and TP2 → bypassed
+            // ── 5. ZONE BLOWN THROUGH — price >3% past zone toward TP ───────
+            // (threshold raised from 1% → 3% to avoid false triggers on small corrections)
             const blownThrough = tp2 && (
-                isL  ? (curP > limP * 1.01 && curP < tp2) // LONG: above zone, below TP
-                     : (curP < limP * 0.99 && curP > tp2) // SHORT: below zone, above TP
+                isL  ? (curP > limP * 1.03 && curP < tp2) // LONG: >3% above zone, below TP
+                     : (curP < limP * 0.97 && curP > tp2) // SHORT: >3% below zone, above TP
             );
 
             if (blownThrough) {
+                st.wasBlownThrough   = true;
+                st.zoneRecoveryAlerted = false;
                 const sinceWarn = trade.lastWatchAt ? Date.now()-new Date(trade.lastWatchAt).getTime() : Infinity;
-                if (sinceWarn > 4*60*60*1000) { // warn once per 4h
+                if (sinceWarn > 4*60*60*1000) {
                     await db.Trade.findByIdAndUpdate(trade._id, {lastWatchAt: new Date()});
-                    const conn = global._botConn;
-                    if (conn && trade.userJid) {
-                        conn.sendMessage(trade.userJid, {text:
-                            `🔄 *Zone Bypassed Again — Re-entry Needed*\n\n` +
-                            `*${trade.coin.replace('USDT','')}* ${trade.direction}\n` +
-                            `Your limit zone $${limP} was skipped — price went straight toward TP.\n\n` +
-                            `💡 *What to do:*\n` +
-                            `• Run a fresh analysis in Scanner\n` +
-                            `• A new limit zone will be suggested\n` +
-                            `• Cancel this order and place a new one\n\n` +
-                            `Current price: $${curP} (between zone and TP)`
-                        }).catch(()=>{});
-                    }
+                    _botSend(trade.userJid,
+                        `🔄 *Zone Bypassed — Re-entry Needed*\n\n` +
+                        `*${trade.coin.replace('USDT','')}* ${trade.direction}\n` +
+                        `Your limit zone $${limP} was skipped — price moved straight toward TP.\n\n` +
+                        `💡 *What to do:*\n` +
+                        `• If price is still between zone and TP → wait (it may come back!)\n` +
+                        `• Run a fresh Scanner analysis for a new zone\n` +
+                        `• Cancel this order and place a new limit order\n\n` +
+                        `Current price: $${curP} | Zone: $${limP}`
+                    );
                 }
+                continue;
+            }
+
+            // ── 5b. ZONE RECOVERY — was blown through, now returning to zone ─
+            // Price was past zone toward TP, but corrected back within 3% of zone
+            if (st.wasBlownThrough && distFromZone < 3 && !st.zoneRecoveryAlerted) {
+                st.zoneRecoveryAlerted = true;
+                _botSend(trade.userJid,
+                    `🎯 *Zone Recovery! Re-entry Opportunity*\n\n` +
+                    `*${trade.coin.replace('USDT','')}* ${trade.direction}\n` +
+                    `📍 Zone: $${limP} | Current: $${curP} (${distFromZone.toFixed(2)}% away)\n\n` +
+                    `Price returned near your original entry zone after bypassing it.\n` +
+                    `This is a *second-chance entry* — often higher quality!\n\n` +
+                    `💡 *What to do:*\n` +
+                    `• Your existing limit order will auto-trigger when price hits zone\n` +
+                    `• Or manually enter now if momentum is good\n` +
+                    `• Check Scanner for updated zone confirmation\n\n` +
+                    `🔄 Zone is live again — limit order watching for entry.`
+                );
+                console.log(`[LimitWatcher] 🎯 Zone Recovery ${trade.coin} @ $${curP}`);
+                continue;
+            }
+
+            // ── 7. MIDWAY REVERSAL — was approaching, now moving away ────────
+            // Price came within 5% of zone, then reversed >4% away without touching
+            if (st.wasApproaching && distFromZone > 4 && !st.midwayReversalAlerted && !movingAway) {
+                st.midwayReversalAlerted = true;
+                _botSend(trade.userJid,
+                    `↩️ *Midway Reversal — Zone Not Reached*\n\n` +
+                    `*${trade.coin.replace('USDT','')}* ${trade.direction}\n` +
+                    `📍 Zone: $${limP} | Current: $${curP}\n` +
+                    `📏 Got within ${st.approachMinDist.toFixed(1)}% of zone, then reversed.\n\n` +
+                    `Price came close but reversed before touching entry zone.\n\n` +
+                    `💡 *What to do:*\n` +
+                    `• Zone is still valid — wait for next pullback\n` +
+                    `• Limit order remains active and watching\n` +
+                    `• If structure breaks, cancel and re-scan\n\n` +
+                    `Not a loss — missed entry means no risk taken.`
+                );
+                console.log(`[LimitWatcher] ↩️ Midway reversal ${trade.coin}, closest ${st.approachMinDist.toFixed(1)}%`);
+                // Reset so we can warn again on next approach
+                st.wasApproaching       = false;
+                st.approachMinDist      = Infinity;
+                st.midwayReversalAlerted = false;
             }
         }
     } catch(e) { console.error('[LimitWatcher]', e.message); }
     finally { _watcherRunning = false; }
 }
+
+// ── ACTIVE TRADE SL WATCHER — DCA suggestions when SL hit ───────────────
+let _activeWatcherRunning = false;
+async function runActiveTradeWatcher() {
+    if (_activeWatcherRunning) return;
+    _activeWatcherRunning = true;
+    try {
+        const active = await db.Trade.find({status:'active', isPaper:true}).lean();
+        if (!active.length) return;
+
+        const coins    = [...new Set(active.map(t=>t.coin))];
+        const priceMap = {};
+        await Promise.all(coins.map(async coin => {
+            try {
+                const r = await axios.get(`https://api.binance.com/api/v3/ticker/price?symbol=${coin}`,{timeout:5000});
+                priceMap[coin] = parseFloat(r.data.price);
+            } catch(_) {}
+        }));
+
+        for (const trade of active) {
+            const curP = priceMap[trade.coin]; if (!curP || !trade.sl) continue;
+            const id   = trade._id.toString();
+            const isL  = trade.direction === 'LONG';
+            const sl   = trade.sl;
+            const entry = trade.fillPrice || trade.entry;
+            const tp2   = trade.tp2 || trade.tp;
+
+            if (!_tradeState[id]) _tradeState[id] = { slApproachAlerted:false, slHitAlerted:false };
+            const st = _tradeState[id];
+
+            const distFromSL   = Math.abs(curP - sl) / sl * 100;
+            const slApproaching = distFromSL < 1.0;
+            const slHit         = isL ? curP <= sl * 1.005 : curP >= sl * 0.995;
+
+            // ── 8. SL APPROACH WARNING (within 1% of SL) ────────────────────
+            if (slApproaching && !slHit && !st.slApproachAlerted) {
+                st.slApproachAlerted = true;
+                _botSend(trade.userJid,
+                    `🚨 *SL Approaching!*\n\n` +
+                    `*${trade.coin.replace('USDT','')}* ${trade.direction}\n` +
+                    `📍 Entry: $${entry} | 🛡️ SL: $${sl}\n` +
+                    `💰 Current: $${curP} — *${distFromSL.toFixed(2)}% from SL*\n\n` +
+                    `Price is very close to your stop loss.\n\n` +
+                    `💡 *Options:*\n` +
+                    `• Hold — SL exists for a reason (let it play)\n` +
+                    `• Move SL to breakeven if already in profit\n` +
+                    `• Reduce size now to limit loss\n\n` +
+                    `Check dashboard → Paper tab to manage.`
+                );
+            }
+
+            // Reset approach alert if price bounced away from SL
+            if (!slApproaching && st.slApproachAlerted && distFromSL > 2) {
+                st.slApproachAlerted = false;
+            }
+
+            // ── 9. SL HIT → DCA ZONE SUGGESTIONS ────────────────────────────
+            if (slHit && !st.slHitAlerted && entry) {
+                st.slHitAlerted = true;
+                const dca = calcDcaZones(entry, sl, tp2, trade.direction);
+                const lossAmt = trade.positionSize ? (Math.abs(entry-sl)/entry * trade.positionSize * trade.leverage).toFixed(2) : '—';
+
+                await db.Trade.findByIdAndUpdate(trade._id, {
+                    status:'closed', result:'SL_HIT', closedAt: new Date(), closedPrice: curP
+                });
+
+                _botSend(trade.userJid,
+                    `🛑 *Stop Loss Hit — Trade Closed*\n\n` +
+                    `*${trade.coin.replace('USDT','')}* ${isL?'🔴 LONG':'🟢 SHORT'} ${isL?'▼':'▲'}\n` +
+                    `📍 Entry: $${entry} → SL: $${curP}\n` +
+                    `📉 Loss: ~$${lossAmt}\n\n` +
+                    `━━━━━━━━━━━━━━━━━━━━━\n` +
+                    `🔄 *DCA Re-entry Zones* (if you believe in setup):\n\n` +
+                    `📌 *DCA 1* — $${dca.dca1}\n` +
+                    `   (At original SL — 1st accumulation zone)\n\n` +
+                    `📌 *DCA 2* — $${dca.dca2}\n` +
+                    `   (1.618× Fib extension below entry)\n\n` +
+                    `📌 *DCA 3* — $${dca.dca3}\n` +
+                    `   (2× risk — deep accumulation / liquidity grab)\n\n` +
+                    `━━━━━━━━━━━━━━━━━━━━━\n` +
+                    `📊 *If All 3 DCAs Fill:*\n` +
+                    `   Avg Entry: $${dca.avgEntry}\n` +
+                    `   New SL: $${dca.newSL}\n` +
+                    `   New TP: $${dca.newTP}\n\n` +
+                    `⚠️ *DCA Warning:* Only DCA if market structure is intact.\n` +
+                    `If trend is broken → skip DCA, wait for fresh setup.\n\n` +
+                    `Run Scanner for new analysis before placing DCA orders.`
+                );
+                console.log(`[ActiveWatcher] 🛑 SL HIT ${trade.coin} @ $${curP}, DCA zones: ${dca.dca1}/${dca.dca2}/${dca.dca3}`);
+                delete _tradeState[id];
+            }
+        }
+    } catch(e) { console.error('[ActiveWatcher]', e.message); }
+    finally { _activeWatcherRunning = false; }
+}
+
 setInterval(runLimitOrderWatcher, 3*60*1000);
 setTimeout(runLimitOrderWatcher, 15000);
-console.log('[LimitWatcher] ✅ Smart Zone Watcher v2 started (fakeout protection + stale detection)');
+setInterval(runActiveTradeWatcher, 3*60*1000);
+setTimeout(runActiveTradeWatcher, 30*1000);
+console.log('[LimitWatcher] ✅ Smart Zone Watcher v3 started (full edge case coverage + DCA engine)');
 
 
 }; // end registerApp

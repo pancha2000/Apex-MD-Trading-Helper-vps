@@ -163,6 +163,7 @@ ADX: ${aData.adxData.status} | RSI: ${aData.rsi} | VWAP: ${aData.vwap}
 OB Bull: ${aData.marketSMC.bullishOBDisplay} | OB Bear: ${aData.marketSMC.bearishOBDisplay}
 Kill Zone: ${aData.marketSMC.killzone} | Liquidation: ${liqData.sentiment}
 Entry Zone: ${aData.bestEntry.name} | OB Confirmation: ${aData.confirmation.status}
+Deep Entry: ${aData.deepEntry ? aData.deepEntry.action + ' | Conf:' + aData.deepEntry.confluence + ' sources: ' + (aData.deepEntry.confluenceSources||[]).slice(0,4).join(',') : 'N/A'}
 StochRSI: ${aData.stochRSI.signal} (K:${aData.stochRSI.k}) | BB: ${aData.bbands.signal} | MTF OB: ${aData.mtfOB.confluenceZone ? aData.mtfOB.confluenceZone.display : 'None'}
 Smart SL Method: ${aData.slLabel} | TP Methods: ${aData.tp1Label}, ${aData.tp2Label}, ${aData.tp3Label}
 MTF RSI: ${aData.mtfRSI.signal} | Volume Node: ${aData.volNodes.nearHVN ? 'At HVN (good entry)' : 'Not at HVN'} 
@@ -379,7 +380,9 @@ ${dangerWarning}${_paperBanner}${_proModeTag}
 🎯 *TP3:*      $${aData.tp3}  _(${aData.tp3Label})_
 🛡️ *SL:*       $${data.sl}  _(${aData.slLabel})_
 ⚖️ *RRR:*      ${data.rrr} ${rrrCheck.pass ? '✅' : '⚠️'}
-📋 *Order:*    ${aData.orderSuggestion.type} — ${aData.orderSuggestion.reason}
+📋 *Order:*    ${aData.deepEntry ? aData.deepEntry.action : aData.orderSuggestion.type + ' — ' + aData.orderSuggestion.reason}
+${aData.deepEntry && aData.deepEntry.decision !== 'MARKET' && aData.deepEntry.decision !== 'SKIP' ? `🎯 *Best Zone:* $${aData.deepEntry.optimalEntry} (${aData.deepEntry.distPct}% | ${aData.deepEntry.eta})
+🔗 *Confluence:* ${aData.deepEntry.confluenceSources.slice(0,4).join(' · ')}` : ''}${aData.deepEntry && aData.deepEntry.decision === 'SKIP' ? `\n⛔ *${aData.deepEntry.skipReason}*` : ''}
 🔔 ${aData.confirmation.status}${zoneWarn}
 ${aData.refinementNote ? `🔧 _${aData.refinementNote}_` : ''}
 ${aData.weeklyTgts ? `🗓️ *Extended TP:* ${aData.weeklyTgts.display}` : ''}

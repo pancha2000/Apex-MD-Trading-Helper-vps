@@ -208,6 +208,11 @@ function timeAgo(ts) {
 /* ── API Helper ───────────────────────────────────────────── */
 async function apiFetch(url, opts = {}) {
     const r = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...opts });
+    // Always try to parse JSON first — server sends {ok:false, error, debug} even on 4xx/5xx
+    let json;
+    try { json = await r.json(); } catch(_) { throw new Error('HTTP ' + r.status); }
+    // If server returned ok:false, return it so caller can display the real error message
+    if (!r.ok && json) return json;
     if (!r.ok) throw new Error('HTTP ' + r.status);
-    return r.json();
+    return json;
 }

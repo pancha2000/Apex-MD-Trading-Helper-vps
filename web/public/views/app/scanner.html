@@ -105,7 +105,16 @@ async function doScan() {
   } catch(e){
     document.getElementById('scan-loading').style.display='none';
     document.getElementById('scan-btn').disabled=false;
-    const netMsg = e.message.includes('Failed to fetch') ? '🌐 Cannot reach server. Check your connection.' : '❌ Network error: '+e.message;
+    let netMsg;
+    if (e.message.includes('Failed to fetch') || e.message.includes('NetworkError')) {
+      netMsg = '🌐 Cannot reach server. Check your connection.';
+    } else if (e.message.includes('timeout')) {
+      netMsg = '⏱️ Analysis timed out. Try again in a moment.';
+    } else if (e.message.includes('HTTP 5')) {
+      netMsg = '⚙️ Server error. Please try again. If this persists, contact admin.';
+    } else {
+      netMsg = '❌ ' + e.message;
+    }
     document.getElementById('scan-error').querySelector('div').textContent=netMsg;
     document.getElementById('scan-error').style.display='block';
   }
@@ -442,7 +451,10 @@ async function loadMarketScan() {
             </div>
           </div>`;
         }).join('') + `<div style="font-size:.75rem;color:var(--text2);margin-top:10px;text-align:right">Scanned ${d.scanned||0} coins · Min Score: ${d.userMinScore||userMinScore}</div>`;
-  } catch(e){body.innerHTML='<div style="color:var(--red);padding:20px">❌ '+e.message+'</div>';}
+  } catch(e){
+    const msg = e.message.includes('Failed to fetch') ? '🌐 Cannot reach server.' : e.message.includes('HTTP 5') ? '⚙️ Server error — try again.' : '❌ '+e.message;
+    body.innerHTML='<div style="color:var(--red);padding:20px">'+msg+'</div>';
+  }
 }
 loadMarketScan();
 </script>

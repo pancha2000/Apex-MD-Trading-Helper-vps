@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Predictive Brain · ApexIQ</title>
+<link rel="stylesheet" href="/css/main.css">
+<style>
+/* ══════════════════════════════════════════════════════════════
+   PREDICTIVE BRAIN  ·  Scoped Styles
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── Keyframes ─────────────────────────────────────────────── */
+@keyframes glow-pulse {
+  0%,100% { text-shadow: 0 0 8px currentColor, 0 0 20px currentColor; }
+  50%      { text-shadow: 0 0 16px currentColor, 0 0 40px currentColor, 0 0 60px currentColor; }
+}
+@keyframes fadeIn {
+  from { opacity:0; transform:translateY(8px); }
+  to   { opacity:1; transform:translateY(0); }
+}
+@keyframes shimmer {
+  0%   { background-position:-400px 0; }
+  100% { background-position: 400px 0; }
+}
+@keyframes spin { to { transform:rotate(360deg); } }
+
+/* ── Page header ───────────────────────────────────────────── */
+.brain-hero {
+  background: linear-gradient(135deg, rgba(0,200,255,.07) 0%, rgba(124,58,237,.06) 100%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 28px 32px;
+  margin-bottom: 24px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.brain-hero-icon {
+  font-size: 2.8rem;
+  filter: drop-shadow(0 0 12px rgba(0,200,255,.4));
+}
+.brain-hero-title {
+  font-family: var(--font-head);
+  font-size: 1.55rem;
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: -.01em;
+}
+.brain-hero-sub {
+  font-size: .82rem;
+  color: var(--text2);
+  margin-top: 4px;
+  max-width: 520px;
+}
+
+/* ── Search bar ─────────────────────────────────────────────── */
+.search-bar-wrap {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+.search-bar-wrap .search-input {
+  flex: 1;
+  min-width: 200px;
+  background: var(--card2);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  padding: 12px 18px;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: .92rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  outline: none;
+  transition: border .2s, box-shadow .2s;
+}
+.search-bar-wrap .search-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0,200,255,.12);
+}
+.search-bar-wrap .search-input::placeholder {
+  text-transform: none;
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--text2);
+}
+.btn-add {
+  background: linear-gradient(135deg, var(--accent), #7c3aed);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  padding: 12px 22px;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: .9rem;
+  cursor: pointer;
+  transition: opacity .2s, transform .15s;
+  white-space: nowrap;
+}
+.btn-add:hover  { opacity: .88; transform: translateY(-1px); }
+.btn-add:active { transform: translateY(0); }
+.btn-add:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+
+/* ── Status toast ───────────────────────────────────────────── */
+.toast {
+  position: fixed;
+  top: 72px;
+  right: 20px;
+  z-index: 9999;
+  padding: 12px 20px;
+  border-radius: var(--radius);
+  font-size: .85rem;
+  font-weight: 600;
+  max-width: 340px;
+  animation: fadeIn .25s ease;
+  border: 1px solid transparent;
+  backdrop-filter: blur(12px);
+}
+.toast-ok  { background:rgba(0,230,118,.15); border-color:rgba(0,230,118,.3); color:var(--green); }
+.toast-err { background:rgba(255,51,85,.15);  border-color:rgba(255,51,85,.3);  color:var(--red); }
+.toast-inf { background:rgba(0,200,255,.12);  border-color:rgba(0,200,255,.25); color:var(--accent); }
+
+/* ── Watchlist table ─────────────────────────────────────────── */
+.wl-table-wrap { overflow-x: auto; }
+.wl-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.wl-table th {
+  font-family: var(--font-mono);
+  font-size: .7rem;
+  font-weight: 600;
+  color: var(--text2);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  white-space: nowrap;
+}
+.wl-table td {
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(28,51,73,.5);
+  vertical-align: middle;
+}
+.wl-table tr:last-child td { border-bottom: none; }
+.wl-table tr:hover td { background: rgba(0,200,255,.025); }
+.wl-table tr { animation: fadeIn .3s ease; }
+
+/* ── Coin pair cell ──────────────────────────────────────────── */
+.coin-pair-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.coin-symbol {
+  font-family: var(--font-head);
+  font-size: 1rem;
+  font-weight: 700;
+  color: #fff;
+}
+.coin-quote {
+  font-family: var(--font-mono);
+  font-size: .7rem;
+  color: var(--text2);
+}
+
+/* ── Predictive price cell ───────────────────────────────────── */
+.price-cell { min-width: 180px; }
+.current-price-label {
+  font-family: var(--font-mono);
+  font-size: .75rem;
+  color: var(--text2);
+  margin-bottom: 2px;
+}
+.predicted-price {
+  font-family: var(--font-mono);
+  font-size: 1.2rem;
+  font-weight: 700;
+  animation: glow-pulse 3s ease-in-out infinite;
+}
+.predicted-price.bullish { color: var(--green); }
+.predicted-price.bearish { color: var(--red); }
+.predicted-price.neutral { color: var(--accent); }
+.trend-arrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: .78rem;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 99px;
+  margin-top: 5px;
+}
+.trend-arrow.bull  { background:rgba(0,230,118,.12); color:var(--green); border:1px solid rgba(0,230,118,.25); }
+.trend-arrow.bear  { background:rgba(255,51,85,.12);  color:var(--red);   border:1px solid rgba(255,51,85,.25); }
+.trend-arrow.neut  { background:rgba(0,200,255,.10);  color:var(--accent);border:1px solid rgba(0,200,255,.2); }
+
+.regime-badge {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: .64rem;
+  padding: 2px 7px;
+  border-radius: 4px;
+  margin-top: 4px;
+  font-weight: 600;
+}
+.regime-trending  { background:rgba(0,200,255,.1); color:var(--accent); }
+.regime-ranging   { background:rgba(255,171,0,.1); color:var(--yellow); }
+.regime-choppy    { background:rgba(255,51,85,.1);  color:var(--red);   }
+
+.chop-block-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: .68rem;
+  color: var(--red);
+  background: rgba(255,51,85,.08);
+  border: 1px solid rgba(255,51,85,.2);
+  border-radius: 4px;
+  padding: 2px 7px;
+  margin-top: 4px;
+}
+
+/* ── Auto-pilot toggle ───────────────────────────────────────── */
+.toggle-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+.toggle {
+  position: relative;
+  width: 52px;
+  height: 28px;
+}
+.toggle input { opacity: 0; width: 0; height: 0; }
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  border-radius: 99px;
+  background: var(--card2);
+  border: 1px solid var(--border2);
+  transition: background .25s, box-shadow .25s;
+}
+.toggle-slider::before {
+  content: '';
+  position: absolute;
+  height: 20px;
+  width: 20px;
+  left: 3px;
+  bottom: 3px;
+  border-radius: 50%;
+  background: var(--text2);
+  transition: transform .25s, background .25s;
+}
+.toggle input:checked + .toggle-slider {
+  background: linear-gradient(135deg, var(--accent), #7c3aed);
+  border-color: transparent;
+  box-shadow: 0 0 12px rgba(0,200,255,.25);
+}
+.toggle input:checked + .toggle-slider::before {
+  transform: translateX(24px);
+  background: #fff;
+}
+.toggle-label {
+  font-size: .65rem;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--text2);
+}
+.toggle-label.on { color: var(--accent); }
+
+/* ── Strategy cell ───────────────────────────────────────────── */
+.strategy-cell { min-width: 210px; }
+.ai-strategy-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(135deg,rgba(0,200,255,.08),rgba(124,58,237,.08));
+  border: 1px solid rgba(0,200,255,.15);
+  font-size: .78rem;
+  font-family: var(--font-head);
+  font-weight: 600;
+  color: var(--accent);
+  white-space: nowrap;
+}
+.ai-strategy-badge .ai-icon { font-size: .9rem; }
+.ai-conf {
+  font-family: var(--font-mono);
+  font-size: .62rem;
+  color: var(--text2);
+  margin-top: 3px;
+}
+.strategy-select {
+  background: var(--card2);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: .8rem;
+  padding: 7px 12px;
+  width: 100%;
+  cursor: pointer;
+  outline: none;
+  font-family: var(--font-body);
+  transition: border .2s;
+}
+.strategy-select:focus { border-color: var(--accent); }
+
+/* ── Actions cell ────────────────────────────────────────────── */
+.btn-refresh {
+  background: transparent;
+  border: 1px solid var(--border2);
+  border-radius: var(--radius-sm);
+  color: var(--text2);
+  font-size: .75rem;
+  padding: 6px 11px;
+  cursor: pointer;
+  transition: color .2s, border .2s;
+  white-space: nowrap;
+}
+.btn-refresh:hover { color: var(--accent); border-color: var(--accent); }
+.btn-refresh.loading { pointer-events:none; opacity:.5; }
+
+.btn-remove {
+  background: transparent;
+  border: 1px solid rgba(255,51,85,.25);
+  border-radius: var(--radius-sm);
+  color: var(--red);
+  font-size: .75rem;
+  padding: 6px 11px;
+  cursor: pointer;
+  transition: background .2s;
+  margin-left: 6px;
+}
+.btn-remove:hover { background: rgba(255,51,85,.1); }
+
+/* ── Empty state ─────────────────────────────────────────────── */
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--text2);
+}
+.empty-state-icon  { font-size: 3rem; margin-bottom: 12px; opacity: .4; }
+.empty-state-title { font-family: var(--font-head); font-size: 1rem; color: var(--text3); margin-bottom: 6px; }
+
+/* ── Skeleton loader ─────────────────────────────────────────── */
+.skeleton {
+  background: linear-gradient(90deg, var(--card) 25%, var(--card2) 50%, var(--card) 75%);
+  background-size: 400px 100%;
+  animation: shimmer 1.4s infinite;
+  border-radius: 4px;
+  height: 14px;
+}
+
+/* ── Stats bar ───────────────────────────────────────────────── */
+.brain-stats-bar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.brain-stat {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+}
+.brain-stat-label {
+  font-family: var(--font-mono);
+  font-size: .65rem;
+  color: var(--text2);
+  text-transform: uppercase;
+  letter-spacing: .07em;
+}
+.brain-stat-val {
+  font-family: var(--font-head);
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: #fff;
+  margin-top: 4px;
+}
+
+/* ── Responsive ──────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .brain-hero { padding: 20px; }
+  .brain-hero-title { font-size: 1.2rem; }
+  .wl-table th:nth-child(4),
+  .wl-table td:nth-child(4) { display: none; }
+}
+@media (max-width: 520px) {
+  .wl-table th:nth-child(5),
+  .wl-table td:nth-child(5) { display: none; }
+}
+</style>
+</head>
+<body>
+<div id="nav-root"></div>
+
+<div class="wrap">
+
+  <!-- ── Page Hero ──────────────────────────────────────────────────── -->
+  <div class="brain-hero">
+    <div class="brain-hero-icon">🧠</div>
+    <div style="flex:1">
+      <div class="brain-hero-title">Predictive Trading Brain</div>
+      <div class="brain-hero-sub">
+        Leading SMC analysis — see where the market is going in the next 4–12h, not where it's been.
+        Order Blocks · FVGs · Hurst Regime Filter · AI Auto-Pilot Strategy
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-ghost btn-sm" onclick="refreshAll()">↺ Refresh All</button>
+      <a href="/app/scanner" class="btn btn-ghost btn-sm">⚡ Deep Scanner →</a>
+    </div>
+  </div>
+
+  <!-- ── Stats Bar ──────────────────────────────────────────────────── -->
+  <div class="brain-stats-bar" id="stats-bar">
+    <div class="brain-stat"><div class="brain-stat-label">Watchlist</div><div class="brain-stat-val" id="stat-total">—</div></div>
+    <div class="brain-stat"><div class="brain-stat-label">Bullish Now</div><div class="brain-stat-val" id="stat-bull" style="color:var(--green)">—</div></div>
+    <div class="brain-stat"><div class="brain-stat-label">Bearish Now</div><div class="brain-stat-val" id="stat-bear" style="color:var(--red)">—</div></div>
+    <div class="brain-stat"><div class="brain-stat-label">Auto-Pilot ON</div><div class="brain-stat-val" id="stat-ap" style="color:var(--accent)">—</div></div>
+    <div class="brain-stat"><div class="brain-stat-label">Chop Filtered</div><div class="brain-stat-val" id="stat-chop" style="color:var(--yellow)">—</div></div>
+  </div>
+
+  <!-- ── Search / Add Bar ───────────────────────────────────────────── -->
+  <div class="search-bar-wrap">
+    <input
+      id="coin-input"
+      class="search-input"
+      type="text"
+      placeholder="Search or add a coin — e.g. BTC, ETH, SOL..."
+      maxlength="15"
+      autocomplete="off"
+      autocorrect="off"
+      spellcheck="false"
+      oninput="onCoinInput(this)"
+      onkeydown="if(event.key==='Enter') addCoin()"
+    >
+    <button class="btn-add" id="add-btn" onclick="addCoin()">
+      + Add to Watchlist
+    </button>
+  </div>
+
+  <!-- ── Watchlist Panel ────────────────────────────────────────────── -->
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-title">👁 My Watchlist
+        <span id="coin-count-badge" style="font-size:.72rem;color:var(--text2);margin-left:8px"></span>
+      </div>
+      <div style="font-size:.75rem;color:var(--text2)" id="last-refresh-label"></div>
+    </div>
+    <div class="panel-body" style="padding:0">
+      <div id="table-loading" style="display:none;padding:40px;text-align:center">
+        <div class="spinner" style="margin:0 auto"></div>
+        <div style="margin-top:10px;font-size:.82rem;color:var(--text2)">Loading your watchlist…</div>
+      </div>
+      <div id="table-error" style="display:none;padding:24px;color:var(--red);font-size:.85rem"></div>
+      <div class="wl-table-wrap" id="table-wrap" style="display:none">
+        <table class="wl-table">
+          <thead>
+            <tr>
+              <th>Coin</th>
+              <th>📍 Predictive Target</th>
+              <th>🤖 Auto-Pilot</th>
+              <th>🎯 Strategy</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="wl-body"></tbody>
+        </table>
+      </div>
+      <div id="empty-state" style="display:none" class="empty-state">
+        <div class="empty-state-icon">🔭</div>
+        <div class="empty-state-title">Your watchlist is empty</div>
+        <div style="font-size:.82rem;color:var(--text2);margin-bottom:16px">
+          Add coins above to start tracking predictive targets
+        </div>
+        <button class="btn-add" style="margin:0 auto" onclick="document.getElementById('coin-input').focus()">
+          + Add Your First Coin
+        </button>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /.wrap -->
+
+<!-- ── Toast container ──────────────────────────────────────────────── -->
+<div id="toast-container"></div>
+
+<script src="/js/user.js"></script>
+<script>
+/* ══════════════════════════════════════════════════════════════
+   PREDICTIVE BRAIN  ·  Frontend Controller
+   ══════════════════════════════════════════════════════════════ */
+
+const D = window.__DATA__ || {};
+renderUserNav('brain');
+
+// ── State ────────────────────────────────────────────────────────────────
+let watchlistCoins = [];         // local cache of watchlist
+let strategyRegistry = [];       // from /api/brain/strategies
+let activeRefreshes  = new Set();
+
+// ── Price formatting ─────────────────────────────────────────────────────
+function fmtPrice(n) {
+  if (!n || isNaN(n)) return '—';
+  const p = parseFloat(n);
+  if (p >= 10000) return '$' + p.toFixed(2);
+  if (p >= 100)   return '$' + p.toFixed(3);
+  if (p >= 1)     return '$' + p.toFixed(4);
+  if (p >= 0.01)  return '$' + p.toFixed(5);
+  return '$' + p.toFixed(8);
+}
+
+function fmtPct(n) {
+  if (n === null || n === undefined || isNaN(n)) return '';
+  const v = parseFloat(n);
+  const sign = v >= 0 ? '+' : '';
+  return `${sign}${v.toFixed(2)}%`;
+}
+
+function timeAgo(dateStr) {
+  if (!dateStr) return '';
+  const s = Math.floor((Date.now() - new Date(dateStr)) / 1000);
+  if (s < 60)   return `${s}s ago`;
+  if (s < 3600) return `${Math.floor(s/60)}m ago`;
+  if (s < 86400)return `${Math.floor(s/3600)}h ago`;
+  return `${Math.floor(s/86400)}d ago`;
+}
+
+// ── Toast helper ──────────────────────────────────────────────────────────
+let toastTimer;
+function showToast(msg, type = 'ok') {
+  const c = document.getElementById('toast-container');
+  const el = document.createElement('div');
+  el.className = `toast toast-${type}`;
+  el.textContent = msg;
+  c.innerHTML = '';
+  c.appendChild(el);
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.remove(), 3500);
+}
+
+// ── Input normalise ───────────────────────────────────────────────────────
+function onCoinInput(el) {
+  el.value = el.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+// ── Fetch watchlist from API ──────────────────────────────────────────────
+async function loadWatchlist(showLoader = true) {
+  if (showLoader) {
+    document.getElementById('table-loading').style.display = 'block';
+    document.getElementById('table-wrap').style.display  = 'none';
+    document.getElementById('empty-state').style.display = 'none';
+    document.getElementById('table-error').style.display = 'none';
+  }
+
+  try {
+    const data = await apiFetch('/app/api/brain/watchlist');
+    if (!data.ok) throw new Error(data.error || 'Failed to load watchlist');
+
+    watchlistCoins   = data.coins     || [];
+    strategyRegistry = data.strategies || [];
+    renderTable();
+    updateStats();
+    document.getElementById('last-refresh-label').textContent = 'Updated ' + new Date().toLocaleTimeString();
+
+  } catch (err) {
+    document.getElementById('table-error').style.display = 'block';
+    document.getElementById('table-error').textContent   = '❌ ' + err.message;
+  } finally {
+    document.getElementById('table-loading').style.display = 'none';
+  }
+}
+
+// ── Render the watchlist table ────────────────────────────────────────────
+function renderTable() {
+  const tbody = document.getElementById('wl-body');
+  const wrap  = document.getElementById('table-wrap');
+  const empty = document.getElementById('empty-state');
+
+  document.getElementById('coin-count-badge').textContent =
+    watchlistCoins.length ? `${watchlistCoins.length} coin${watchlistCoins.length !== 1 ? 's' : ''}` : '';
+
+  if (!watchlistCoins.length) {
+    wrap.style.display  = 'none';
+    empty.style.display = 'block';
+    return;
+  }
+
+  wrap.style.display  = 'block';
+  empty.style.display = 'none';
+
+  tbody.innerHTML = watchlistCoins.map(coin => buildRow(coin)).join('');
+}
+
+// ── Build a single table row HTML ────────────────────────────────────────
+function buildRow(c) {
+  const pair   = c.coin_pair || '';
+  const base   = pair.replace(/USDT$/, '');
+  const isAuto = c.auto_pilot_enabled === true;
+
+  // ── Col 1: Coin pair ──────────────────────────────────────────────────
+  const col1 = `
+    <td>
+      <div class="coin-pair-badge">
+        <span class="coin-symbol">${base}</span>
+        <span class="coin-quote">/ USDT</span>
+      </div>
+      ${c.last_refreshed_at
+        ? `<div style="font-size:.62rem;color:var(--text2);margin-top:3px">Updated ${timeAgo(c.last_refreshed_at)}</div>`
+        : '<div style="font-size:.62rem;color:var(--text2);margin-top:3px">Awaiting analysis…</div>'}
+    </td>`;
+
+  // ── Col 2: Predictive price + trend ──────────────────────────────────
+  const trend = (c.future_trend_4h || '').toLowerCase();
+  const isBull = trend.includes('bull');
+  const isBear = trend.includes('bear');
+  const trendClass = isBull ? 'bull' : isBear ? 'bear' : 'neut';
+  const trendArrow = isBull ? '↑' : isBear ? '↓' : '→';
+  const priceClass = isBull ? 'bullish' : isBear ? 'bearish' : 'neutral';
+  const pctLabel   = c.predicted_upside_pct != null
+    ? ` <span style="font-size:.75rem;opacity:.8">(${fmtPct(c.predicted_upside_pct)})</span>` : '';
+
+  const regime = c.market_regime || '';
+  const hurstVal = c.hurst_exponent != null
+    ? `H=${parseFloat(c.hurst_exponent).toFixed(2)}` : '';
+  const regimeClass = regime === 'Trending' ? 'regime-trending'
+    : regime === 'Choppy' ? 'regime-choppy' : 'regime-ranging';
+
+  const chopBlock = c.signal_blocked
+    ? `<div class="chop-block-badge">⚠️ Chop Filter — breakout blocked</div>` : '';
+
+  const col2 = `
+    <td class="price-cell">
+      <div class="current-price-label">
+        Now: <span style="font-family:var(--font-mono)">${fmtPrice(c.current_price)}</span>
+      </div>
+      ${c.ai_predicted_target_price
+        ? `<div class="predicted-price ${priceClass}">
+             ${fmtPrice(c.ai_predicted_target_price)}${pctLabel}
+           </div>`
+        : `<div style="color:var(--text2);font-size:.8rem">Pending analysis…</div>`}
+      <div>
+        <span class="trend-arrow ${trendClass}">${trendArrow} ${c.future_trend_4h || 'Scanning...'}</span>
+      </div>
+      ${regime
+        ? `<div><span class="regime-badge ${regimeClass}">${regime} ${hurstVal}</span></div>`
+        : ''}
+      ${chopBlock}
+    </td>`;
+
+  // ── Col 3: Auto-pilot toggle ──────────────────────────────────────────
+  const toggleId = `ap-toggle-${pair}`;
+  const col3 = `
+    <td>
+      <div class="toggle-wrap">
+        <label class="toggle">
+          <input type="checkbox" id="${toggleId}" ${isAuto ? 'checked' : ''}
+            onchange="toggleAutoPilot('${pair}', this.checked, this)">
+          <span class="toggle-slider"></span>
+        </label>
+        <span class="toggle-label ${isAuto ? 'on' : ''}">${isAuto ? 'AUTO' : 'MANUAL'}</span>
+      </div>
+    </td>`;
+
+  // ── Col 4: Strategy ───────────────────────────────────────────────────
+  let col4;
+  if (isAuto) {
+    const aiStrat = c.ai_active_strategy;
+    const stratObj = strategyRegistry.find(s => s.id === aiStrat);
+    const label = stratObj ? stratObj.label : (aiStrat ? aiStrat : 'Pending Tournament');
+    const conf = c.ai_strategy_confidence != null
+      ? `<div class="ai-conf">Confidence: ${c.ai_strategy_confidence}% · Updated ${timeAgo(c.ai_strategy_updated_at)}</div>` : '';
+    col4 = `
+      <td class="strategy-cell">
+        <div class="ai-strategy-badge">
+          <span class="ai-icon">🤖</span>
+          AI Selected: ${label}
+        </div>
+        ${conf}
+      </td>`;
+  } else {
+    const options = strategyRegistry.map(s => {
+      const sel = c.manual_strategy_selected === s.id ? 'selected' : '';
+      return `<option value="${s.id}" ${sel}>${s.label} · ${s.risk} risk</option>`;
+    }).join('');
+    col4 = `
+      <td class="strategy-cell">
+        <select class="strategy-select"
+          onchange="setStrategy('${pair}', this.value)"
+          title="Select your trading strategy for ${pair}">
+          <option value="">— Select Strategy —</option>
+          ${options}
+        </select>
+        ${c.manual_strategy_selected
+          ? `<div style="font-size:.65rem;color:var(--text2);margin-top:4px">
+               Active: ${strategyRegistry.find(s=>s.id===c.manual_strategy_selected)?.label || c.manual_strategy_selected}
+             </div>` : ''}
+      </td>`;
+  }
+
+  // ── Col 5: Actions ────────────────────────────────────────────────────
+  const isRefreshing = activeRefreshes.has(pair);
+  const col5 = `
+    <td>
+      <button class="btn-refresh ${isRefreshing ? 'loading' : ''}" id="refresh-btn-${pair}"
+        onclick="refreshCoin('${pair}')" title="Re-run predictive analysis">
+        ${isRefreshing ? '⏳' : '↺'} Refresh
+      </button>
+      <button class="btn-remove" onclick="removeCoin('${pair}')" title="Remove from watchlist">✕</button>
+    </td>`;
+
+  return `<tr id="row-${pair}">${col1}${col2}${col3}${col4}${col5}</tr>`;
+}
+
+// ── Stats bar update ──────────────────────────────────────────────────────
+function updateStats() {
+  const total  = watchlistCoins.length;
+  const bull   = watchlistCoins.filter(c => (c.future_trend_4h||'').toLowerCase().includes('bull')).length;
+  const bear   = watchlistCoins.filter(c => (c.future_trend_4h||'').toLowerCase().includes('bear')).length;
+  const ap     = watchlistCoins.filter(c => c.auto_pilot_enabled).length;
+  const chop   = watchlistCoins.filter(c => c.signal_blocked).length;
+  document.getElementById('stat-total').textContent = total;
+  document.getElementById('stat-bull').textContent  = bull;
+  document.getElementById('stat-bear').textContent  = bear;
+  document.getElementById('stat-ap').textContent    = ap;
+  document.getElementById('stat-chop').textContent  = chop;
+}
+
+// ── Add coin ──────────────────────────────────────────────────────────────
+async function addCoin() {
+  const input = document.getElementById('coin-input');
+  const btn   = document.getElementById('add-btn');
+  let   pair  = input.value.trim().toUpperCase();
+  if (!pair) { input.focus(); return; }
+  if (!pair.endsWith('USDT')) pair += 'USDT';
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Adding…';
+
+  try {
+    const data = await apiFetch('/app/api/brain/watchlist/add', {
+      method: 'POST',
+      body: JSON.stringify({ coin_pair: pair }),
+    });
+    if (!data.ok) throw new Error(data.error);
+    showToast(`✅ ${pair} added to watchlist`, 'ok');
+    input.value = '';
+    await loadWatchlist(false);
+  } catch (err) {
+    showToast('❌ ' + err.message, 'err');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '+ Add to Watchlist';
+  }
+}
+
+// ── Remove coin ───────────────────────────────────────────────────────────
+async function removeCoin(pair) {
+  if (!confirm(`Remove ${pair} from your watchlist?`)) return;
+  try {
+    const data = await apiFetch('/app/api/brain/watchlist/remove', {
+      method: 'POST',
+      body: JSON.stringify({ coin_pair: pair }),
+    });
+    if (!data.ok) throw new Error(data.error);
+    showToast(`🗑 ${pair} removed`, 'inf');
+    watchlistCoins = watchlistCoins.filter(c => c.coin_pair !== pair);
+    renderTable();
+    updateStats();
+  } catch (err) {
+    showToast('❌ ' + err.message, 'err');
+  }
+}
+
+// ── Toggle auto-pilot ─────────────────────────────────────────────────────
+async function toggleAutoPilot(pair, enabled, checkboxEl) {
+  // Optimistic UI — flip the label immediately
+  const labelEl = checkboxEl?.closest('.toggle-wrap')?.querySelector('.toggle-label');
+  if (labelEl) {
+    labelEl.textContent = enabled ? 'AUTO' : 'MANUAL';
+    labelEl.classList.toggle('on', enabled);
+  }
+
+  try {
+    const data = await apiFetch('/app/api/brain/autopilot', {
+      method: 'POST',
+      body: JSON.stringify({ coin_pair: pair, enabled }),
+    });
+    if (!data.ok) throw new Error(data.error);
+
+    showToast(data.message, 'ok');
+    // Update local cache + re-render only the strategy cell
+    const idx = watchlistCoins.findIndex(c => c.coin_pair === pair);
+    if (idx > -1) {
+      watchlistCoins[idx].auto_pilot_enabled = enabled;
+      // Re-render just this row for smooth UX
+      const row = document.getElementById(`row-${pair}`);
+      if (row) {
+        row.outerHTML = buildRow(watchlistCoins[idx]);
+      }
+    }
+    updateStats();
+  } catch (err) {
+    // Revert checkbox on error
+    if (checkboxEl) checkboxEl.checked = !enabled;
+    if (labelEl) {
+      labelEl.textContent = !enabled ? 'AUTO' : 'MANUAL';
+      labelEl.classList.toggle('on', !enabled);
+    }
+    showToast('❌ ' + err.message, 'err');
+  }
+}
+
+// ── Set manual strategy ───────────────────────────────────────────────────
+async function setStrategy(pair, strategyId) {
+  if (!strategyId) return;
+  try {
+    const data = await apiFetch('/app/api/brain/strategy', {
+      method: 'POST',
+      body: JSON.stringify({ coin_pair: pair, strategy_id: strategyId }),
+    });
+    if (!data.ok) throw new Error(data.error);
+    showToast(`🎯 ${data.strategy?.label} set for ${pair}`, 'ok');
+    const idx = watchlistCoins.findIndex(c => c.coin_pair === pair);
+    if (idx > -1) watchlistCoins[idx].manual_strategy_selected = strategyId;
+  } catch (err) {
+    showToast('❌ ' + err.message, 'err');
+  }
+}
+
+// ── Refresh single coin ───────────────────────────────────────────────────
+async function refreshCoin(pair) {
+  if (activeRefreshes.has(pair)) return;
+  activeRefreshes.add(pair);
+
+  // Show loading state on the button
+  const btn = document.getElementById(`refresh-btn-${pair}`);
+  if (btn) { btn.classList.add('loading'); btn.textContent = '⏳ Refreshing…'; }
+
+  try {
+    const data = await apiFetch('/app/api/brain/refresh', {
+      method: 'POST',
+      body: JSON.stringify({ coin_pair: pair }),
+    });
+    if (!data.ok) throw new Error(data.error);
+
+    // Merge fresh data into local cache
+    const idx = watchlistCoins.findIndex(c => c.coin_pair === pair);
+    if (idx > -1 && data.analysis) {
+      Object.assign(watchlistCoins[idx], {
+        current_price:             data.analysis.current_price,
+        ai_predicted_target_price: data.analysis.ai_predicted_target_price,
+        predicted_upside_pct:      data.analysis.predicted_upside_pct,
+        future_trend_4h:           data.analysis.future_trend_4h,
+        market_regime:             data.analysis.market_regime,
+        hurst_exponent:            data.analysis.hurst_exponent,
+        signal_blocked:            data.analysis.signal_blocked,
+        last_refreshed_at:         new Date().toISOString(),
+      });
+      const row = document.getElementById(`row-${pair}`);
+      if (row) row.outerHTML = buildRow(watchlistCoins[idx]);
+    }
+    updateStats();
+    showToast(`🧠 ${pair} analysis updated`, 'ok');
+  } catch (err) {
+    showToast('❌ ' + err.message, 'err');
+    if (btn) { btn.classList.remove('loading'); btn.textContent = '↺ Refresh'; }
+  } finally {
+    activeRefreshes.delete(pair);
+    const updBtn = document.getElementById(`refresh-btn-${pair}`);
+    if (updBtn) { updBtn.classList.remove('loading'); updBtn.textContent = '↺ Refresh'; }
+  }
+}
+
+// ── Refresh all coins sequentially ────────────────────────────────────────
+async function refreshAll() {
+  for (const c of watchlistCoins) {
+    await refreshCoin(c.coin_pair);
+    await new Promise(r => setTimeout(r, 300));  // small gap between calls
+  }
+  showToast('✅ All coins refreshed', 'ok');
+}
+
+// ── Auto-refresh every 5 minutes ─────────────────────────────────────────
+function startAutoRefresh() {
+  setInterval(() => loadWatchlist(false), 5 * 60 * 1000);
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────
+(async function init() {
+  await loadWatchlist(true);
+  startAutoRefresh();
+})();
+</script>
+</body>
+</html>

@@ -453,6 +453,13 @@ ${aData.renko.display}
 ${aData.dynamicSR.display}
 ${aData.fibLevels.display}
 ${aData.moonCycle.display}
+${aData.mtfRSIDiv && aData.mtfRSIDiv.mtfConfirmed ? '📊 *MTF RSI Div:* ' + aData.mtfRSIDiv.display : ''}
+${aData.cypherPat && aData.cypherPat.display !== 'None' ? '🎯 *Cypher:* ' + aData.cypherPat.display : ''}
+${aData.abcdPat && aData.abcdPat.display !== 'None' ? '📐 *ABCD:* ' + aData.abcdPat.display : ''}
+${aData.headShould && aData.headShould.display !== 'None' ? '👤 *H&S:* ' + aData.headShould.display : ''}
+${aData.trianglePat && aData.trianglePat.type !== 'NONE' ? '📐 *Triangle:* ' + aData.trianglePat.display : ''}
+${aData.threeDrives && aData.threeDrives.display !== 'None' ? '🔄 *3 Drives:* ' + aData.threeDrives.display : ''}
+${aData.fibTimeZone && aData.fibTimeZone.atZone ? aData.fibTimeZone.display : ''}
 
 *🔬 5m MTF:*
 ${aData.mtf5m.status}

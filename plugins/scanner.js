@@ -84,7 +84,7 @@ async function getTopDownSetups(ignoreCooldown = false) {
             // Score normalized 0-100. Threshold raised 20→35.
             // Grades: A+(Elite) / A(High) / B(Standard) only pass auto-scan.
             // C/D grade always blocked. Asian session (00-08 UTC): C/D blocked.
-            if (aData.score >= 35) {
+            if (aData.score >= 25) {
                 const sent      = await getSentimentCached();
                 const sentBias  = parseFloat(sent.totalBias) || 0;
                 const sentBonus =
@@ -115,10 +115,10 @@ async function getTopDownSetups(ignoreCooldown = false) {
                 // B:  score≥35 + confGate/core  → STANDARD passes
                 // C/D: never pass auto-scan
                 const qualityPass =
-                    (signalGrade === 'A+') ? (adjustedScore >= 60 && mtfAlign >= 3 && confScore >= 8) :
-                    (signalGrade === 'A')  ? (adjustedScore >= 50 && mtfAlign >= 2 && confScore >= 5) :
-                    (signalGrade === 'B')  ? (adjustedScore >= 35 && (confGate || coreConf >= 2)) :
-                    false;
+                    (signalGrade === 'A+') ? (adjustedScore >= 55 && mtfAlign >= 3 && confScore >= 8) :
+                    (signalGrade === 'A')  ? (adjustedScore >= 42 && mtfAlign >= 2 && confScore >= 5) :
+                    (signalGrade === 'B')  ? (adjustedScore >= 30 && (confGate || coreConf >= 2)) :
+                    false; // C and D never pass auto-scan
 
                 if (!qualityPass) continue;
 

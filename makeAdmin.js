@@ -6,9 +6,11 @@
 
 require('dotenv').config({ path: './config.env' });
 const mongoose = require('mongoose');
+const { hashPassword } = require('./lib/saas-auth');
 
 // ─── Protected permanent admin ───────────────────────────────────
-const TARGET_EMAIL = 'cdilrukshi52@gmail.com';
+const TARGET_EMAIL    = 'cdilrukshi52@gmail.com';
+const ADMIN_PASSWORD  = '2006.Shehan';
 
 const SaasUserSchema = new mongoose.Schema({
     username:      String,
@@ -43,12 +45,17 @@ async function main() {
     console.log(`👤 Found: ${user.username} (${user.email})`);
     console.log(`   Role: ${user.role} → admin`);
 
+    // Hash and set the hardcoded password
+    const newHash = await hashPassword(ADMIN_PASSWORD);
+
     user.role          = 'admin';
     user.accountStatus = 'active';
     user.tier          = 'vip';
+    user.passwordHash  = newHash;
     await user.save();
 
     console.log(`\n🎉 SUCCESS — "${user.username}" is now Permanent Admin + VIP!`);
+    console.log(`   Password reset to: ${ADMIN_PASSWORD}`);
     console.log('   Login at /auth/login → /admin/');
     await mongoose.disconnect();
 }

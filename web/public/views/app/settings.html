@@ -83,6 +83,120 @@
         </div>
       </div>
 
+      <!-- ── Signal Quality Filters (new) ── -->
+      <div class="panel" style="margin-bottom:20px">
+        <div class="panel-head">
+          <div class="panel-title">🛡️ Signal Filters &amp; Risk Guards</div>
+          <span style="font-size:.72rem;color:var(--text2)">Win rate improve කරන්න</span>
+        </div>
+        <div class="panel-body">
+          <div style="font-size:.8rem;color:var(--text2);margin-bottom:16px;line-height:1.6">
+            මේ filters use කරලා low-quality trades block කරල win rate improve කරන්න.<br>
+            <span style="color:var(--green)">✅ Recommended defaults shown below.</span>
+          </div>
+
+          <!-- Grade Filter -->
+          <div style="margin-bottom:16px">
+            <div style="font-size:.82rem;font-weight:600;margin-bottom:6px">📊 Minimum Signal Grade</div>
+            <div style="font-size:.73rem;color:var(--text2);margin-bottom:8px">A+ / A grades only = highest win rate. B grade = more signals, more losses.</div>
+            <div style="display:flex;gap:8px" id="grade-btns">
+              <button onclick="setGrade('A+')" class="btn btn-sm grade-btn" data-g="A+" style="flex:1">🏆 A+ Only</button>
+              <button onclick="setGrade('A')"  class="btn btn-sm grade-btn" data-g="A"  style="flex:1">🥇 A+ &amp; A</button>
+              <button onclick="setGrade('B')"  class="btn btn-sm grade-btn" data-g="B"  style="flex:1">🥈 B+ too</button>
+            </div>
+          </div>
+
+          <!-- Min RRR -->
+          <div style="margin-bottom:16px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+              <div>
+                <div style="font-size:.82rem;font-weight:600">⚖️ Minimum RRR</div>
+                <div style="font-size:.73rem;color:var(--text2)">Risk:Reward Ratio — 2.0 recommended (risk $1, win $2)</div>
+              </div>
+              <span id="rrr-display" style="font-family:var(--font-mono);font-size:1.1rem;font-weight:700;color:var(--green)">2.0</span>
+            </div>
+            <input type="range" id="rrr-range" min="1.0" max="4.0" step="0.5" value="2.0"
+              oninput="document.getElementById('rrr-display').textContent=parseFloat(this.value).toFixed(1)"
+              style="width:100%;accent-color:var(--green)">
+            <div style="display:flex;justify-content:space-between;font-size:.7rem;color:var(--text2);margin-top:2px">
+              <span>1.0 — risky</span><span style="color:var(--green)">2.0 ← recommended</span><span>4.0 — rare</span>
+            </div>
+          </div>
+
+          <!-- Daily Align -->
+          <div style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:rgba(0,0,0,.15);border-radius:8px">
+            <div>
+              <div style="font-size:.82rem;font-weight:600">📅 Require Daily Trend Alignment</div>
+              <div style="font-size:.73rem;color:var(--text2)">Daily trend විරුද්ධ trades block කරයි (⚠️Against Daily)</div>
+            </div>
+            <label class="toggle"><input type="checkbox" id="daily-align-toggle" onchange=""><span class="slider"></span></label>
+          </div>
+
+          <!-- Trailing SL -->
+          <div style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:rgba(0,0,0,.15);border-radius:8px">
+            <div>
+              <div style="font-size:.82rem;font-weight:600">🔒 Trailing Stop-Loss</div>
+              <div style="font-size:.73rem;color:var(--text2)">TP1 hit වූ පසු SL entry ට move කරයි (profit lock)</div>
+            </div>
+            <label class="toggle"><input type="checkbox" id="trailing-sl-toggle"><span class="slider"></span></label>
+          </div>
+
+          <!-- Consecutive Losses -->
+          <div style="margin-bottom:16px;padding:12px;background:rgba(255,51,85,.04);border:1px solid rgba(255,51,85,.15);border-radius:8px">
+            <div style="font-size:.82rem;font-weight:600;margin-bottom:10px">🛑 Consecutive Loss Protection</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+              <div>
+                <div style="font-size:.73rem;color:var(--text2);margin-bottom:4px">Max consecutive losses</div>
+                <div style="display:flex;align-items:center;gap:6px">
+                  <input type="number" id="consec-loss-inp" min="1" max="10" value="3" class="inp" style="width:70px;text-align:center">
+                  <span style="font-size:.72rem;color:var(--text2)">trades</span>
+                </div>
+              </div>
+              <div>
+                <div style="font-size:.73rem;color:var(--text2);margin-bottom:4px">Cooldown hours</div>
+                <div style="display:flex;align-items:center;gap:6px">
+                  <input type="number" id="consec-cooldown-inp" min="1" max="24" value="2" class="inp" style="width:70px;text-align:center">
+                  <span style="font-size:.72rem;color:var(--text2)">hours</span>
+                </div>
+              </div>
+            </div>
+            <div style="font-size:.72rem;color:var(--text2);margin-top:8px">N loss trades ගියාට bot X hours pause කරයි — tilt trading block.</div>
+          </div>
+
+          <!-- Daily Loss + Win Rate Threshold -->
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+            <div>
+              <div style="font-size:.82rem;font-weight:600;margin-bottom:4px">📉 Max Daily Loss %</div>
+              <div style="font-size:.73rem;color:var(--text2);margin-bottom:6px">Daily PnL X% loss ගියාට stop</div>
+              <div style="display:flex;align-items:center;gap:6px">
+                <input type="number" id="daily-loss-inp" min="1" max="50" step="0.5" value="5" class="inp" style="width:70px;text-align:center">
+                <span style="font-size:.72rem;color:var(--text2)">%</span>
+              </div>
+            </div>
+            <div>
+              <div style="font-size:.82rem;font-weight:600;margin-bottom:4px">📊 Win Rate Warn %</div>
+              <div style="font-size:.73rem;color:var(--text2);margin-bottom:6px">Win rate below X% = warning</div>
+              <div style="display:flex;align-items:center;gap:6px">
+                <input type="number" id="winrate-thresh-inp" min="20" max="80" value="40" class="inp" style="width:70px;text-align:center">
+                <span style="font-size:.72rem;color:var(--text2)">%</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Fast Fill Only -->
+          <div style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:rgba(0,200,255,.04);border:1px solid rgba(0,200,255,.1);border-radius:8px">
+            <div>
+              <div style="font-size:.82rem;font-weight:600">⚡ Fast-Fill Limit Orders Only</div>
+              <div style="font-size:.73rem;color:var(--text2)">Entry zone 1.5x ATR ඇතුළේ limit orders only show කරයි</div>
+            </div>
+            <label class="toggle"><input type="checkbox" id="fast-fill-toggle"><span class="slider"></span></label>
+          </div>
+
+          <button class="btn btn-primary" onclick="saveSignalFilters()" style="width:100%;justify-content:center">💾 Save Signal Filters</button>
+          <div id="filter-msg" style="font-size:.82rem;margin-top:8px;min-height:18px"></div>
+        </div>
+      </div>
+
       <!-- ── AI API Keys ── -->
       <div class="panel" style="margin-bottom:20px">
         <div class="panel-head">
@@ -286,6 +400,68 @@ async function removeAiKey(type) {
     showToast('✅ Key removed');
   } else {
     msg.style.color='var(--red)'; msg.textContent='❌ '+(d.error||'Failed');
+  }
+}
+
+// ── Signal Filters init ──────────────────────────────────────────
+const SF = D.signalFilters || {};
+let _selectedGrade = SF.gradeFilter || 'A';
+
+function setGrade(g) {
+  _selectedGrade = g;
+  document.querySelectorAll('.grade-btn').forEach(b => {
+    const active = b.dataset.g === g;
+    b.style.background    = active ? 'rgba(0,200,255,.18)' : '';
+    b.style.borderColor   = active ? 'var(--accent)' : '';
+    b.style.color         = active ? 'var(--accent)' : '';
+    b.style.fontWeight    = active ? '700' : '';
+  });
+}
+
+function initSignalFilters() {
+  setGrade(_selectedGrade);
+  const rrrR = document.getElementById('rrr-range');
+  const rrrD = document.getElementById('rrr-display');
+  if (rrrR) { rrrR.value = SF.minRRR ?? 2.0; rrrD.textContent = parseFloat(rrrR.value).toFixed(1); }
+  const da = document.getElementById('daily-align-toggle');
+  if (da) da.checked = SF.requireDailyAlign !== false;
+  const ts = document.getElementById('trailing-sl-toggle');
+  if (ts) ts.checked = SF.trailingSl !== false;
+  const cl = document.getElementById('consec-loss-inp');
+  if (cl) cl.value = SF.maxConsecLosses ?? 3;
+  const cc = document.getElementById('consec-cooldown-inp');
+  if (cc) cc.value = SF.consecLossCooldown ?? 2;
+  const dl = document.getElementById('daily-loss-inp');
+  if (dl) dl.value = SF.maxDailyLossPct ?? 5;
+  const wr = document.getElementById('winrate-thresh-inp');
+  if (wr) wr.value = SF.lowWinRateThreshold ?? 40;
+  const ff = document.getElementById('fast-fill-toggle');
+  if (ff) ff.checked = SF.fastFillOnly === true;
+}
+initSignalFilters();
+
+async function saveSignalFilters() {
+  const msg = document.getElementById('filter-msg');
+  msg.style.color = 'var(--text2)'; msg.textContent = '⏳ Saving...';
+  const payload = {
+    gradeFilter:         _selectedGrade,
+    minRRR:              parseFloat(document.getElementById('rrr-range').value),
+    requireDailyAlign:   document.getElementById('daily-align-toggle').checked,
+    trailingSl:          document.getElementById('trailing-sl-toggle').checked,
+    maxConsecLosses:     parseInt(document.getElementById('consec-loss-inp').value),
+    consecLossCooldown:  parseInt(document.getElementById('consec-cooldown-inp').value),
+    maxDailyLossPct:     parseFloat(document.getElementById('daily-loss-inp').value),
+    lowWinRateThreshold: parseInt(document.getElementById('winrate-thresh-inp').value),
+    fastFillOnly:        document.getElementById('fast-fill-toggle').checked,
+  };
+  const d = await apiFetch('/app/api/user-settings/signal-filters', { method:'POST', body: JSON.stringify(payload) });
+  if (d.ok) {
+    msg.style.color = 'var(--green)';
+    msg.textContent = '✅ Signal filters saved! Scanner will apply these on next scan.';
+    showToast('✅ Signal filters saved!');
+  } else {
+    msg.style.color = 'var(--red)';
+    msg.textContent = '❌ ' + (d.error || 'Failed');
   }
 }
 

@@ -145,6 +145,8 @@ async function doScan() {
     // Show chart + MTF forecast automatically after scan
     const a = d.analysis;
     window._lastScanLevels = { entry: a.entryPrice, sl: a.sl, tp1: a.tp1, tp2: a.tp2, tp3: a.tp3 };
+    window._lastScanCoin   = a.coin;
+    startLivePriceUpdate(a.coin);
     document.getElementById('mtf-panel').style.display = '';
     await showChart(a.coin, window._lastScanLevels);
     await loadMtfForecast();
@@ -192,11 +194,12 @@ function renderScanResult(a) {
           <span style="font-family:var(--font-head);font-size:1.3rem;font-weight:800;color:#fff">${a.coin}</span>
           <span class="pill ${isLong?'pill-long':'pill-short'}">${isLong?'▲':'▼'} ${a.direction}</span>
           ${pill(a.timeframe,'rgba(0,200,255,.12)')}
-          ${pill(bypassed?'LIMIT WAIT':'MARKET', bypassed?'rgba(255,171,0,.15)':'rgba(255,255,255,.07)')}
+          ${bypassed ? pill('⏳ LIMIT ZONE','rgba(255,171,0,.18)') : ''}
         </div>
         <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:4px">
           ${fundingTag(a.fundingRate)}
           ${dailyTag(a.dailyAligned,a.dailyTrend)}
+          ${a.currentPrice ? `<span id="scan-live-price" style="font-size:.72rem;font-family:var(--font-mono);background:rgba(255,255,255,.06);padding:2px 8px;border-radius:4px">Now: <strong>${fmtP(a.currentPrice)}</strong></span>` : ''}
         </div>
         ${scoreBar}
         <div style="font-size:.72rem;color:var(--text2);margin-top:4px">4H:${a.trend4H||'—'} · 1H:${a.trend1H||'—'} · ${conf.strength||'—'}</div>
@@ -278,7 +281,9 @@ function renderScanResult(a) {
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
       ${!bypassed
         ? `<button class="btn btn-warn" onclick="openPaperFromScan()">📄 Paper Trade</button>`
-        : `<button class="btn btn-ghost" onclick="openPaperFromScan()" style="font-size:.76rem;opacity:.7">📄 Market (risky)</button>`}
+        : z
+          ? `<button class="btn btn-primary" style="font-size:.8rem" onclick="openLimitDirect()">📌 Open Limit Paper Trade</button>`
+          : `<button class="btn btn-ghost" style="font-size:.76rem;opacity:.6" disabled>⏳ Wait for Zone</button>`}
       <button class="btn btn-ghost" onclick="toggleMoreInfo()" id="more-info-btn">📊 More Info</button>
       <button class="btn btn-ghost" style="margin-left:auto" onclick="document.getElementById('scan-result').style.display='none'">✕</button>
     </div>
@@ -400,8 +405,31 @@ function toggleMoreInfo() {
 async function openPaperFromScan() {
   if(!window._lastScan){showToast('❌ No scan result','err');return;}
   const a=window._lastScan;
-  const d=await apiFetch('/app/api/paper/open',{method:'POST',body:JSON.stringify({coin:a.coin,direction:a.direction,entry:a.entryPrice,tp2:a.tp2,sl:a.sl,leverage:a.leverage||10})});
+  const d=await apiFetch('/app/api/paper/open',{method:'POST',body:JSON.stringify({coin:a.coin,direction:a.direction,entry:a.entryPrice,tp1:a.tp1,tp2:a.tp2,tp3:a.tp3,sl:a.sl,leverage:a.leverage||10})});
   if(d.ok)showToast('✅ Paper trade opened! View in Paper tab.');else showToast('❌ '+(d.error||'Failed'),'err');
+}
+
+// ── Direct limit paper trade from bypassed zone (no modal) ──────────────
+async function openLimitDirect() {
+  if(!window._lastScan){showToast('❌ No scan data','err');return;}
+  const a = window._lastScan;
+  const fib = a.mtfFibEntry||null;
+  const z   = fib?.nextLimitZone||null;
+  if(!z){showToast('❌ No limit zone found','err');return;}
+  showToast('⏳ Opening limit paper trade…','ok');
+  const payload={
+    coin:a.coin, direction:a.direction,
+    limitPrice:z.price, tp1:z.tp1||null, tp2:z.tp2, tp3:z.tp3||null,
+    sl:z.newSL, leverage:a.leverage||10,
+    zoneLabel:z.label, zoneStrength:z.strength,
+    analysisScore:a.score, analysisTimeframe:a.timeframe,
+  };
+  const d=await apiFetch('/app/api/paper/open-limit',{method:'POST',body:JSON.stringify(payload)});
+  if(d.ok){
+    showToast(`📌 Limit order placed at $${z.price} — ${z.label}`);
+  } else {
+    showToast('❌ '+(d.error||'Failed'),'err');
+  }
 }
 
 
@@ -636,6 +664,26 @@ async function loadMtfForecast() {
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '↺ Refresh'; }
   }
+}
+
+// ── Live price updater for scan result ──────────────────────────────────
+let _livePriceTicker = null;
+function startLivePriceUpdate(coin) {
+  if (_livePriceTicker) clearInterval(_livePriceTicker);
+  const update = async () => {
+    const el = document.getElementById('scan-live-price');
+    if (!el) return;
+    try {
+      const r = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${coin}USDT`);
+      const d = await r.json();
+      const p = parseFloat(d.price);
+      if (!p) return;
+      const fmt = p>=10000?'$'+p.toFixed(2) : p>=1?'$'+p.toFixed(4) : '$'+p.toFixed(6);
+      el.innerHTML = `Now: <strong>${fmt}</strong>`;
+    } catch(_){}
+  };
+  update();
+  _livePriceTicker = setInterval(update, 10000);
 }
 
 async function loadMarketScan() {

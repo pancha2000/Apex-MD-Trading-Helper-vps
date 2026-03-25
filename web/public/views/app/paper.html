@@ -58,7 +58,7 @@
     <div class="panel-body" style="padding:0">
       <div class="tbl-wrap">
         <table>
-          <thead><tr><th>Coin</th><th>Dir</th><th>Entry</th><th>TP1</th><th>TP2</th><th>SL</th><th>Lev</th><th>Live P&L</th><th>Status</th><th>Action</th></tr></thead>
+          <thead><tr><th>Coin</th><th>Dir</th><th>Entry</th><th>TP1</th><th>TP2</th><th>TP3🚀</th><th>SL</th><th>Lev</th><th>Live P&L</th><th>Status</th><th>Action</th></tr></thead>
           <tbody id="active-body"></tbody>
         </table>
       </div>
@@ -133,8 +133,21 @@ function renderActiveRows() {
         const slN       = parseFloat(t.sl)||0;
 
         const entryDisplay = isPending
-          ? `<span style="color:var(--accent)">$${t.entry}</span><div style="font-size:.62rem;color:var(--text2)">limit</div>`
+          ? `<span style="color:var(--accent)">$${t.entry}</span><div style="font-size:.62rem;color:var(--text2)">limit${t.zoneLabel?` · ${t.zoneLabel}`:''}</div>`
           : `<span style="font-family:var(--font-mono)">$${t.entry}</span>`;
+
+        // Expiry countdown for pending LIMIT orders
+        let expiryTag = '';
+        if (isPending && t.expiresAt) {
+          const msLeft = new Date(t.expiresAt) - Date.now();
+          if (msLeft > 0) {
+            const hLeft = Math.floor(msLeft / 3600000);
+            const mLeft = Math.floor((msLeft % 3600000) / 60000);
+            expiryTag = `<div style="font-size:.6rem;color:var(--yellow)">⏰ ${hLeft}h ${mLeft}m left</div>`;
+          } else {
+            expiryTag = `<div style="font-size:.6rem;color:var(--red)">⏰ Expiring...</div>`;
+          }
+        }
 
         const actionBtns = isPending
           ? `<div style="display:flex;gap:6px">
@@ -146,13 +159,13 @@ function renderActiveRows() {
         return `<tr id="row-${t._id}" style="${isPending?'opacity:.85;background:rgba(0,200,255,.03)':''}">
           <td>
             <strong style="font-family:var(--font-mono)">${t.coin}</strong>
-            ${isPending&&t.zoneLabel?`<div style="font-size:.62rem;color:var(--text2)">${t.zoneLabel}</div>`:''}
-            ${!isPending?`<div style="font-size:.62rem;color:var(--text2)">${t.ageHrs}h open</div>`:''}
+            ${isPending ? `<div style="font-size:.62rem;color:var(--text2)">${t.ageHrs}h ago</div>${expiryTag}` : `<div style="font-size:.62rem;color:var(--text2)">${t.ageHrs}h open</div>`}
           </td>
           <td>${dir}</td>
           <td>${entryDisplay}</td>
           <td style="font-family:var(--font-mono);color:var(--text3)">${t.tp1||'—'}</td>
           <td style="font-family:var(--font-mono);color:var(--green)">${t.tp2}</td>
+          <td style="font-family:var(--font-mono);color:var(--green);font-size:.72rem;opacity:.8">${t.tp3||'—'}</td>
           <td style="font-family:var(--font-mono);color:var(--red)">${t.sl}</td>
           <td style="font-family:var(--font-mono)">${t.leverage}x</td>
           <td id="pnl-${t._id}" style="font-weight:600;color:var(--text2)">
@@ -165,7 +178,7 @@ function renderActiveRows() {
           <td>${actionBtns}</td>
         </tr>
         <tr id="warn-row-${t._id}" style="background:transparent">
-          <td colspan="10" style="padding:0 8px 4px;border:none">
+          <td colspan="11" style="padding:0 8px 4px;border:none">
             <div id="warn-${t._id}"></div>
           </td>
         </tr>`;
@@ -193,11 +206,11 @@ document.getElementById('closed-body').innerHTML = closed.length === 0
 
 // ── Live P&L + TP Progress + Warnings ───────────────────────
 async function refreshLivePnl() {
-  const liveActive = active.filter(t => t.status !== 'pending');
-  if (!liveActive.length) return;
+  // Fetch prices for ALL trades (active + pending) for live price display
+  const allTrades = active.filter(t => t.coin);
+  if (!allTrades.length) return;
 
-  // Fetch prices directly from Binance for active trades
-  const coins = [...new Set(liveActive.map(t => t.coin+'USDT'))];
+  const coins = [...new Set(allTrades.map(t => t.coin+'USDT'))];
   const priceMap = {};
   await Promise.all(coins.map(async coin => {
     try {

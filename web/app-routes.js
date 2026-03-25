@@ -118,8 +118,11 @@ app.get('/app/paper', saasAuth.requireUserAuth, async (req, res) => {
             activePaper = (await db.Trade.find({userJid:waJid,isPaper:true,status:{$in:['active','pending']}}).sort({openTime:-1}).lean()).map(t=>({
                 _id: t._id.toString(), coin: t.coin.replace('USDT',''), direction: t.direction,
                 entry: fmtPrice(t.entry), tp1: fmtPrice(t.tp1), tp2: fmtPrice(t.tp2||t.tp),
-                sl: fmtPrice(t.sl), leverage: t.leverage||1, status: t.status,
+                tp3: fmtPrice(t.tp3), sl: fmtPrice(t.sl), leverage: t.leverage||1, status: t.status,
                 ageHrs: ((Date.now()-new Date(t.openTime))/3600000).toFixed(1),
+                zoneLabel: t.zoneLabel||'', orderType: t.orderType||'MARKET',
+                expiresAt: t.expiresAt ? new Date(t.expiresAt).toISOString() : null,
+                score: t.score||0, timeframe: t.timeframe||'15m',
             }));
             closedPaper = (await db.Trade.find({userJid:waJid,isPaper:true,status:'closed'}).sort({closedAt:-1}).limit(30).lean()).map(t=>({
                 coin: t.coin.replace('USDT',''), direction: t.direction,
@@ -361,18 +364,32 @@ app.get('/app/settings', saasAuth.requireUserAuth, async (req, res) => {
         }
     } catch(_){}
     let minScoreThreshold = 20, hasUserGroq = false, hasUserGemini = false, userTier = 'free';
+    let signalFilters = { minRRR:2.0, gradeFilter:'A', requireDailyAlign:true, maxConsecLosses:3, consecLossCooldown:2, lowWinRateThreshold:40, trailingSl:true, fastFillOnly:false, maxDailyLossPct:5 };
     try {
         const fu2 = await db.getSaasUserById(user.userId);
         minScoreThreshold = fu2?.minScoreThreshold ?? 20;
         hasUserGroq   = Boolean(fu2?.encGroqApiKey);
         hasUserGemini = Boolean(fu2?.encGeminiApiKey);
         userTier      = fu2?.tier || 'free';
+        if (fu2) {
+            signalFilters = {
+                minRRR:              fu2.minRRR              ?? 2.0,
+                gradeFilter:         fu2.gradeFilter         ?? 'A',
+                requireDailyAlign:   fu2.requireDailyAlign   ?? true,
+                maxConsecLosses:     fu2.maxConsecLosses      ?? 3,
+                consecLossCooldown:  fu2.consecLossCooldown  ?? 2,
+                lowWinRateThreshold: fu2.lowWinRateThreshold ?? 40,
+                trailingSl:          fu2.trailingSl          ?? true,
+                fastFillOnly:        fu2.fastFillOnly         ?? false,
+                maxDailyLossPct:     fu2.maxDailyLossPct     ?? 5,
+            };
+        }
     } catch(_) {}
     res.send(renderView('app/settings', {
         user: { username: user.username, role: user.role },
         apiKeys, waLinked, waJid: waJid.replace('@s.whatsapp.net',''), waLinkedAt,
         tradingMode, paperBalance: parseFloat(paperBalance).toFixed(2), margin: parseFloat(margin).toFixed(2),
-        minScoreThreshold,
+        minScoreThreshold, signalFilters,
         hasUserGroq, hasUserGemini,
         hasSysGroq: false,  // system keys not shared with users
         hasSysGemini: false,
@@ -718,6 +735,26 @@ app.post('/app/api/user-settings/min-score', saasAuth.requireUserAuth, async (re
         if (isNaN(score) || score < 10 || score > 90) return res.status(400).json({ok:false,error:'Score must be 10–90'});
         await db.setUserMinScore(req.saasUser.userId, score);
         res.json({ok:true, minScoreThreshold: score});
+    } catch(e) { res.status(500).json({ok:false,error:e.message}); }
+});
+
+// ── Signal Quality Filters save ────────────────────────────────
+app.post('/app/api/user-settings/signal-filters', saasAuth.requireUserAuth, async (req, res) => {
+    try {
+        const { minRRR, gradeFilter, requireDailyAlign, maxConsecLosses, consecLossCooldown,
+                lowWinRateThreshold, trailingSl, fastFillOnly, maxDailyLossPct } = req.body;
+        const updates = {};
+        if (minRRR !== undefined)              updates.minRRR              = Math.min(5, Math.max(1, parseFloat(minRRR)||2));
+        if (gradeFilter !== undefined)         updates.gradeFilter         = ['A+','A','B'].includes(gradeFilter) ? gradeFilter : 'A';
+        if (requireDailyAlign !== undefined)   updates.requireDailyAlign   = Boolean(requireDailyAlign);
+        if (maxConsecLosses !== undefined)      updates.maxConsecLosses     = Math.min(10, Math.max(1, parseInt(maxConsecLosses)||3));
+        if (consecLossCooldown !== undefined)  updates.consecLossCooldown  = Math.min(24, Math.max(1, parseInt(consecLossCooldown)||2));
+        if (lowWinRateThreshold !== undefined) updates.lowWinRateThreshold = Math.min(80, Math.max(20, parseInt(lowWinRateThreshold)||40));
+        if (trailingSl !== undefined)          updates.trailingSl          = Boolean(trailingSl);
+        if (fastFillOnly !== undefined)        updates.fastFillOnly        = Boolean(fastFillOnly);
+        if (maxDailyLossPct !== undefined)     updates.maxDailyLossPct     = Math.min(50, Math.max(1, parseFloat(maxDailyLossPct)||5));
+        await db.updateSaasUser(req.saasUser.userId, updates);
+        res.json({ok:true});
     } catch(e) { res.status(500).json({ok:false,error:e.message}); }
 });
 

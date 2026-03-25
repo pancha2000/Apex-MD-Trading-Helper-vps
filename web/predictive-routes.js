@@ -38,9 +38,13 @@ function jsonError(res, status, message) {
 // Fetch latest price + 4h candles from Binance module
 async function fetchCandleData(binance, coinPair, logger) {
   try {
-    // Try to get candles via the binance lib's getKlines
-    const candles = await binance.getKlines(coinPair, '4h', 100);
-    if (!candles || candles.length < 35) return null;
+    const raw = await binance.getKlineData(coinPair, '4h', 100);
+    if (!raw || raw.length < 35) return null;
+    // Normalise Binance [time,o,h,l,c,v] arrays → objects for predictive-brain.js
+    const candles = raw.map(c => ({
+      time: parseInt(c[0]), open: parseFloat(c[1]), high: parseFloat(c[2]),
+      low: parseFloat(c[3]), close: parseFloat(c[4]), volume: parseFloat(c[5]),
+    }));
     const currentPrice = candles[candles.length - 1].close;
     return { candles, currentPrice };
   } catch (err) {
@@ -379,16 +383,4 @@ async function triggerBackgroundRefresh(userId, coinPair, { db, binance, logger 
       last_refreshed_at:         new Date(),
     });
   } catch (_) { /* non-fatal */ }
-}
-
-async function fetchCandleData(binance, coinPair, logger) {
-  try {
-    const candles = await binance.getKlines(coinPair, '4h', 100);
-    if (!candles || candles.length < 35) return null;
-    const currentPrice = candles[candles.length - 1].close;
-    return { candles, currentPrice };
-  } catch (err) {
-    logger.warn(`[predictive-routes] Candle fetch failed for ${coinPair}: ${err.message}`);
-    return null;
-  }
 }

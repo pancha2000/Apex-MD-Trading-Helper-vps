@@ -29,6 +29,7 @@ const PAGE_META = {
     'app/paper':       { title: 'Paper Trading · ApexIQ', description: 'Simulate futures trades risk-free with ApexIQ.' },
     'app/home':        { title: 'Dashboard · ApexIQ', description: 'Your ApexIQ real-time trading dashboard.' },
     'app/backtest':    { title: 'Backtest · ApexIQ', description: 'Strategy backtesting on ApexIQ.' },
+    'app/brain':       { title: 'Predictive Brain · ApexIQ', description: 'AI-powered predictive SMC trading signals with Auto-Pilot strategy selection.' },
     'app/stats':       { title: 'Stats · ApexIQ', description: 'Trading performance stats on ApexIQ.' },
     'admin/dashboard': { title: 'Admin · ApexIQ', description: 'ApexIQ admin dashboard.' },
 };

@@ -40,6 +40,7 @@ function renderUserNav(active) {
         { href: '/app/grid',      key: 'grid',      label: '🕸 Grid' },
         { href: '/app/ai',        key: 'ai',        label: '🤖 AI Chat' },
         // ── Account ──
+        { href: '/app/brain',     key: 'brain',     label: '🧠 Brain' },
         { href: '/app/settings',  key: 'settings',  label: '⚙️ Settings' },
         { href: '/app/system',    key: 'system',    label: '💻 System' },
     ];
@@ -49,7 +50,7 @@ function renderUserNav(active) {
     const GROUPS = [
         { label: 'Analysis', keys: ['scanner','market','heatmap','compare','funding','news'] },
         { label: 'Trading',  keys: ['trades','paper','tracks','alerts','watchlist','portfolio'] },
-        { label: 'Tools',    keys: ['backtest','journal','stats','calc','grid','ai'] },
+        { label: 'Tools',    keys: ['backtest','journal','stats','calc','grid','ai','brain'] },
         { label: 'Account',  keys: ['settings','system'] },
     ];
     const aboutLinks = [

@@ -797,6 +797,16 @@ function start() {
         console.error('[Dashboard] ❌ scanner-routes.js failed:', e.message);
     }
 
+    // ─── Predictive Brain & Auto-Pilot routes ─────────────────────────
+    try {
+        const registerPredictive = require('./predictive-routes');
+        const binance = require('../lib/binance');
+        registerPredictive({ saasAuth, db, binance, renderView, logger: console }, app);
+        console.log('[Dashboard] ✅ Predictive Brain routes registered (/app/brain)');
+    } catch(e) {
+        console.error('[Dashboard] ❌ predictive-routes.js failed:', e.message, e.stack);
+    }
+
     // ─── Root & Compat ─────────────────────────────────────────────────
     app.use('/dashboard', (req, res) => {
         const dest = req.path==='/'||req.path==='' ? '/admin/' : '/admin'+req.path;

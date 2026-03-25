@@ -232,6 +232,35 @@ function startTradeManager(conn) {
                     //                (0.25% tolerance: fills if price is within 0.25% below entry)
                     //
                     if (trade.status === 'pending') {
+                        // ── LIMIT ORDER EXPIRY CHECK ─────────────────────────────────────────
+                        // LIMIT orders that haven't filled within expiresAt are auto-cancelled.
+                        // Default: 48h from openTime (set when trade is created).
+                        // Falls back to 48h from openTime if expiresAt not set (legacy trades).
+                        const expiry = trade.expiresAt
+                            ? new Date(trade.expiresAt)
+                            : new Date(new Date(trade.openTime).getTime() + 48 * 3600 * 1000);
+
+                        if (Date.now() > expiry.getTime()) {
+                            trade.status = 'expired';
+                            trade.result = 'EXPIRED';
+                            await trade.save();
+
+                            const openedAgo = Math.round((Date.now() - new Date(trade.openTime)) / 3600000);
+                            try {
+                                await conn.sendMessage(trade.userJid, { text:
+                                    `⏰ *LIMIT ORDER EXPIRED* ❌\n━━━━━━━━━━━━━━━━\n` +
+                                    `🪙 *${cb}/USDT* ${de} *${dir}*\n\n` +
+                                    `📋 Order Type: ⏳ LIMIT → ❌ EXPIRED\n` +
+                                    `📍 Entry Zone: $${parseFloat(trade.entry).toFixed(4)}\n` +
+                                    `💹 Current:    $${currentPrice.toFixed(4)}\n` +
+                                    `⏱️ Open for:   ${openedAgo}h — price never reached entry zone\n\n` +
+                                    `✅ *Order auto-cancelled — capital freed*\n` +
+                                    `_Market moved away from your entry zone._`,
+                                });
+                            } catch (_) {}
+                            continue; // skip TP/SL checks
+                        }
+
                         // ── Safety check: LIMIT order should only fill from the correct side ──
                         // LONG  limit: entry is BELOW current open price → price must DROP to fill
                         //              → Only check fill if price is still >= entry (hasn't blown through)

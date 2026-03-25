@@ -998,6 +998,8 @@ app.post('/app/api/paper/open-limit', saasAuth.requireUserAuth, async (req, res)
             entryEta:        resolvedEta,         // ATR-based time estimate
             entryConfluence: resolvedConf,        // confluence score
             deepEntryScore:  deepEntryScore ? parseInt(deepEntryScore) : 0,
+            // ── Auto-expiry after 48h if not filled ──────────────────────────
+            expiresAt: new Date(Date.now() + 48 * 3600 * 1000),
         });
 
         res.json({ok:true,

@@ -392,12 +392,14 @@
 @media (max-width: 768px) {
   .brain-hero { padding: 20px; }
   .brain-hero-title { font-size: 1.2rem; }
-  .wl-table th:nth-child(4),
-  .wl-table td:nth-child(4) { display: none; }
-}
-@media (max-width: 520px) {
   .wl-table th:nth-child(5),
   .wl-table td:nth-child(5) { display: none; }
+}
+@media (max-width: 520px) {
+  .wl-table th:nth-child(4),
+  .wl-table td:nth-child(4) { display: none; }
+  .wl-table th:nth-child(6),
+  .wl-table td:nth-child(6) { display: none; }
 }
 </style>
 </head>
@@ -418,6 +420,7 @@
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn btn-ghost btn-sm" onclick="refreshAll()">↺ Refresh All</button>
+      <button class="btn btn-primary btn-sm" id="scan-all-btn" onclick="scanAll()" title="Run full predictive brain scan on all watchlist coins">🔍 Scan All</button>
       <a href="/app/scanner" class="btn btn-ghost btn-sm">⚡ Deep Scanner →</a>
     </div>
   </div>
@@ -470,6 +473,7 @@
             <tr>
               <th>Coin</th>
               <th>📍 Predictive Target</th>
+              <th>⏱ MTF Forecast</th>
               <th>🤖 Auto-Pilot</th>
               <th>🎯 Strategy</th>
               <th>Actions</th>
@@ -509,6 +513,7 @@ renderUserNav('brain');
 let watchlistCoins = [];         // local cache of watchlist
 let strategyRegistry = [];       // from /api/brain/strategies
 let activeRefreshes  = new Set();
+let mtfCache         = {};       // coin_pair → { '1H':…, '4H':…, '1D':… }
 
 // ── Price formatting ─────────────────────────────────────────────────────
 function fmtPrice(n) {
@@ -659,6 +664,29 @@ function buildRow(c) {
       ${chopBlock}
     </td>`;
 
+  // ── Col MTF: Multi-Timeframe Forecast ─────────────────────────────────
+  const mtf = mtfCache[pair] || null;
+  const mtfBadge = (tf, data) => {
+    if (!data) return `<div style="display:flex;align-items:center;gap:4px;margin-bottom:2px"><span style="font-size:.62rem;color:var(--text2);min-width:20px">${tf}</span><span style="font-size:.65rem;color:var(--text2)">—</span></div>`;
+    const trend = (data.future_trend_4h||'').toLowerCase();
+    const isBull = trend.includes('bull'), isBear = trend.includes('bear');
+    const col   = isBull ? 'var(--green)' : isBear ? 'var(--red)' : 'var(--text2)';
+    const arrow = isBull ? '▲' : isBear ? '▼' : '→';
+    const conf  = data.confidence ? ` ${Math.round(data.confidence)}%` : '';
+    const block = data.signal_blocked ? '<span style="color:var(--yellow)"> ⚠</span>' : '';
+    return `<div style="display:flex;align-items:center;gap:4px;margin-bottom:2px">
+      <span style="font-size:.62rem;color:var(--text2);min-width:20px">${tf}</span>
+      <span style="font-size:.7rem;font-weight:700;color:${col}">${arrow} ${data.future_trend_4h||'—'}${conf}</span>${block}
+    </div>`;
+  };
+  const colMtf = `
+    <td style="min-width:130px">
+      ${mtf
+        ? `${mtfBadge('1H', mtf['1H'])}${mtfBadge('4H', mtf['4H'])}${mtfBadge('1D', mtf['1D'])}
+           <button class="btn-refresh" style="font-size:.6rem;padding:2px 6px;margin-top:3px" onclick="loadMtf('${pair}')">↺</button>`
+        : `<button class="btn btn-ghost" style="font-size:.68rem;padding:4px 9px;white-space:nowrap" onclick="loadMtf('${pair}')">🔍 Scan MTF</button>`}
+    </td>`;
+
   // ── Col 3: Auto-pilot toggle ──────────────────────────────────────────
   const toggleId = `ap-toggle-${pair}`;
   const col3 = `
@@ -720,7 +748,7 @@ function buildRow(c) {
       <button class="btn-remove" onclick="removeCoin('${pair}')" title="Remove from watchlist">✕</button>
     </td>`;
 
-  return `<tr id="row-${pair}">${col1}${col2}${col3}${col4}${col5}</tr>`;
+  return `<tr id="row-${pair}">${col1}${col2}${colMtf}${col3}${col4}${col5}</tr>`;
 }
 
 // ── Stats bar update ──────────────────────────────────────────────────────
@@ -881,6 +909,49 @@ async function refreshCoin(pair) {
     const updBtn = document.getElementById(`refresh-btn-${pair}`);
     if (updBtn) { updBtn.classList.remove('loading'); updBtn.textContent = '↺ Refresh'; }
   }
+}
+
+// ── Load MTF forecast for one coin ───────────────────────────────────────
+async function loadMtf(pair) {
+  const base = pair.replace('USDT','');
+  showToast(`⏳ Scanning ${base} 1H/4H/1D…`, 'ok');
+  try {
+    const data = await apiFetch(`/app/api/mtf-forecast?coin=${pair}`);
+    if (!data.ok) throw new Error(data.error);
+    mtfCache[pair] = data.forecasts;
+    // Re-render just this row
+    const idx = watchlistCoins.findIndex(c => c.coin_pair === pair);
+    if (idx > -1) {
+      const row = document.getElementById(`row-${pair}`);
+      if (row) row.outerHTML = buildRow(watchlistCoins[idx]);
+    }
+    showToast(`✅ ${base} MTF scan done`, 'ok');
+  } catch (err) {
+    showToast(`❌ ${err.message}`, 'err');
+  }
+}
+
+// ── Scan All watchlist coins MTF + refresh brain ──────────────────────────
+async function scanAll() {
+  const btn = document.getElementById('scan-all-btn');
+  if (!watchlistCoins.length) { showToast('⚠️ Watchlist is empty', 'err'); return; }
+  btn.disabled = true;
+  btn.textContent = '⏳ Scanning…';
+  let done = 0;
+  for (const c of watchlistCoins) {
+    try {
+      // Refresh predictive brain
+      await refreshCoin(c.coin_pair);
+      // Run MTF forecast
+      await loadMtf(c.coin_pair);
+      done++;
+      btn.textContent = `⏳ ${done}/${watchlistCoins.length}`;
+      await new Promise(r => setTimeout(r, 500)); // throttle
+    } catch (_) {}
+  }
+  btn.disabled = false;
+  btn.textContent = '🔍 Scan All';
+  showToast(`✅ All ${done} coins scanned`, 'ok');
 }
 
 // ── Refresh all coins sequentially ────────────────────────────────────────

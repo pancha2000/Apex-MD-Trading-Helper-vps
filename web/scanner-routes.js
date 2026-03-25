@@ -101,7 +101,34 @@ app.get('/app/api/market-scan', saasAuth.requireUserAuth, async (req, res) => {
                     (a.direction === 'SHORT' && sentBias <= -1) ?  1 :
                     (a.direction === 'LONG'  && sentBias <= -1) ? -1 :
                     (a.direction === 'SHORT' && sentBias >= 1)  ? -1 : 0;
-                const adjustedScore = a.score + sentBonus;
+
+                // ── Entry Zone Confluence Bonus ───────────────────────────────────
+                // Market price score alone doesn't reflect entry quality.
+                // Reward setups where the LIMIT entry zone aligns with OB/FVG/EQ.
+                // This shifts scoring from "price is moving" → "entry is in a confluence zone".
+                let entryZoneBonus = 0;
+                const entryP = parseFloat(a.entryPrice) || 0;
+                const currentP = parseFloat(a.currentPrice || a.price) || 0;
+                const isLimitEntry = entryP > 0 && currentP > 0 && Math.abs(entryP - currentP) / currentP > 0.003;
+                if (isLimitEntry) {
+                    // Check if entry price aligns with OB
+                    const obAligned = a.orderBlock && (
+                        (a.direction === 'LONG'  && parseFloat(a.orderBlock.low||0)  <= entryP && entryP <= parseFloat(a.orderBlock.high||0) * 1.005) ||
+                        (a.direction === 'SHORT' && parseFloat(a.orderBlock.high||0) >= entryP && entryP >= parseFloat(a.orderBlock.low||0) * 0.995)
+                    );
+                    // Check if entry price aligns with FVG
+                    const fvgAligned = a.fvg && (
+                        entryP >= parseFloat(a.fvg.lower||0) * 0.998 && entryP <= parseFloat(a.fvg.upper||0) * 1.002
+                    );
+                    // Check if entry price is at EQ (equilibrium — 50% of range)
+                    const eqAligned = a.eqLevel && Math.abs(entryP - parseFloat(a.eqLevel)) / parseFloat(a.eqLevel) < 0.004;
+
+                    if (obAligned)  entryZoneBonus += 3;  // OB confluence = strongest
+                    if (fvgAligned) entryZoneBonus += 2;  // FVG confluence
+                    if (eqAligned)  entryZoneBonus += 1;  // EQ alignment
+                }
+
+                const adjustedScore = a.score + sentBonus + entryZoneBonus;
                 const confScore = a.confScore || 0;
                 const confGate  = a.confGate  || false;
                 const coreConf  = [
@@ -131,6 +158,8 @@ app.get('/app/api/market-scan', saasAuth.requireUserAuth, async (req, res) => {
                     reasons:     a.reasons,
                     fundingRate: a.fundingRate ?? null,
                     dailyAligned: a.dailyAligned,
+                    entryZoneBonus,   // expose for UI transparency
+                    isLimitEntry,
                 });
             } catch(_) { continue; }
         }
@@ -472,6 +501,89 @@ app.post('/app/api/spot', saasAuth.requireUserAuth, async (req, res) => {
             ai:aiResult,
         }});
     } catch(e){ console.error('[Spot API]',e.message); res.status(500).json({ok:false,error:e.message}); }
+});
+
+// ─── Chart Data API — returns OHLCV candles + OB/FVG for lightweight-charts ──
+app.get('/app/api/chart-data', saasAuth.requireUserAuth, async (req, res) => {
+    try {
+        const binance    = require('../lib/binance');
+        const indicators = require('../lib/indicators');
+        const smartmoney = require('../lib/smartmoney');
+        let { coin = '', timeframe = '15m', limit = 100 } = req.query;
+        coin = coin.toUpperCase().replace(/[^A-Z0-9]/g, '');
+        if (!coin || coin === 'USDT') return res.status(400).json({ ok: false, error: 'Coin required' });
+        if (!coin.endsWith('USDT')) coin += 'USDT';
+        limit = Math.min(parseInt(limit) || 100, 200);
+
+        const raw = await binance.getKlineData(coin, timeframe, limit);
+        if (!raw || raw.length < 20) return res.status(500).json({ ok: false, error: 'Insufficient candle data' });
+
+        const candles = raw.map(c => ({
+            time:   Math.floor(parseInt(c[0]) / 1000),
+            open:   parseFloat(c[1]), high: parseFloat(c[2]),
+            low:    parseFloat(c[3]), close: parseFloat(c[4]),
+            volume: parseFloat(c[5]),
+        }));
+
+        const closes = candles.map(c => c.close);
+        const ema21arr = indicators.calculateEMA ? indicators.calculateEMA(closes, 21) : [];
+        const ema50arr = indicators.calculateEMA ? indicators.calculateEMA(closes, 50) : [];
+
+        let orderBlocks = [], fvgs = [];
+        try {
+            const smCandles = raw.slice(-80).map(c => ({
+                time: parseInt(c[0]), open: parseFloat(c[1]), high: parseFloat(c[2]),
+                low: parseFloat(c[3]), close: parseFloat(c[4]), volume: parseFloat(c[5]),
+            }));
+            if (typeof smartmoney.detectOrderBlocks === 'function')
+                orderBlocks = smartmoney.detectOrderBlocks(smCandles).slice(-4);
+            if (typeof smartmoney.detectFairValueGaps === 'function')
+                fvgs = smartmoney.detectFairValueGaps(smCandles, closes[closes.length - 1]).slice(-4);
+        } catch (_) {}
+
+        const ema21Series = candles.map((c, i) => ema21arr[i] ? { time: c.time, value: ema21arr[i] } : null).filter(Boolean);
+        const ema50Series = candles.map((c, i) => ema50arr[i] ? { time: c.time, value: ema50arr[i] } : null).filter(Boolean);
+
+        res.json({ ok: true, coin: coin.replace('USDT',''), timeframe, candles, ema21: ema21Series, ema50: ema50Series, orderBlocks, fvgs });
+    } catch (e) {
+        console.error('[Chart API]', e.message);
+        res.status(500).json({ ok: false, error: e.message });
+    }
+});
+
+// ─── Multi-Timeframe Forecast API (1H + 4H + 1D) ────────────────────────────
+app.get('/app/api/mtf-forecast', saasAuth.requireUserAuth, async (req, res) => {
+    try {
+        const binance = require('../lib/binance');
+        const { runPredictiveBrain } = require('../lib/predictive-brain');
+        let { coin = '' } = req.query;
+        coin = coin.toUpperCase().replace(/[^A-Z0-9]/g, '');
+        if (!coin || coin === 'USDT') return res.status(400).json({ ok: false, error: 'Coin required' });
+        if (!coin.endsWith('USDT')) coin += 'USDT';
+
+        const norm = (raw) => raw.map(c => ({
+            time: parseInt(c[0]), open: parseFloat(c[1]), high: parseFloat(c[2]),
+            low: parseFloat(c[3]), close: parseFloat(c[4]), volume: parseFloat(c[5]),
+        }));
+
+        const [raw1h, raw4h, raw1d] = await Promise.all([
+            binance.getKlineData(coin, '1h',  120).catch(() => null),
+            binance.getKlineData(coin, '4h',  100).catch(() => null),
+            binance.getKlineData(coin, '1d',   60).catch(() => null),
+        ]);
+
+        const runBrain = async (rawC, label) => {
+            if (!rawC || rawC.length < 20) return null;
+            try { return { tf: label, ...(await runPredictiveBrain({ coinPair: coin, candles4h: norm(rawC) })) }; }
+            catch (_) { return null; }
+        };
+
+        const [f1h, f4h, f1d] = await Promise.all([runBrain(raw1h,'1H'), runBrain(raw4h,'4H'), runBrain(raw1d,'1D')]);
+        res.json({ ok: true, coin: coin.replace('USDT',''), forecasts: { '1H': f1h, '4H': f4h, '1D': f1d } });
+    } catch (e) {
+        console.error('[MTF Forecast]', e.message);
+        res.status(500).json({ ok: false, error: e.message });
+    }
 });
 
 }; // end registerScanner

@@ -513,6 +513,8 @@ ${entryConf.display}
                         leverage: calcLeverage, quantity: calcQty,
                         marginUsed: calcMarginUsed,
                         score: aData.score, timeframe,
+                        // Auto-expire LIMIT orders after 48h
+                        expiresAt: _oType === 'LIMIT' ? new Date(Date.now() + 48 * 3600 * 1000) : null,
                     });
                     console.log(`[PAPER_AUTO] 📄 Auto-logged: ${coin} ${aData.direction} @ $${_entryN}`);
                 }

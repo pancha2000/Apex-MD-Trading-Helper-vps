@@ -33,10 +33,49 @@
     </div>
   </div>
 
-  <!-- ── Loading / Error / Result ── -->
+  <!-- ── Loading / Error / Result ── -->\
   <div id="scan-loading" style="display:none" class="loading-center"><div class="spinner"></div><div style="margin-top:12px;color:var(--text2)">Deep analysis running...</div></div>
   <div id="scan-error" style="display:none" class="panel"><div class="panel-body" style="color:var(--red)"></div></div>
   <div id="scan-result" style="display:none"></div>
+
+  <!-- ── Live Chart ── -->
+  <div id="chart-panel" class="panel" style="display:none;margin-top:16px">
+    <div class="panel-head">
+      <div class="panel-title" id="chart-title">📊 Chart</div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <select id="chart-tf" class="search-input" style="width:90px;padding:5px 10px;font-size:.8rem" onchange="reloadChart()">
+          <option value="5m">5m</option>
+          <option value="15m" selected>15m</option>
+          <option value="1h">1H</option>
+          <option value="4h">4H</option>
+          <option value="1d">1D</option>
+        </select>
+        <button class="btn btn-ghost btn-sm" onclick="reloadChart()">↺</button>
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('chart-panel').style.display='none'">✕</button>
+      </div>
+    </div>
+    <div class="panel-body" style="padding:0">
+      <div id="chart-loading" style="display:none;padding:30px;text-align:center"><div class="spinner" style="margin:0 auto"></div></div>
+      <div id="chart-container" style="height:420px;width:100%;position:relative"></div>
+      <div id="chart-legend" style="padding:8px 14px;display:flex;gap:12px;flex-wrap:wrap;font-size:.72rem;color:var(--text2);border-top:1px solid rgba(255,255,255,.06)">
+        <span><span style="display:inline-block;width:14px;height:2px;background:#00c8ff;vertical-align:middle;margin-right:4px"></span>EMA 21</span>
+        <span><span style="display:inline-block;width:14px;height:2px;background:#ffab00;vertical-align:middle;margin-right:4px"></span>EMA 50</span>
+        <span><span style="display:inline-block;width:12px;height:10px;background:rgba(0,120,255,.3);border:1px solid rgba(0,120,255,.7);vertical-align:middle;margin-right:4px"></span>Bullish OB</span>
+        <span><span style="display:inline-block;width:12px;height:10px;background:rgba(180,0,255,.25);border:1px solid rgba(180,0,255,.6);vertical-align:middle;margin-right:4px"></span>Bearish OB</span>
+        <span><span style="display:inline-block;width:12px;height:10px;background:rgba(0,200,255,.15);border:1px dashed rgba(0,200,255,.5);vertical-align:middle;margin-right:4px"></span>Bull FVG</span>
+        <span><span style="display:inline-block;width:12px;height:10px;background:rgba(255,51,85,.12);border:1px dashed rgba(255,51,85,.45);vertical-align:middle;margin-right:4px"></span>Bear FVG</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- MTF Forecast Panel (shown after scan) -->
+  <div id="mtf-panel" class="panel" style="display:none;margin-top:16px">
+    <div class="panel-head">
+      <div class="panel-title">🔮 Multi-Timeframe Forecast</div>
+      <button class="btn btn-ghost btn-sm" id="mtf-refresh-btn" onclick="loadMtfForecast()">↺ Refresh</button>
+    </div>
+    <div class="panel-body" id="mtf-body"><div class="loading-center"><div class="spinner"></div></div></div>
+  </div>
 
   <!-- ── Auto Market Scan ── -->
   <div class="panel" style="margin-top:24px">
@@ -55,6 +94,7 @@
 
 </div>
 
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 <script src="/js/user.js"></script>
 <script>
 const D = window.__DATA__ || {};
@@ -102,6 +142,12 @@ async function doScan() {
       return;
     }
     renderScanResult(d.analysis);
+    // Show chart + MTF forecast automatically after scan
+    const a = d.analysis;
+    window._lastScanLevels = { entry: a.entryPrice, sl: a.sl, tp1: a.tp1, tp2: a.tp2, tp3: a.tp3 };
+    document.getElementById('mtf-panel').style.display = '';
+    await showChart(a.coin, window._lastScanLevels);
+    await loadMtfForecast();
   } catch(e){
     document.getElementById('scan-loading').style.display='none';
     document.getElementById('scan-btn').disabled=false;
@@ -418,6 +464,180 @@ function showLimitConfirmModal({coin,direction,zone,leverage}) {
 }
 function closeLimitModal(){const m=document.getElementById('limit-modal-overlay');if(m)m.remove();delete window._limitResolve;}
 
+// ══════════════════════════════════════════════════════════════════
+//  CHART ENGINE  (lightweight-charts v4)
+// ══════════════════════════════════════════════════════════════════
+let _chart = null, _candleSeries = null, _chartCoin = '';
+
+function destroyChart() {
+  if (_chart) { try { _chart.remove(); } catch(_){} _chart = null; _candleSeries = null; }
+  document.getElementById('chart-container').innerHTML = '';
+}
+
+async function showChart(coin, signalLevels = {}) {
+  _chartCoin = coin;
+  const tf  = document.getElementById('chart-tf').value;
+  const panel = document.getElementById('chart-panel');
+  panel.style.display = '';
+  document.getElementById('chart-title').textContent = `📊 ${coin} / USDT  (${tf.toUpperCase()})`;
+  document.getElementById('chart-loading').style.display = '';
+  document.getElementById('chart-container').style.opacity = '0';
+  destroyChart();
+
+  try {
+    const d = await apiFetch(`/app/api/chart-data?coin=${coin}&timeframe=${tf}&limit=150`);
+    if (!d.ok) throw new Error(d.error);
+
+    document.getElementById('chart-loading').style.display = 'none';
+    document.getElementById('chart-container').style.opacity = '1';
+
+    const container = document.getElementById('chart-container');
+    _chart = LightweightCharts.createChart(container, {
+      layout:     { background: { color: '#060d17' }, textColor: '#5c87a8' },
+      grid:       { vertLines: { color: 'rgba(28,51,73,0.4)' }, horzLines: { color: 'rgba(28,51,73,0.4)' } },
+      crosshair:  { mode: LightweightCharts.CrosshairMode.Normal },
+      rightPriceScale: { borderColor: 'rgba(28,51,73,0.6)' },
+      timeScale:  { borderColor: 'rgba(28,51,73,0.6)', timeVisible: true, secondsVisible: false },
+      width:  container.clientWidth,
+      height: container.clientHeight || 420,
+    });
+
+    // Candles
+    _candleSeries = _chart.addCandlestickSeries({
+      upColor: '#00e676', downColor: '#ff3355',
+      borderUpColor: '#00c853', borderDownColor: '#c62828',
+      wickUpColor: '#00c853', wickDownColor: '#c62828',
+    });
+    _candleSeries.setData(d.candles);
+
+    // EMA 21
+    if (d.ema21 && d.ema21.length) {
+      const ema21s = _chart.addLineSeries({ color: '#00c8ff', lineWidth: 1.5, title: 'EMA21' });
+      ema21s.setData(d.ema21);
+    }
+    // EMA 50
+    if (d.ema50 && d.ema50.length) {
+      const ema50s = _chart.addLineSeries({ color: '#ffab00', lineWidth: 1.5, title: 'EMA50' });
+      ema50s.setData(d.ema50);
+    }
+
+    // Order Blocks as price band markers
+    (d.orderBlocks || []).forEach(ob => {
+      const isBull = (ob.type||'').toLowerCase().includes('bull');
+      [ob.high, ob.low].forEach(price => {
+        if (!price) return;
+        const s = _chart.addLineSeries({
+          color: isBull ? 'rgba(0,120,255,0.55)' : 'rgba(180,0,255,0.55)',
+          lineWidth: 1, lineStyle: 2, lastValueVisible: false, priceLineVisible: false,
+          title: isBull ? '📦 BullOB' : '📦 BearOB',
+        });
+        const firstTime = d.candles[Math.max(0, d.candles.length - 30)].time;
+        const lastTime  = d.candles[d.candles.length - 1].time;
+        s.setData([{ time: firstTime, value: parseFloat(price) }, { time: lastTime, value: parseFloat(price) }]);
+      });
+    });
+
+    // FVGs as price band markers
+    (d.fvgs || []).forEach(fvg => {
+      const isBull = (fvg.type||'').toLowerCase().includes('bull');
+      [fvg.upper, fvg.lower].forEach(price => {
+        if (!price) return;
+        const s = _chart.addLineSeries({
+          color: isBull ? 'rgba(0,200,255,0.4)' : 'rgba(255,51,85,0.38)',
+          lineWidth: 1, lineStyle: 1, lastValueVisible: false, priceLineVisible: false,
+          title: isBull ? 'FVG▲' : 'FVG▼',
+        });
+        const firstTime = d.candles[Math.max(0, d.candles.length - 30)].time;
+        const lastTime  = d.candles[d.candles.length - 1].time;
+        s.setData([{ time: firstTime, value: parseFloat(price) }, { time: lastTime, value: parseFloat(price) }]);
+      });
+    });
+
+    // Signal levels (Entry / SL / TP1 / TP2 / TP3)
+    const levelDefs = [
+      { key: 'entry', color: '#ffffff', title: 'Entry', style: 2 },
+      { key: 'sl',    color: '#ff3355', title: 'SL',    style: 0 },
+      { key: 'tp1',   color: '#00e676', title: 'TP1',   style: 0 },
+      { key: 'tp2',   color: '#00e676', title: 'TP2',   style: 1 },
+      { key: 'tp3',   color: '#00e676', title: 'TP3🚀', style: 1 },
+    ];
+    const firstT = d.candles[0].time;
+    const lastT  = d.candles[d.candles.length - 1].time;
+    levelDefs.forEach(({ key, color, title, style }) => {
+      const val = parseFloat(signalLevels[key]);
+      if (!val) return;
+      const s = _chart.addLineSeries({ color, lineWidth: 1.5, lineStyle: style, title, lastValueVisible: true, priceLineVisible: false });
+      s.setData([{ time: firstT, value: val }, { time: lastT, value: val }]);
+    });
+
+    // Auto-fit
+    _chart.timeScale().fitContent();
+
+    // Resize observer
+    const ro = new ResizeObserver(() => { if (_chart) _chart.applyOptions({ width: container.clientWidth }); });
+    ro.observe(container);
+
+    panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  } catch (err) {
+    document.getElementById('chart-loading').style.display = 'none';
+    document.getElementById('chart-container').innerHTML =
+      `<div style="padding:30px;color:var(--red);text-align:center">❌ Chart error: ${err.message}</div>`;
+  }
+}
+
+async function reloadChart() {
+  if (_chartCoin) await showChart(_chartCoin, window._lastScanLevels || {});
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  MTF FORECAST PANEL
+// ══════════════════════════════════════════════════════════════════
+async function loadMtfForecast() {
+  if (!_chartCoin) return;
+  const btn  = document.getElementById('mtf-refresh-btn');
+  const body = document.getElementById('mtf-body');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
+  body.innerHTML = '<div class="loading-center"><div class="spinner"></div></div>';
+  try {
+    const d = await apiFetch(`/app/api/mtf-forecast?coin=${_chartCoin}`);
+    if (!d.ok) throw new Error(d.error);
+    const forecasts = d.forecasts || {};
+    const tfOrder   = ['1H', '4H', '1D'];
+    const labels    = { '1H': '1 Hour', '4H': '4 Hour', '1D': 'Daily' };
+    body.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;padding:4px">` +
+      tfOrder.map(tf => {
+        const f = forecasts[tf];
+        if (!f) return `<div style="border:1px solid rgba(255,255,255,.07);border-radius:10px;padding:16px;text-align:center;color:var(--text2)">${labels[tf]}<br><small>No data</small></div>`;
+        const trend = (f.future_trend_4h||'').toLowerCase();
+        const isBull = trend.includes('bull'), isBear = trend.includes('bear');
+        const col   = isBull ? 'var(--green)' : isBear ? 'var(--red)' : 'var(--text2)';
+        const arrow = isBull ? '▲' : isBear ? '▼' : '→';
+        const regime = f.market_regime || '—';
+        const regCol = regime === 'Trending' ? 'var(--green)' : regime === 'Choppy' ? 'var(--red)' : 'var(--yellow)';
+        const hurst  = f.hurst_exponent != null ? parseFloat(f.hurst_exponent).toFixed(2) : '—';
+        const target = f.ai_predicted_target_price;
+        const upside = f.predicted_upside_pct;
+        return `<div style="border:1px solid ${isBull?'rgba(0,230,118,.25)':isBear?'rgba(255,51,85,.25)':'rgba(255,255,255,.07)'};border-radius:10px;padding:16px;background:rgba(0,0,0,.15)">
+          <div style="font-size:.68rem;color:var(--text2);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">${labels[tf]} Forecast</div>
+          <div style="font-size:1.2rem;font-weight:800;color:${col};margin-bottom:8px">${arrow} ${f.future_trend_4h||'—'}</div>
+          ${target ? `<div style="font-size:.78rem;margin-bottom:4px">🎯 Target: <span style="font-family:var(--font-mono);color:${col}">$${parseFloat(target).toFixed(4)}</span>
+            ${upside != null ? `<span style="font-size:.7rem;color:${parseFloat(upside)>=0?'var(--green)':'var(--red)'}"> (${parseFloat(upside)>=0?'+':''}${parseFloat(upside).toFixed(2)}%)</span>` : ''}</div>` : ''}
+          <div style="font-size:.72rem;color:var(--text2);margin-bottom:3px">Regime: <span style="color:${regCol}">${regime}</span></div>
+          <div style="font-size:.72rem;color:var(--text2);margin-bottom:3px">Hurst H: <span style="font-family:var(--font-mono)">${hurst}</span></div>
+          ${f.confidence != null ? `<div style="font-size:.72rem;color:var(--text2)">Confidence: <span style="color:var(--accent)">${Math.round(f.confidence)}%</span></div>` : ''}
+          ${f.signal_blocked ? `<div style="margin-top:8px;font-size:.7rem;color:var(--yellow);background:rgba(255,171,0,.1);border-radius:5px;padding:4px 8px">⚠️ Chop Filter Active</div>` : ''}
+          ${f.logic_reason ? `<div style="margin-top:8px;font-size:.68rem;color:var(--text2);line-height:1.5">${f.logic_reason}</div>` : ''}
+        </div>`;
+      }).join('') + `</div>
+      <div style="font-size:.7rem;color:var(--text2);padding:10px 4px 0">⚡ Leading SMC analysis — predicts where price is going, not confirming where it has been.</div>`;
+  } catch (err) {
+    body.innerHTML = `<div style="color:var(--red);padding:20px">❌ ${err.message}</div>`;
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '↺ Refresh'; }
+  }
+}
+
 async function loadMarketScan() {
   const body=document.getElementById('market-scan-body');
   body.innerHTML='<div class="loading-center"><div class="spinner"></div></div>';
@@ -442,12 +662,14 @@ async function loadMarketScan() {
                   <span style="font-size:.72rem;color:var(--text2);font-family:var(--font-mono)">Lev:${s.leverage}x · RRR:${s.rrr}:1</span>
                   ${s.dailyAligned===false?'<span style="font-size:.65rem;color:var(--yellow)">⚠️Daily</span>':''}
                   ${s.fundingRate!==null&&s.fundingRate!==undefined&&Math.abs(parseFloat(s.fundingRate))>0.1?`<span style="font-size:.65rem;color:${parseFloat(s.fundingRate)>0?'var(--red)':'var(--green)'}">F:${parseFloat(s.fundingRate).toFixed(3)}%</span>`:''}
+                  ${s.isLimitEntry?'<span style="font-size:.65rem;color:var(--accent);background:rgba(0,200,255,.1);padding:1px 6px;border-radius:4px">⏳ LIMIT</span>':''}
+                  ${s.entryZoneBonus>0?`<span style="font-size:.65rem;color:var(--green);background:rgba(0,230,118,.1);padding:1px 6px;border-radius:4px">+${s.entryZoneBonus} Zone✓</span>`:''}
                 </div>
                 <div style="font-size:.78rem;color:var(--text2);font-family:var(--font-mono)">
                   Entry:${fmtP(s.entryPrice)} · TP2:${fmtP(s.tp2)} · SL:${fmtP(s.sl)}
                 </div>
               </div>
-              <button class="btn btn-ghost btn-sm" onclick="document.getElementById('s-coin').value='${s.coin}';doScan()">Deep Scan →</button>
+              <button class="btn btn-ghost btn-sm" onclick="document.getElementById('s-coin').value='${s.coin}';doScan()">Deep Scan + Chart →</button>
             </div>
           </div>`;
         }).join('') + `<div style="font-size:.75rem;color:var(--text2);margin-top:10px;text-align:right">Scanned ${d.scanned||0} coins · Min Score: ${d.userMinScore||userMinScore}</div>`;

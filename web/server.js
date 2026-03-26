@@ -838,6 +838,14 @@ function start() {
         } catch(e) {
             console.error('[DataLake] ❌ Scheduler failed to start:', e.message);
         }
+
+        // ── Data Lake gap-fill updater (Fix 1) ───────────────────────
+        try {
+            const dataLakeUpdater = require('../lib/dataLakeUpdater');
+            dataLakeUpdater.start();
+        } catch(e) {
+            console.error('[DataLakeUpdater] ❌ Failed to start:', e.message);
+        }
     });
 
     return app;

@@ -29,6 +29,11 @@ function readBotStatus() {
     }
 }
 
+// ── DB-backed bot status (Fix 3 — race-condition-free MongoDB IPC) ──────
+const botStatus = require('./lib/botStatusManager');
+// Connect MongoDB in this process so isBotOnline() can query it
+require('./lib/database').connect().catch(() => {});
+
 // Inject global so web/server.js can call setBotConnected / pushSignal
 // even when running standalone — they just update in-memory state.
 global._standaloneMode = true;
@@ -38,10 +43,17 @@ try {
     const server = require('./web/server');
     server.start();
 
-    // Poll bot status file every 5 seconds
-    setInterval(() => {
-        const status = readBotStatus();
-        const isConnected = status.connected && (Date.now() - status.ts < 30000);
+    // Poll bot status — DB primary, file fallback (Fix 3)
+    setInterval(async () => {
+        let isConnected = false;
+        try {
+            // PRIMARY: MongoDB-backed (no race conditions, no file locks)
+            isConnected = await botStatus.isBotOnline();
+        } catch (_) {
+            // FALLBACK: original file-based check (kept for safety)
+            const status = readBotStatus();
+            isConnected = status.connected && (Date.now() - status.ts < 30000);
+        }
         server.setBotConnected(isConnected);
     }, 5000);
 

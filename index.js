@@ -25,6 +25,9 @@ const config       = require('./config');
 const { connectDB }  = require('./lib/database');
 const { handler }    = require('./lib/commands');
 
+// ── DB-backed bot status (Fix 3 — replaces file IPC race condition) ──
+const botStatus = require('./lib/botStatusManager');
+
 // ─── Dashboard — init BEFORE plugins so console.log is intercepted ──
 const { initDashboard, setBotConnected, log: dashLog } = require('./dashboard');
 initDashboard();
@@ -38,6 +41,7 @@ function _writeBotStatus(connected) {
     } catch (_) {}
 }
 _writeBotStatus(false);
+botStatus.setBotOnline(false).catch(() => {});   // ← DB-backed (Fix 3)
 
 // ─── Serialize helper ─────────────────────────────────────────
 const serialize = require('./lib/functions').serialize;
@@ -153,6 +157,7 @@ async function startBot() {
         if (connection === 'close') {
             setBotConnected(false);
             _writeBotStatus(false);
+            botStatus.setBotOnline(false).catch(() => {});   // ← DB-backed (Fix 3)
             const reason = lastDisconnect?.error?.output?.statusCode;
             console.log(`⚠️ Connection Closed. Reason: ${reason}`);
 
@@ -172,6 +177,7 @@ async function startBot() {
         } else if (connection === 'open') {
             setBotConnected(true);
             _writeBotStatus(true);
+            botStatus.setBotOnline(true).catch(() => {});    // ← DB-backed (Fix 3)
             global._botConn = conn;
             reconnectCount = 0;
             console.log('✅ Bot Connected to WhatsApp Successfully!');

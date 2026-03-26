@@ -807,6 +807,15 @@ function start() {
         console.error('[Dashboard] ❌ predictive-routes.js failed:', e.message, e.stack);
     }
 
+    // ─── Data Lake routes ──────────────────────────────────────────────
+    try {
+        const registerDataLake = require('./dataLake-routes');
+        registerDataLake({ saasAuth, renderView }, app);
+        console.log('[Dashboard] ✅ Data Lake routes registered (/app/datalake)');
+    } catch(e) {
+        console.error('[Dashboard] ❌ dataLake-routes.js failed:', e.message);
+    }
+
     // ─── Root & Compat ─────────────────────────────────────────────────
     app.use('/dashboard', (req, res) => {
         const dest = req.path==='/'||req.path==='' ? '/admin/' : '/admin'+req.path;
@@ -820,6 +829,15 @@ function start() {
         console.log(`📡 [Signals] http://localhost:${port}/admin/signals`);
         console.log(`👥 [Portal]  http://localhost:${port}/app/`);
         console.log(`🔑 [Auth]    http://localhost:${port}/auth/login`);
+
+        // ── Data Lake daily auto-sync scheduler ──────────────────────
+        try {
+            const lake = require('../lib/dataLakeManager');
+            lake.startScheduler();
+            console.log('[DataLake] ✅ Auto-sync scheduler started (daily 00:05 UTC)');
+        } catch(e) {
+            console.error('[DataLake] ❌ Scheduler failed to start:', e.message);
+        }
     });
 
     return app;

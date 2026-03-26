@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Data Lake · ApexIQ</title>
+<link rel="stylesheet" href="/css/main.css">
+<style>
+/* ── Data Lake custom styles ───────────────────────── */
+.lake-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px,1fr));
+  gap: 14px;
+  margin-bottom: 20px;
+}
+.coin-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.coin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .82rem;
+}
+.coin-table th {
+  text-align: left;
+  padding: 9px 12px;
+  font-size: .72rem;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--text2);
+  border-bottom: 1px solid rgba(255,255,255,.07);
+  white-space: nowrap;
+}
+.coin-table td {
+  padding: 9px 12px;
+  border-bottom: 1px solid rgba(255,255,255,.04);
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.coin-table tr:last-child td { border-bottom: none; }
+.coin-table tr:hover td { background: rgba(255,255,255,.025); }
+.status-dot {
+  display: inline-block;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  flex-shrink: 0;
+}
+.dot-active   { background: var(--green); box-shadow: 0 0 6px var(--green); }
+.dot-syncing  { background: var(--accent); animation: pulse 1s infinite; }
+.dot-error    { background: var(--red); }
+.dot-pending  { background: var(--text2); }
+@keyframes pulse { 0%,100%{ opacity:1 } 50%{ opacity:.3 } }
+.tf-pill {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 10px;
+  font-size: .7rem;
+  font-family: var(--font-mono);
+  background: rgba(0,229,255,.1);
+  color: var(--accent);
+  margin: 1px;
+}
+.add-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto auto;
+  gap: 10px;
+  align-items: end;
+}
+@media(max-width:640px) {
+  .add-form { grid-template-columns: 1fr 1fr; }
+}
+.log-box {
+  background: rgba(0,0,0,.3);
+  border: 1px solid rgba(255,255,255,.06);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  font-family: var(--font-mono);
+  font-size: .76rem;
+  height: 200px;
+  overflow-y: auto;
+  color: var(--text2);
+  line-height: 1.7;
+}
+.log-box .log-ok   { color: var(--green); }
+.log-box .log-err  { color: var(--red);   }
+.log-box .log-info { color: var(--accent);}
+.log-box .log-page { color: var(--text2); }
+.progress-bar-wrap {
+  background: rgba(255,255,255,.06);
+  border-radius: 4px;
+  overflow: hidden;
+  height: 4px;
+  margin-top: 8px;
+}
+.progress-bar {
+  height: 4px;
+  background: var(--accent);
+  width: 0%;
+  transition: width .3s ease;
+}
+.btn-danger {
+  background: rgba(255,51,85,.1);
+  color: var(--red);
+  border: 1px solid rgba(255,51,85,.2);
+}
+.btn-danger:hover { background: rgba(255,51,85,.2); }
+.sync-all-wrap {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.last-sync-label {
+  font-size: .76rem;
+  color: var(--text2);
+}
+.empty-lake {
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--text2);
+}
+.empty-lake .e-icon { font-size: 2.5rem; margin-bottom: 12px; }
+.empty-lake .e-msg  { font-size: .9rem; }
+/* Confirmation modal */
+.modal-overlay {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.7);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+}
+.modal-overlay.open { display: flex; }
+.modal-box {
+  background: var(--card);
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: var(--radius);
+  padding: 28px;
+  max-width: 400px;
+  width: 90%;
+}
+.modal-title { font-size: 1rem; font-weight: 700; margin-bottom: 10px; }
+.modal-msg   { font-size: .85rem; color: var(--text2); margin-bottom: 20px; line-height: 1.5; }
+.modal-btns  { display: flex; gap: 10px; justify-content: flex-end; }
+.tf-checkboxes { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
+.tf-check { display: flex; align-items: center; gap: 5px; font-size: .82rem; cursor: pointer; }
+.tf-check input[type=checkbox] { accent-color: var(--accent); width: 14px; height: 14px; }
+</style>
+</head>
+<body>
+<div id="nav-root"></div>
+<div class="wrap">
+
+  <h1 class="page-title">🗄️ Local Data Lake</h1>
+
+  <!-- ── Overview Stats ── -->
+  <div class="lake-grid" id="stats-grid">
+    <div class="stat-card">
+      <div class="stat-label">📦 Total Candles</div>
+      <div class="stat-val c-cyan" id="stat-total">—</div>
+      <div class="stat-sub">in MongoDB</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">🪙 Tracked Coins</div>
+      <div class="stat-val c-green" id="stat-coins">—</div>
+      <div class="stat-sub">in lake</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">⚡ Active Syncs</div>
+      <div class="stat-val c-yellow" id="stat-syncing">0</div>
+      <div class="stat-sub">running now</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">⏰ Auto-Sync</div>
+      <div class="stat-val" id="stat-next" style="font-size:.9rem">00:05 UTC</div>
+      <div class="stat-sub">daily schedule</div>
+    </div>
+  </div>
+
+  <!-- ── Add Coin Panel ── -->
+  <div class="panel" style="margin-bottom:20px">
+    <div class="panel-head">
+      <div class="panel-title">➕ Add Coin to Lake</div>
+    </div>
+    <div class="panel-body">
+      <div class="add-form" id="add-form">
+        <div>
+          <label class="field-label">Coin Symbol</label>
+          <input type="text" id="add-symbol" class="inp" placeholder="BTCUSDT"
+            maxlength="12" autocomplete="off"
+            style="text-transform:uppercase;font-family:var(--font-mono);font-weight:700">
+        </div>
+        <div>
+          <label class="field-label">Start Date</label>
+          <input type="date" id="add-date" class="inp" value="2021-01-01">
+        </div>
+        <div style="grid-column:1/-1">
+          <label class="field-label">Timeframes</label>
+          <div class="tf-checkboxes" id="tf-checkboxes">
+            <label class="tf-check"><input type="checkbox" value="15m" checked> 15m</label>
+            <label class="tf-check"><input type="checkbox" value="1h"  checked> 1h</label>
+            <label class="tf-check"><input type="checkbox" value="4h"  checked> 4h</label>
+            <label class="tf-check"><input type="checkbox" value="1d"> 1d</label>
+            <label class="tf-check"><input type="checkbox" value="5m"> 5m</label>
+            <label class="tf-check"><input type="checkbox" value="1m"> 1m</label>
+          </div>
+        </div>
+        <div style="grid-column:1/-1;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+          <button class="btn btn-primary" onclick="addCoin()" id="add-btn">
+            ➕ Add &amp; Download
+          </button>
+          <span id="add-msg" style="font-size:.82rem"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Tracked Coins ── -->
+  <div class="panel" style="margin-bottom:20px">
+    <div class="panel-head">
+      <div class="panel-title">🪙 Tracked Coins</div>
+      <div class="sync-all-wrap">
+        <button class="btn btn-ghost btn-sm" onclick="syncAll()" id="sync-all-btn">
+          🔄 Sync All
+        </button>
+        <button class="btn btn-ghost btn-sm" onclick="loadStatus()">↺ Refresh</button>
+      </div>
+    </div>
+    <div class="panel-body" style="padding:0">
+      <div class="coin-table-wrap" id="coin-table-wrap">
+        <div class="empty-lake" id="empty-lake" style="display:none">
+          <div class="e-icon">🗄️</div>
+          <div class="e-msg">No coins in the lake yet.<br>Add your first coin above.</div>
+        </div>
+        <table class="coin-table" id="coin-table" style="display:none">
+          <thead>
+            <tr>
+              <th>Status</th>
+              <th>Symbol</th>
+              <th>Timeframes</th>
+              <th>Start Date</th>
+              <th>Last Sync</th>
+              <th>Candles</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="coin-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Sync Progress Log ── -->
+  <div class="panel" id="log-panel" style="display:none;margin-bottom:20px">
+    <div class="panel-head">
+      <div class="panel-title" id="log-title">⚡ Sync Progress</div>
+      <button class="btn btn-ghost btn-sm" onclick="clearLog()">✕ Close</button>
+    </div>
+    <div class="panel-body">
+      <div class="progress-bar-wrap"><div class="progress-bar" id="progress-bar"></div></div>
+      <div class="log-box" id="log-box" style="margin-top:12px"></div>
+    </div>
+  </div>
+
+  <!-- ── Analysis Integration Guide ── -->
+  <div class="panel" style="margin-bottom:20px">
+    <div class="panel-head">
+      <div class="panel-title">📖 How It Works</div>
+    </div>
+    <div class="panel-body" style="font-size:.84rem;line-height:1.8;color:var(--text2)">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:20px">
+        <div>
+          <div style="color:var(--accent);font-weight:700;margin-bottom:6px">🔷 Coins IN the Lake</div>
+          <ul style="margin:0;padding-left:18px">
+            <li>Historical data stored in MongoDB</li>
+            <li>Gap auto-filled since last sync</li>
+            <li>Analysis uses stored + live data</li>
+            <li>Instant — no Binance API call needed</li>
+          </ul>
+        </div>
+        <div>
+          <div style="color:var(--yellow);font-weight:700;margin-bottom:6px">🔶 Coins NOT in the Lake</div>
+          <ul style="margin:0;padding-left:18px">
+            <li>Candles fetched live from Binance</li>
+            <li>Stored in a temporary session (48h TTL)</li>
+            <li>Entry/TP/SL updates use the live session</li>
+            <li>Session auto-deleted when trade closes</li>
+          </ul>
+        </div>
+        <div>
+          <div style="color:var(--green);font-weight:700;margin-bottom:6px">⏰ Auto-Sync</div>
+          <ul style="margin:0;padding-left:18px">
+            <li>Runs daily at 00:05 UTC</li>
+            <li>Only fetches MISSING candles</li>
+            <li>No duplicate data ever written</li>
+            <li>Safe to run anytime manually</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /wrap -->
+
+<!-- ── Confirm Delete Modal ── -->
+<div class="modal-overlay" id="confirm-modal">
+  <div class="modal-box">
+    <div class="modal-title">🗑️ Remove Coin from Lake?</div>
+    <div class="modal-msg" id="confirm-msg"></div>
+    <div class="modal-btns">
+      <button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-danger btn-sm" id="confirm-ok-btn">Remove</button>
+    </div>
+  </div>
+</div>
+
+<script src="/js/user.js"></script>
+<script>
+const D = window.__DATA__ || {};
+window._apexUser = { username: D.username };
+renderUserNav('datalake');
+
+// ── helpers ─────────────────────────────────────────────────────
+function fmtDate(d) {
+  if (!d) return '—';
+  return new Date(d).toISOString().replace('T',' ').substring(0,16) + ' UTC';
+}
+function fmtNum(n) {
+  return n ? Number(n).toLocaleString() : '0';
+}
+
+// ── status loader ────────────────────────────────────────────────
+async function loadStatus() {
+  try {
+    const r = await fetch('/app/api/datalake/status').then(x=>x.json());
+    if (!r.ok) return;
+
+    document.getElementById('stat-total').textContent  = fmtNum(r.totalCandles);
+    document.getElementById('stat-coins').textContent  = r.trackedCount;
+    document.getElementById('stat-syncing').textContent = r.activeSyncs.length;
+
+    const coins = r.coins || [];
+    const tbody = document.getElementById('coin-tbody');
+    const table = document.getElementById('coin-table');
+    const empty = document.getElementById('empty-lake');
+
+    if (!coins.length) {
+      table.style.display = 'none';
+      empty.style.display = 'block';
+      return;
+    }
+
+    empty.style.display = 'none';
+    table.style.display = 'table';
+
+    tbody.innerHTML = coins.map(c => {
+      const dotClass =
+        c.isSyncing          ? 'dot-syncing' :
+        c.status === 'active' ? 'dot-active'  :
+        c.status === 'error'  ? 'dot-error'   : 'dot-pending';
+
+      const statusLabel =
+        c.isSyncing          ? '<span style="color:var(--accent)">Syncing…</span>' :
+        c.status === 'active' ? '<span style="color:var(--green)">Active</span>'   :
+        c.status === 'error'  ? `<span style="color:var(--red)" title="${c.errorMsg}">Error ⚠</span>` :
+                                '<span style="color:var(--text2)">Pending</span>';
+
+      const tfs = (c.timeframes || []).map(t =>
+        `<span class="tf-pill">${t}</span>`
+      ).join('');
+
+      return `<tr>
+        <td><span class="status-dot ${dotClass}"></span>${statusLabel}</td>
+        <td><strong style="font-family:var(--font-mono);color:var(--text)">${c.symbol}</strong></td>
+        <td>${tfs}</td>
+        <td style="color:var(--text2)">${fmtDate(c.startDate).substring(0,10)}</td>
+        <td style="color:var(--text2)">${c.lastSync ? fmtDate(c.lastSync) : '<span style="color:var(--yellow)">Never</span>'}</td>
+        <td style="font-family:var(--font-mono)">${fmtNum(c.totalCandles)}</td>
+        <td>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-ghost btn-sm"
+              onclick="syncOne('${c.symbol}')"
+              ${c.isSyncing ? 'disabled' : ''}>
+              ${c.isSyncing ? '⏳' : '🔄'} Sync
+            </button>
+            <button class="btn btn-danger btn-sm"
+              onclick="confirmRemove('${c.symbol}', ${c.totalCandles})">
+              🗑
+            </button>
+          </div>
+        </td>
+      </tr>`;
+    }).join('');
+
+  } catch(e) {
+    console.error('Status load failed', e);
+  }
+}
+
+// ── add coin ─────────────────────────────────────────────────────
+async function addCoin() {
+  const symbol = document.getElementById('add-symbol').value.trim().toUpperCase();
+  const date   = document.getElementById('add-date').value;
+  const tfs    = [...document.querySelectorAll('#tf-checkboxes input:checked')].map(x=>x.value);
+  const msg    = document.getElementById('add-msg');
+  const btn    = document.getElementById('add-btn');
+
+  if (!symbol) { showMsg(msg, '⚠ Enter a symbol', 'var(--yellow)'); return; }
+  if (!date)   { showMsg(msg, '⚠ Choose a start date', 'var(--yellow)'); return; }
+  if (!tfs.length) { showMsg(msg, '⚠ Select at least one timeframe', 'var(--yellow)'); return; }
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Adding…';
+
+  try {
+    const r = await fetch('/app/api/datalake/add-coin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ symbol, startDate: date, timeframes: tfs }),
+    }).then(x => x.json());
+
+    if (r.ok) {
+      showMsg(msg, `✅ ${symbol} added! Starting initial download…`, 'var(--green)');
+      document.getElementById('add-symbol').value = '';
+      await loadStatus();
+      // Auto-start sync for the new coin
+      setTimeout(() => syncOne(symbol), 1000);
+    } else {
+      showMsg(msg, '❌ ' + r.error, 'var(--red)');
+    }
+  } catch(e) {
+    showMsg(msg, '❌ Network error', 'var(--red)');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '➕ Add & Download';
+  }
+}
+
+// ── sync one ─────────────────────────────────────────────────────
+async function syncOne(symbol) {
+  const r = await fetch('/app/api/datalake/sync', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ symbol }),
+  }).then(x => x.json());
+
+  if (!r.ok) { alert(r.error); return; }
+  openLogPanel(`⚡ Syncing ${symbol}`);
+  listenToSync(r.syncId, symbol);
+  loadStatus();
+}
+
+// ── sync all ─────────────────────────────────────────────────────
+async function syncAll() {
+  const btn = document.getElementById('sync-all-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Syncing…';
+
+  const r = await fetch('/app/api/datalake/sync-all', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  }).then(x => x.json());
+
+  if (!r.ok) { alert(r.error); btn.disabled=false; btn.textContent='🔄 Sync All'; return; }
+  openLogPanel('⚡ Syncing All Coins');
+  listenToSync(r.syncId, 'ALL', () => {
+    btn.disabled   = false;
+    btn.textContent = '🔄 Sync All';
+    loadStatus();
+  });
+}
+
+// ── SSE listener ─────────────────────────────────────────────────
+function listenToSync(syncId, label, onDone) {
+  const logBox = document.getElementById('log-box');
+  const bar    = document.getElementById('progress-bar');
+  let pages    = 0;
+
+  const es = new EventSource(`/app/api/datalake/sync-stream/${syncId}`);
+
+  es.onmessage = (e) => {
+    const ev = JSON.parse(e.data);
+    let line = '';
+    let cls  = 'log-page';
+
+    switch (ev.type) {
+      case 'start':
+        line = `▶ ${ev.coin} ${ev.timeframe} — from ${new Date(ev.from).toISOString().substring(0,10)}`;
+        cls  = 'log-info';
+        break;
+      case 'start_all':
+        line = `▶ Starting sync for ${ev.total} coin(s)`;
+        cls  = 'log-info';
+        break;
+      case 'page':
+        pages++;
+        line = `  → ${ev.coin} ${ev.timeframe} page ${pages} from ${new Date(ev.from).toISOString().substring(0,10)}`;
+        break;
+      case 'saved':
+        line = `  ✔ ${ev.coin} ${ev.timeframe} — saved ${ev.count.toLocaleString()} candles`;
+        cls  = 'log-ok';
+        bar.style.width = Math.min(100, (ev.total / 50000) * 100) + '%';
+        break;
+      case 'uptodate':
+        line = `  ✔ ${ev.coin} ${ev.timeframe} — already up to date`;
+        cls  = 'log-ok';
+        break;
+      case 'done':
+        line = `✅ ${ev.coin} complete — ${ev.totalSaved.toLocaleString()} candles`;
+        cls  = 'log-ok';
+        bar.style.width = '100%';
+        es.close();
+        loadStatus();
+        if (onDone) onDone();
+        break;
+      case 'done_all':
+        line = `✅ All coins synced`;
+        cls  = 'log-ok';
+        bar.style.width = '100%';
+        es.close();
+        loadStatus();
+        if (onDone) onDone();
+        break;
+      case 'error':
+        line = `❌ Error on ${ev.coin}: ${ev.msg}`;
+        cls  = 'log-err';
+        es.close();
+        if (onDone) onDone();
+        break;
+      case 'timeout':
+        line = '⚠ Stream timeout';
+        cls  = 'log-err';
+        es.close();
+        break;
+    }
+
+    if (line) {
+      const span = document.createElement('div');
+      span.className = cls;
+      span.textContent = `[${new Date().toISOString().substring(11,19)}] ${line}`;
+      logBox.appendChild(span);
+      logBox.scrollTop = logBox.scrollHeight;
+    }
+  };
+
+  es.onerror = () => {
+    es.close();
+    loadStatus();
+  };
+}
+
+// ── confirm remove ───────────────────────────────────────────────
+let _removeTarget = null;
+
+function confirmRemove(symbol, candles) {
+  _removeTarget = symbol;
+  document.getElementById('confirm-msg').innerHTML =
+    `This will permanently delete <strong style="color:var(--text)">${symbol}</strong>` +
+    ` and all <strong style="color:var(--red)">${fmtNum(candles)}</strong> stored candles from MongoDB.<br><br>` +
+    `This cannot be undone.`;
+  document.getElementById('confirm-ok-btn').onclick = doRemove;
+  document.getElementById('confirm-modal').classList.add('open');
+}
+
+async function doRemove() {
+  closeModal();
+  if (!_removeTarget) return;
+  const symbol = _removeTarget;
+  _removeTarget = null;
+
+  const r = await fetch('/app/api/datalake/remove-coin', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ symbol }),
+  }).then(x => x.json());
+
+  if (r.ok) {
+    loadStatus();
+  } else {
+    alert('Error: ' + r.error);
+  }
+}
+
+function closeModal() {
+  document.getElementById('confirm-modal').classList.remove('open');
+}
+document.getElementById('confirm-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeModal();
+});
+
+// ── log panel ────────────────────────────────────────────────────
+function openLogPanel(title) {
+  document.getElementById('log-panel').style.display = 'block';
+  document.getElementById('log-title').textContent   = title;
+  document.getElementById('log-box').innerHTML       = '';
+  document.getElementById('progress-bar').style.width = '0%';
+  document.getElementById('log-panel').scrollIntoView({ behavior: 'smooth' });
+}
+
+function clearLog() {
+  document.getElementById('log-panel').style.display = 'none';
+}
+
+// ── util ─────────────────────────────────────────────────────────
+function showMsg(el, text, color) {
+  el.style.color = color;
+  el.textContent = text;
+  setTimeout(() => el.textContent = '', 5000);
+}
+
+// ── Symbol input auto-uppercase ──────────────────────────────────
+document.getElementById('add-symbol').addEventListener('input', function() {
+  this.value = this.value.toUpperCase();
+});
+
+// ── Quick shortcut: press Enter in symbol field → add ────────────
+document.getElementById('add-symbol').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') addCoin();
+});
+
+// ── Auto-refresh every 30s ───────────────────────────────────────
+loadStatus();
+setInterval(loadStatus, 30_000);
+</script>
+</body>
+</html>

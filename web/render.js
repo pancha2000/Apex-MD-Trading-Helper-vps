@@ -31,6 +31,7 @@ const PAGE_META = {
     'app/backtest':    { title: 'Backtest · ApexIQ', description: 'Strategy backtesting on ApexIQ.' },
     'app/brain':       { title: 'Predictive Brain · ApexIQ', description: 'AI-powered predictive SMC trading signals with Auto-Pilot strategy selection.' },
     'app/stats':       { title: 'Stats · ApexIQ', description: 'Trading performance stats on ApexIQ.' },
+    'app/datalake':    { title: 'Data Lake · ApexIQ', description: 'Local historical OHLCV data lake for AI-powered crypto analysis.' },
     'admin/dashboard': { title: 'Admin · ApexIQ', description: 'ApexIQ admin dashboard.' },
 };
 

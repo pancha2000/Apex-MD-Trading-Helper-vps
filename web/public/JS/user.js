@@ -41,8 +41,9 @@ function renderUserNav(active) {
         { href: '/app/ai',        key: 'ai',        label: '🤖 AI Chat' },
         // ── Account ──
         { href: '/app/brain',     key: 'brain',     label: '🧠 Brain' },
+        { href: '/app/datalake',  key: 'datalake',  label: '🗄️ Data Lake' },
         { href: '/app/settings',  key: 'settings',  label: '⚙️ Settings' },
-        { href: '/app/system',    key: 'system',    label: '💻 System' },
+        { href: '/app/system',    key: 'system',     label: '💻 System' },
     ];
     const user = window._apexUser || {};
 
@@ -51,7 +52,7 @@ function renderUserNav(active) {
         { label: 'Analysis', keys: ['scanner','market','heatmap','compare','funding','news'] },
         { label: 'Trading',  keys: ['trades','paper','tracks','alerts','watchlist','portfolio'] },
         { label: 'Tools',    keys: ['backtest','journal','stats','calc','grid','ai','brain'] },
-        { label: 'Account',  keys: ['settings','system'] },
+        { label: 'Account',  keys: ['datalake','settings','system'] },
     ];
     const aboutLinks = [
         { href: '/app/guide', label: '📖 User Guide' },

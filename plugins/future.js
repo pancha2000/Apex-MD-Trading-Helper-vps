@@ -497,6 +497,14 @@ ${entryConf.display}
                     coin, isPaper: true, status: { $in: ['active', 'pending'] }
                 });
                 if (!_already && calcQty > 0) {
+                    // ✅ SL-BLOWN PROTECTION: Skip if price already past SL — instant loss prevention
+                    const _slN      = parseFloat(aData.sl);
+                    const _beyondSL = (aData.direction === 'LONG'  && _liveP < _slN) ||
+                                      (aData.direction === 'SHORT' && _liveP > _slN);
+                    if (_beyondSL) {
+                        console.log(`[PAPER_AUTO] ⛔ SKIPPED ${coin} ${aData.direction} — price $${_liveP} beyond SL $${_slN}`);
+                        return;
+                    }
                     const _diffPct = Math.abs(_liveP - _entryN) / _entryN * 100;
                     const _oType   = _diffPct <= 0.3 ? 'MARKET' : 'LIMIT';
                     const _status  = _oType === 'MARKET' ? 'active' : 'pending';

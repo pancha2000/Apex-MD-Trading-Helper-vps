@@ -123,3 +123,174 @@ cmd({
             await m.react('✅');
         } catch (e) { await reply('❌ Error: ' + e.message); }
     });
+// ═══════════════════════════════════════════════════════
+// ✅ NEW: .analytics - Deep Trade Performance Analytics
+// ═══════════════════════════════════════════════════════
+cmd({
+    pattern: 'analytics',
+    alias: ['deepstats', 'coinanalysis', 'tradeanalytics'],
+    desc: 'Deep trade analytics — per-coin win rate, time analysis, streaks',
+    category: 'crypto',
+    react: '🧬',
+    filename: __filename,
+},
+async (conn, mek, m, { reply }) => {
+    try {
+        await m.react('⏳');
+
+        const trades = await db.Trade.find({
+            userJid: m.sender,
+            status:  'closed',
+            result:  { $in: ['WIN', 'LOSS', 'BREAK-EVEN'] },
+        }).sort({ closedAt: -1 }).lean();
+
+        if (!trades || trades.length < 3) {
+            return await reply(
+                `🧬 *TRADE ANALYTICS*\n\n` +
+                `⚠️ Minimum 3 closed trades ඕනෑ.\n` +
+                `Currently: ${trades ? trades.length : 0} trades.\n\n` +
+                `More signals trade කර analytics unlock කරන්න!`
+            );
+        }
+
+        // ── Per-coin analysis ─────────────────────────────────
+        const coinMap = {};
+        for (const t of trades) {
+            const c = t.coin || 'UNKNOWN';
+            if (!coinMap[c]) coinMap[c] = { wins: 0, losses: 0, be: 0, pnl: 0 };
+            if (t.result === 'WIN')         { coinMap[c].wins++;   coinMap[c].pnl += (t.pnlPct || 0); }
+            else if (t.result === 'LOSS')   { coinMap[c].losses++; coinMap[c].pnl += (t.pnlPct || 0); }
+            else                            { coinMap[c].be++; }
+        }
+        const coinStats = Object.entries(coinMap)
+            .map(([coin, s]) => {
+                const total = s.wins + s.losses + s.be;
+                return { coin, ...s, total, wr: total > 0 ? ((s.wins / total) * 100).toFixed(0) : 0 };
+            })
+            .sort((a, b) => b.total - a.total)
+            .slice(0, 8);
+
+        // ── Hour-of-day analysis (best trading hours) ─────────
+        const hourMap = {};
+        for (const t of trades) {
+            if (!t.openTime) continue;
+            const h = new Date(t.openTime).getUTCHours();
+            if (!hourMap[h]) hourMap[h] = { wins: 0, losses: 0 };
+            if (t.result === 'WIN') hourMap[h].wins++;
+            if (t.result === 'LOSS') hourMap[h].losses++;
+        }
+        const hourStats = Object.entries(hourMap)
+            .map(([h, s]) => {
+                const total = s.wins + s.losses;
+                return { hour: parseInt(h), ...s, total, wr: total > 0 ? ((s.wins / total) * 100).toFixed(0) : 0 };
+            })
+            .sort((a, b) => b.wr - a.wr)
+            .slice(0, 3);
+
+        // ── Direction breakdown ───────────────────────────────
+        const longTrades  = trades.filter(t => t.direction === 'LONG');
+        const shortTrades = trades.filter(t => t.direction === 'SHORT');
+        const longWR  = longTrades.length  ? ((longTrades.filter(t=>t.result==='WIN').length  / longTrades.length)  * 100).toFixed(0) : 'N/A';
+        const shortWR = shortTrades.length ? ((shortTrades.filter(t=>t.result==='WIN').length / shortTrades.length) * 100).toFixed(0) : 'N/A';
+
+        // ── Average hold time ─────────────────────────────────
+        const withTime = trades.filter(t => t.openTime && t.closedAt);
+        const avgHoldMs = withTime.length
+            ? withTime.reduce((s, t) => s + (new Date(t.closedAt) - new Date(t.openTime)), 0) / withTime.length
+            : 0;
+        const avgHoldH = (avgHoldMs / 3600000).toFixed(1);
+
+        // ── Consecutive streak analysis ───────────────────────
+        let maxWin = 0, maxLoss = 0, curW = 0, curL = 0;
+        for (const t of [...trades].reverse()) {
+            if (t.result === 'WIN')  { curW++; curL = 0; maxWin  = Math.max(maxWin,  curW); }
+            else if (t.result === 'LOSS') { curL++; curW = 0; maxLoss = Math.max(maxLoss, curL); }
+        }
+
+        // ── OHLCV Cache stats ─────────────────────────────────
+        let cacheInfo = '';
+        try {
+            const ohlcvCache = require('../lib/ohlcv-cache');
+            const cs = await ohlcvCache.getCacheStats();
+            cacheInfo = `\n━━━━━━━━━━━━━━━━━━\n*💾 OHLCV CACHE (API Saver)*\n📦 Entries: ${cs.totalEntries} | Coins: ${cs.uniqueCoins}\n✅ Hit Rate: ${cs.hitRate} (${cs.hits} hits / ${cs.misses} misses)`;
+        } catch (_) {}
+
+        // ── Build message ─────────────────────────────────────
+        let msg = `╔═══════════════════════════╗\n║  🧬 *DEEP ANALYTICS v2*   ║\n╚═══════════════════════════╝\n\n`;
+        msg += `*📊 OVERVIEW (${trades.length} closed trades)*\n`;
+        msg += `🟢 LONG:  ${longTrades.length} trades | WR: ${longWR}%\n`;
+        msg += `🔴 SHORT: ${shortTrades.length} trades | WR: ${shortWR}%\n`;
+        msg += `⏱️ Avg Hold: ${avgHoldH}h\n`;
+        msg += `🏆 Max Win Streak: ${maxWin}  |  💀 Max Loss Streak: ${maxLoss}\n\n`;
+
+        msg += `━━━━━━━━━━━━━━━━━━\n*🪙 PER-COIN PERFORMANCE (Top 8)*\n`;
+        for (const s of coinStats) {
+            const wrEmoji = parseInt(s.wr) >= 60 ? '🟢' : parseInt(s.wr) >= 50 ? '🟡' : '🔴';
+            const pnlSign = s.pnl >= 0 ? '+' : '';
+            msg += `${wrEmoji} *${s.coin.replace('USDT','')}* — WR: ${s.wr}% (${s.wins}W/${s.losses}L) | PnL: ${pnlSign}${s.pnl.toFixed(1)}%\n`;
+        }
+
+        if (hourStats.length) {
+            msg += `\n━━━━━━━━━━━━━━━━━━\n*⏰ BEST TRADING HOURS (UTC)*\n`;
+            hourStats.forEach((h, i) => {
+                const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉';
+                msg += `${medal} ${String(h.hour).padStart(2,'0')}:00 UTC — WR: ${h.wr}% (${h.total} trades)\n`;
+            });
+        }
+
+        msg += cacheInfo;
+        msg += `\n\n_💡 .stats — ළඟා ළඟ summary | .analytics — deep dive_`;
+
+        await reply(msg.trim());
+        await m.react('✅');
+    } catch (e) { await reply('❌ Error: ' + e.message); }
+});
+
+// ═══════════════════════════════════════════════════════
+// ✅ NEW: .cachestats - Show OHLCV cache performance
+// ═══════════════════════════════════════════════════════
+cmd({
+    pattern: 'cachestats',
+    alias: ['cacheinfo', 'apistats'],
+    desc: 'Show OHLCV MongoDB cache performance stats',
+    category: 'crypto',
+    react: '💾',
+    filename: __filename,
+},
+async (conn, mek, m, { reply }) => {
+    try {
+        const ohlcvCache = require('../lib/ohlcv-cache');
+        const cs = await ohlcvCache.getCacheStats();
+
+        const msg =
+            `💾 *OHLCV CACHE STATS*\n━━━━━━━━━━━━━━━━━━\n\n` +
+            `📦 Cached Entries:  ${cs.totalEntries}\n` +
+            `🪙 Unique Coins:    ${cs.uniqueCoins}\n` +
+            `✅ Cache Hit Rate:  ${cs.hitRate}\n` +
+            `🎯 Total Hits:      ${cs.hits}\n` +
+            `❌ Total Misses:    ${cs.misses}\n\n` +
+            `_Hits = Binance API call saved_\n` +
+            `_Misses = Fresh fetch from Binance_\n\n` +
+            `> *.cacheclear* — cache clear කිරීමට`;
+
+        await reply(msg);
+        await m.react('✅');
+    } catch (e) { await reply('❌ Error: ' + e.message); }
+});
+
+cmd({
+    pattern: 'cacheclear',
+    alias: ['clearcache'],
+    desc: 'Clear OHLCV MongoDB cache',
+    category: 'crypto',
+    react: '🗑️',
+    filename: __filename,
+},
+async (conn, mek, m, { reply }) => {
+    try {
+        const ohlcvCache = require('../lib/ohlcv-cache');
+        const count = await ohlcvCache.clearCache();
+        await reply(`✅ OHLCV cache cleared — ${count} entries removed.`);
+        await m.react('✅');
+    } catch (e) { await reply('❌ Error: ' + e.message); }
+});

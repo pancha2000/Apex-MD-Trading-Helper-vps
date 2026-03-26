@@ -332,7 +332,10 @@ cmd({
             // Old code used 0.5% which is too wide and always fires.
             // 0.3% means only truly at-market entries become MARKET.
             const priceDiffPct = Math.abs(livePrice - entry) / entry * 100;
-            orderType   = priceDiffPct <= 0.3 ? 'MARKET' : 'LIMIT';
+            // ✅ SL-BLOWN PROTECTION: Don't MARKET-fill if price already past SL
+            const _pastSL = (direction === 'LONG'  && livePrice < sl) ||
+                            (direction === 'SHORT' && livePrice > sl);
+            orderType   = (!_pastSL && priceDiffPct <= 0.3) ? 'MARKET' : 'LIMIT';
             tradeStatus = orderType === 'MARKET' ? 'active' : 'pending';
         } else {
             // ── PRIORITY 3: no live price, no parsed type → safe default ──

@@ -818,4 +818,102 @@ setInterval(() => {
     }
 }, 60 * 60 * 1000);
 
+// ─── Full Scan Command (.scan20) ──────────────────────────────
+cmd({
+    pattern:  'scan20',
+    alias:    ['fullscan', 'topscan', 'scan10'],
+    desc:     'Full Multi-Coin Scanner - All Qualifying Setups (Top 20)',
+    category: 'crypto',
+    react:    '🔭',
+    filename: __filename,
+},
+async (conn, mek, m, { reply }) => {
+    try {
+        await m.react('⏳');
+        await reply(`🔭 *FULL MARKET SCAN ක්‍රියාත්මක වේ...*\n⏳ Top 20 coins 14-Factor analysis...\n_ටිකක් ගන්නවා — patience!_`);
+
+        // Run full scan without the top-5 slice
+        const foundSetups = [];
+        const coinsToScan = binance.isReady()
+            ? binance.getWatchedCoins()
+            : await binance.getTopTrendingCoins(20);
+
+        for (const coin of coinsToScan) {
+            try {
+                const aData = await analyzer.run14FactorAnalysis(coin, '15m');
+                if (aData.score >= 20) {
+                    const sent     = await getSentimentCached();
+                    const sentBias = parseFloat(sent.totalBias) || 0;
+                    const sentBonus =
+                        (aData.direction === 'LONG'  && sentBias >= 1)  ?  1 :
+                        (aData.direction === 'SHORT' && sentBias <= -1) ?  1 :
+                        (aData.direction === 'LONG'  && sentBias <= -1) ? -1 :
+                        (aData.direction === 'SHORT' && sentBias >= 1)  ? -1 : 0;
+
+                    foundSetups.push({
+                        coin:          coin.replace('USDT', ''),
+                        type:          aData.direction === 'LONG' ? 'LONG 🟢' : 'SHORT 🔴',
+                        rawScore:      aData.score + sentBonus,
+                        score:         `${aData.score + sentBonus}/${aData.maxScore}`,
+                        signalGrade:   aData.signalGrade || 'C',
+                        signalGradeEmoji: aData.signalGradeEmoji || '📊',
+                        price:         aData.priceStr,
+                        entry:         aData.entryPrice,
+                        tp1:           aData.tp1,
+                        tp2:           aData.tp2,
+                        sl:            aData.sl,
+                        orderType:     aData.orderSuggestion ? aData.orderSuggestion.type : '',
+                        reasons:       aData.reasons,
+                        sentEmoji:     sentBonus > 0 ? '📰✅' : sentBonus < 0 ? '📰⚠️' : '',
+                        dailyAligned:  aData.dailyAligned,
+                        dailyTrend:    aData.dailyTrend || '',
+                        mtfAlignCount: aData.mtfAlignCount || 0,
+                    });
+                }
+            } catch (_e) { /* skip failed coin */ }
+        }
+
+        foundSetups.sort((a, b) => b.rawScore - a.rawScore);
+        const top20 = foundSetups.slice(0, 20);
+
+        if (top20.length === 0) {
+            return await reply(`🔭 *FULL SCAN RESULTS*\n\n⚪ Score 20+ ලබාගත් setups නොමැත.\n\nMarket low-volume / consolidating ඇති. ටිකකට පසු නැවත scan කරන්න.`);
+        }
+
+        const sent = await getSentimentCached();
+        let out = `╔══════════════════════════════╗\n║  🔭 *FULL SCAN — TOP ${top20.length} SETUPS*  ║\n╚══════════════════════════════╝\n\n`;
+        out += `🧠 *Sentiment:* ${sent.overallSentiment} | ${sent.fngEmoji} F&G: ${sent.fngValue}\n\n`;
+
+        // Group by grade
+        const elite  = top20.filter(s => s.signalGrade === 'A+');
+        const high   = top20.filter(s => s.signalGrade === 'A');
+        const std    = top20.filter(s => s.signalGrade === 'B');
+        const watch  = top20.filter(s => !['A+','A','B'].includes(s.signalGrade));
+
+        const renderGroup = (label, items) => {
+            if (!items.length) return '';
+            let g = `*${label}*\n`;
+            items.forEach((s, i) => {
+                const orderTag = s.orderType
+                    ? (s.orderType.includes('LIMIT') ? ' ⏳' : s.orderType.includes('SKIP') ? ' ⛔' : ' ⚡')
+                    : '';
+                const dayTag = s.dailyAligned ? ' ✅D' : ' ⚠️D';
+                g += `${i+1}. *#${s.coin}* ${s.type} (${s.score})${s.sentEmoji}${orderTag}${dayTag}\n`;
+                g += `   📍 $${s.price} | TP1: $${s.tp1} | SL: $${s.sl}\n`;
+                g += `   MTF ${s.mtfAlignCount}/4 | *.future ${s.coin} 15m*\n\n`;
+            });
+            return g;
+        };
+
+        out += renderGroup('🏆 ELITE A+ SETUPS', elite);
+        out += renderGroup('🥇 HIGH QUALITY A', high);
+        out += renderGroup('🥈 STANDARD B', std);
+        out += renderGroup('👁️ WATCH (C/D)', watch);
+        out += `━━━━━━━━━━━━━━━━━━\n📊 Total qualifying: ${foundSetups.length} / ${coinsToScan.length} coins`;
+
+        await reply(out.trim());
+        await m.react('✅');
+    } catch (e) { await reply('❌ Error: ' + e.message); }
+});
+
 module.exports = { getScannerStatus, startScannerFromSettings, stopScannerFromSettings, autoStartTradeManager };

@@ -194,7 +194,7 @@ function renderScanResult(a) {
           <span style="font-family:var(--font-head);font-size:1.3rem;font-weight:800;color:#fff">${a.coin}</span>
           <span class="pill ${isLong?'pill-long':'pill-short'}">${isLong?'▲':'▼'} ${a.direction}</span>
           ${pill(a.timeframe,'rgba(0,200,255,.12)')}
-          ${bypassed ? pill('⏳ LIMIT ZONE','rgba(255,171,0,.18)') : ''}
+          ${(bypassed || (a.deepEntry?.decision==='LIMIT_NEAR'||a.deepEntry?.decision==='LIMIT_FAR')) ? pill(a.deepEntry?.decision==='LIMIT_NEAR'?'⏳ LIMIT NEAR':'⏳ LIMIT ZONE','rgba(255,171,0,.18)') : ''}
         </div>
         <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:4px">
           ${fundingTag(a.fundingRate)}
@@ -246,7 +246,7 @@ function renderScanResult(a) {
     </div>` : ''}
 
     <!-- 📍 SMART LIMIT ZONE -->
-    ${bypassed && z ? `
+    ${z ? `
     <div style="border-radius:10px;border:1.5px solid rgba(0,200,255,.4);background:rgba(0,200,255,.05);padding:14px 16px;margin-bottom:12px">
       <div style="font-size:.7rem;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">📍 Smart Limit Zone — Best Entry</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px 12px;background:rgba(0,0,0,.2);border-radius:8px;padding:10px 12px;margin-bottom:10px">
@@ -268,7 +268,9 @@ function renderScanResult(a) {
         onclick="placeLimitOrder(${JSON.stringify(z).replace(/"/g,'&quot;')})">
         📌 Place Limit Order — Wait for Zone
       </button>
-      <div style="font-size:.67rem;color:var(--text2);margin-top:5px;text-align:center">⏰ Watcher every 3 min · 📲 WhatsApp alert on trigger</div>
+      ${z.eta?`<div style="font-size:.7rem;color:var(--yellow);margin-top:6px;text-align:center">⏰ ETA to zone: <strong>${z.eta}</strong></div>`:''}
+      ${z.confSources?.length?`<div style="font-size:.65rem;color:var(--text2);margin-top:4px;text-align:center">${z.confSources.join(' · ')}</div>`:''}
+      <div style="font-size:.67rem;color:var(--text2);margin-top:5px;text-align:center">🕐 Watcher every 3 min · 📲 WhatsApp alert on trigger</div>
     </div>` : ''}
 
     <!-- AI Summary -->
@@ -279,11 +281,9 @@ function renderScanResult(a) {
 
     <!-- Action Buttons -->
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
-      ${!bypassed
-        ? `<button class="btn btn-warn" onclick="openPaperFromScan()">📄 Paper Trade</button>`
-        : z
-          ? `<button class="btn btn-primary" style="font-size:.8rem" onclick="openLimitDirect()">📌 Open Limit Paper Trade</button>`
-          : `<button class="btn btn-ghost" style="font-size:.76rem;opacity:.6" disabled>⏳ Wait for Zone</button>`}
+      ${z
+        ? `<button class="btn btn-primary" style="font-size:.8rem" onclick="openLimitDirect()">📌 Set Limit Order — Wait for Zone</button>`
+        : `<button class="btn btn-warn" onclick="openPaperFromScan()">📄 Market Paper Trade</button>`}
       <button class="btn btn-ghost" onclick="toggleMoreInfo()" id="more-info-btn">📊 More Info</button>
       <button class="btn btn-ghost" style="margin-left:auto" onclick="document.getElementById('scan-result').style.display='none'">✕</button>
     </div>
@@ -409,24 +409,36 @@ async function openPaperFromScan() {
   if(d.ok)showToast('✅ Paper trade opened! View in Paper tab.');else showToast('❌ '+(d.error||'Failed'),'err');
 }
 
-// ── Direct limit paper trade from bypassed zone (no modal) ──────────────
+// ── Direct limit paper trade — works for deepEntry AND fib zones ────────
 async function openLimitDirect() {
   if(!window._lastScan){showToast('❌ No scan data','err');return;}
   const a = window._lastScan;
-  const fib = a.mtfFibEntry||null;
-  const z   = fib?.nextLimitZone||null;
+  // FIX: Use nextLimitZone regardless of source (fib or deepEntry)
+  const z = a.mtfFibEntry?.nextLimitZone || null;
   if(!z){showToast('❌ No limit zone found','err');return;}
-  showToast('⏳ Opening limit paper trade…','ok');
+  const confirmed = await showLimitConfirmModal({coin:a.coin,direction:a.direction,zone:z,leverage:a.leverage||10});
+  if(!confirmed) return;
+  showToast('⏳ Placing limit order…','ok');
   const payload={
     coin:a.coin, direction:a.direction,
     limitPrice:z.price, tp1:z.tp1||null, tp2:z.tp2, tp3:z.tp3||null,
     sl:z.newSL, leverage:a.leverage||10,
     zoneLabel:z.label, zoneStrength:z.strength,
-    analysisScore:a.score, analysisTimeframe:a.timeframe,
+    // Pass deepEntry metadata for smarter fill logic
+    deepEntryPrice:  z.source==='deepEntry' ? z.price : null,
+    deepEntryLabel:  z.source==='deepEntry' ? z.label : null,
+    deepEntryConf:   z.entryConfScore || 0,
+    deepEntryEta:    z.eta || null,
+    deepEntryScore:  z.entryConfScore || 0,
+    analysisScore:   a.score,
+    analysisTimeframe: a.timeframe,
   };
+  const btn=document.getElementById('limit-confirm-btn');
+  if(btn){btn.disabled=true;btn.textContent='Placing...';}
   const d=await apiFetch('/app/api/paper/open-limit',{method:'POST',body:JSON.stringify(payload)});
+  closeLimitModal();
   if(d.ok){
-    showToast(`📌 Limit order placed at $${z.price} — ${z.label}`);
+    showToast(`📌 Limit order placed at $${parseFloat(z.price).toFixed(4)} — ${z.label}\n⏰ ETA: ${z.eta||'—'}`);
   } else {
     showToast('❌ '+(d.error||'Failed'),'err');
   }

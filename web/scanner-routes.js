@@ -256,37 +256,88 @@ app.post('/app/api/scan', saasAuth.requireUserAuth, async (req, res) => {
                 zones: a.mtfFibEntry.zones?.slice(0,3),
                 tps: a.mtfFibEntry.tps?.slice(0,3),
                 nextLimitZone: (() => {
-                    if (!a.mtfFibEntry.zoneBypassed) return null;
+                    // ═══════════════════════════════════════════════════════
+                    //  BUG FIX: Was returning null unless zoneBypassed=true.
+                    //  Now builds a limit zone for ALL cases where price is
+                    //  approaching a zone (the most common scenario).
+                    //  Priority:
+                    //    1. Fib zones (if zoneBypassed — next pullback zone)
+                    //    2. deepEntry optimalEntry (LIMIT_NEAR / LIMIT_FAR)
+                    //    3. null (only if deepEntry says MARKET or SKIP)
+                    // ═══════════════════════════════════════════════════════
                     const currentP = parseFloat(a.currentPrice||0);
                     const isLong   = a.direction === 'LONG';
                     const tps      = a.mtfFibEntry.tps || [];
-                    const zones    = a.mtfFibEntry.zones || [];
-                    const validZones = zones.filter(z => {
-                        if (!z || !z.price) return false;
-                        const zp = parseFloat(z.price);
-                        return isLong ? zp < currentP * 0.995 : zp > currentP * 1.005;
-                    });
-                    if (!validZones.length) return null;
-                    validZones.sort((a,b) => {
-                        if (a.strength === 'STRONG' && b.strength !== 'STRONG') return -1;
-                        if (b.strength === 'STRONG' && a.strength !== 'STRONG') return  1;
-                        return Math.abs(a.price - currentP) - Math.abs(b.price - currentP);
-                    });
-                    const best    = validZones[0];
-                    const atrVal  = parseFloat(a.atr) || currentP * 0.01;
-                    const newSL   = isLong
-                        ? (best.price - atrVal * 1.5).toFixed(4)
-                        : (best.price + atrVal * 1.5).toFixed(4);
-                    const tp1p    = tps[0]?.price || null;
-                    const tp2p    = tps[1]?.price || tps[0]?.price || null;
-                    const tp3p    = tps[2]?.price || null;
-                    const riskD   = Math.abs(best.price - parseFloat(newSL));
-                    const rewardD = tp2p ? Math.abs(tp2p - best.price) : 0;
-                    const rrr     = riskD > 0 && rewardD > 0 ? (rewardD/riskD).toFixed(2) : null;
-                    const distPct = Math.abs(best.price - currentP) / currentP * 100;
-                    return { price: best.price.toFixed(4), label: best.label, strength: best.strength,
-                             distPct: distPct.toFixed(1), newSL,
-                             tp1: tp1p?.toFixed(4)||null, tp2: tp2p?.toFixed(4)||null, tp3: tp3p?.toFixed(4)||null, rrr };
+                    const atrVal   = parseFloat(a.atr) || currentP * 0.01;
+
+                    // ── PATH 1: zoneBypassed → pick next Fib zone ─────────
+                    if (a.mtfFibEntry.zoneBypassed) {
+                        const zones = a.mtfFibEntry.zones || [];
+                        const validZones = zones.filter(z => {
+                            if (!z || !z.price) return false;
+                            const zp = parseFloat(z.price);
+                            return isLong ? zp < currentP * 0.995 : zp > currentP * 1.005;
+                        });
+                        if (validZones.length) {
+                            validZones.sort((a,b) => {
+                                if (a.strength === 'STRONG' && b.strength !== 'STRONG') return -1;
+                                if (b.strength === 'STRONG' && a.strength !== 'STRONG') return  1;
+                                return Math.abs(a.price - currentP) - Math.abs(b.price - currentP);
+                            });
+                            const best    = validZones[0];
+                            const newSL   = isLong
+                                ? (best.price - atrVal * 1.5).toFixed(4)
+                                : (best.price + atrVal * 1.5).toFixed(4);
+                            const tp1p    = tps[0]?.price || null;
+                            const tp2p    = tps[1]?.price || tps[0]?.price || null;
+                            const tp3p    = tps[2]?.price || null;
+                            const riskD   = Math.abs(best.price - parseFloat(newSL));
+                            const rewardD = tp2p ? Math.abs(tp2p - best.price) : 0;
+                            const rrr     = riskD > 0 && rewardD > 0 ? (rewardD/riskD).toFixed(2) : null;
+                            const distPct = Math.abs(best.price - currentP) / currentP * 100;
+                            return { price: best.price.toFixed(4), label: best.label,
+                                     strength: best.strength, distPct: distPct.toFixed(1), newSL,
+                                     tp1: tp1p?.toFixed(4)||null, tp2: tp2p?.toFixed(4)||null,
+                                     tp3: tp3p?.toFixed(4)||null, rrr, source: 'fib' };
+                        }
+                    }
+
+                    // ── PATH 2: deepEntry has a LIMIT decision ─────────────
+                    // Most common case: price approaching a zone, not bypassed yet.
+                    const de = a.deepEntry;
+                    if (de && (de.decision === 'LIMIT_NEAR' || de.decision === 'LIMIT_FAR')) {
+                        const limP = parseFloat(de.optimalEntry);
+                        if (limP > 0) {
+                            const newSL = isLong
+                                ? (limP - atrVal * 1.5).toFixed(4)
+                                : (limP + atrVal * 1.5).toFixed(4);
+                            const tp1p = parseFloat(a.tp1) || tps[0]?.price || null;
+                            const tp2p = parseFloat(a.tp2) || tps[1]?.price || tps[0]?.price || null;
+                            const tp3p = parseFloat(a.tp3) || tps[2]?.price || null;
+                            const riskD   = Math.abs(limP - parseFloat(newSL));
+                            const rewardD = tp2p ? Math.abs(tp2p - limP) : 0;
+                            const rrr     = riskD > 0 && rewardD > 0 ? (rewardD/riskD).toFixed(2) : null;
+                            const strength = de.entryConfScore >= 7 ? 'STRONG' : de.entryConfScore >= 4 ? 'MEDIUM' : 'WEAK';
+                            return {
+                                price:    limP.toFixed(6),
+                                label:    de.entryLabel || 'Deep Entry Zone',
+                                strength,
+                                distPct:  (de.distPct || 0).toFixed ? de.distPct.toFixed(1) : de.distPct || '—',
+                                newSL,
+                                tp1:  tp1p ? parseFloat(tp1p).toFixed(4) : null,
+                                tp2:  tp2p ? parseFloat(tp2p).toFixed(4) : null,
+                                tp3:  tp3p ? parseFloat(tp3p).toFixed(4) : null,
+                                rrr,
+                                eta:            de.eta,
+                                confSources:    (de.confluenceSources||[]).slice(0,4),
+                                entryConfScore: de.entryConfScore,
+                                isLimitNear:    de.decision === 'LIMIT_NEAR',
+                                source:         'deepEntry',
+                            };
+                        }
+                    }
+
+                    return null;
                 })(),
             } : null,
             hiddenDivergence: a.hiddenDivergence,

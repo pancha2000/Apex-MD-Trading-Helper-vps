@@ -1177,9 +1177,13 @@ async function runLimitOrderWatcher() {
             if (distFromZone < st.approachMinDist) st.approachMinDist = distFromZone;
             if (distFromZone < 5) st.wasApproaching = true;
 
-            // ── 1. Check if price is AT zone (within 0.5% tolerance) ────────
-            // For LONG: also detects deep fakeout below zone (wick past SL direction)
-            const inZone     = isL ? curP <= limP * 1.005 : curP >= limP * 0.995;
+            // ── 1. Check if price is AT zone (±0.8% band) ───────────────────
+            // FIX: Old code only checked one side (LONG: curP <= limP*1.005).
+            // That means a LONG limit at $100 would "fill" even when price=$80.
+            // Fix: require price to be WITHIN a band around the limit price.
+            // LONG fills when price is in [limP*0.992, limP*1.008]
+            // SHORT fills when price is in [limP*0.992, limP*1.008]
+            const inZone = Math.abs(curP - limP) / limP <= 0.008;  // ±0.8% band
             const deepFakeout = trade.sl && (
                 isL ? curP < trade.sl * 1.01   // LONG: price near/below SL = deep wick
                     : curP > trade.sl * 0.99   // SHORT: price near/above SL = deep wick
@@ -1215,7 +1219,7 @@ async function runLimitOrderWatcher() {
                 }
             } else if (!inZone) {
                 // Price left zone — check for fakeout (touched but didn't hold)
-                if (st.triggerCount > 0 && st.triggerCount < 2) {
+                if (st.triggerCount > 0 && st.triggerCount < needTriggers) {
                     _botSend(trade.userJid,
                         `⚡ *Fakeout Detected — Held!*\n\n` +
                         `*${trade.coin.replace('USDT','')}* touched $${limP} briefly but left zone.\n` +
@@ -1227,8 +1231,11 @@ async function runLimitOrderWatcher() {
                 st.deepFakeoutAlerted = false; // reset so we can warn again on next wick
             }
 
-            if (inZone && !deepFakeout && st.triggerCount >= 2) {
-                // ✅ CONFIRMED TRIGGER — 2 consecutive checks in zone = real entry
+            // HIGH-CONF zones (from deepEntry, entryConfScore >= 7) fill on 1 check.
+            // Standard zones still need 2 consecutive checks as fakeout protection.
+            const needTriggers = (trade.deepEntryScore >= 7 || trade.zoneStrength === 'STRONG') ? 1 : 2;
+            if (inZone && !deepFakeout && st.triggerCount >= needTriggers) {
+                // ✅ CONFIRMED TRIGGER
                 delete _tradeState[id];
                 await db.Trade.findByIdAndUpdate(trade._id, {
                     status: 'active', fillPrice: curP, entry: curP, lastWatchAt: new Date()
@@ -1248,7 +1255,7 @@ async function runLimitOrderWatcher() {
             }
 
             if (inZone) {
-                console.log(`[LimitWatcher] 🕐 ${trade.coin} in zone (check ${st.triggerCount}/2) @ $${curP}`);
+                console.log(`[LimitWatcher] 🕐 ${trade.coin} in zone (check ${st.triggerCount}/${needTriggers}) @ $${curP}`);
                 continue;
             }
 

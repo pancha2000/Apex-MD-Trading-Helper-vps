@@ -80,11 +80,12 @@ async function getTopDownSetups(ignoreCooldown = false) {
 
             const aData = await analyzer.run14FactorAnalysis(coin, '15m');
 
-            // ── SCORE GATE v8 (High-Accuracy) ────────────────────────────────
-            // Score normalized 0-100. Threshold raised 20→35.
+            // ── SCORE GATE v9 (High-Accuracy Win-Rate Mode) ──────────────────
+            // Score normalized 0-100. Threshold raised to 32.
             // Grades: A+(Elite) / A(High) / B(Standard) only pass auto-scan.
-            // C/D grade always blocked. Asian session (00-08 UTC): C/D blocked.
-            if (aData.score >= 25) {
+            // C/D grade always blocked. Asian session B grade blocked.
+            // RR ratio < 1.2 always blocked regardless of grade.
+            if (aData.score >= 32) {
                 const sent      = await getSentimentCached();
                 const sentBias  = parseFloat(sent.totalBias) || 0;
                 const sentBonus =
@@ -109,15 +110,36 @@ async function getTopDownSetups(ignoreCooldown = false) {
                     aData.sweep5m && aData.sweep5m.includes(aData.direction === 'LONG' ? 'Bullish' : 'Bearish'),
                 ].filter(Boolean).length;
 
-                // Grade-based thresholds:
-                // A+: score≥60, MTF≥3, conf≥8  → ELITE always passes
-                // A:  score≥50, MTF≥2, conf≥5  → HIGH quality passes
-                // B:  score≥35 + confGate/core  → STANDARD passes
-                // C/D: never pass auto-scan
+                // ── RR Ratio Gate ──────────────────────────────────────────────
+                // TP1 must give at least 1.2× reward vs SL risk.
+                // Bad RR setups get skipped immediately — no exceptions.
+                const entryForRR = parseFloat(aData.entryPrice || aData.currentPrice) || 1;
+                const tp1ForRR   = parseFloat(aData.tp1) || 0;
+                const slForRR    = parseFloat(aData.sl)  || 0;
+                const rrSlDist   = Math.abs(entryForRR - slForRR);
+                const rrRatio    = (rrSlDist > 0)
+                    ? (aData.direction === 'LONG'
+                        ? (tp1ForRR - entryForRR) / rrSlDist
+                        : (entryForRR - tp1ForRR) / rrSlDist)
+                    : 0;
+                if (!isFinite(rrRatio) || rrRatio < 1.2) continue;  // Bad RR = skip
+
+                // ── Asian Session B-Grade Block ───────────────────────────────
+                // 00:00–08:00 UTC = low liquidity (Asian session).
+                // B-grade setups in low liquidity = high slippage / stop hunts.
+                const utcNow       = new Date().getUTCHours();
+                const isAsianHours = utcNow >= 0 && utcNow < 8;
+                if (isAsianHours && signalGrade === 'B') continue;
+
+                // ── Grade-Based Quality Pass ──────────────────────────────────
+                // A+: Elite — needs perfect MTF+conf+score alignment
+                // A:  High Quality — requires daily alignment (not just 1H/4H)
+                // B:  Standard — needs strong conf gate + core SMC + MTF 2/4
+                // C/D: Never pass auto-scan
                 const qualityPass =
                     (signalGrade === 'A+') ? (adjustedScore >= 55 && mtfAlign >= 3 && confScore >= 8) :
-                    (signalGrade === 'A')  ? (adjustedScore >= 42 && mtfAlign >= 2 && confScore >= 5) :
-                    (signalGrade === 'B')  ? (adjustedScore >= 30 && (confGate || coreConf >= 2)) :
+                    (signalGrade === 'A')  ? (adjustedScore >= 45 && mtfAlign >= 2 && confScore >= 6 && aData.dailyAligned) :
+                    (signalGrade === 'B')  ? (adjustedScore >= 35 && confGate && coreConf >= 2 && mtfAlign >= 2) :
                     false; // C and D never pass auto-scan
 
                 if (!qualityPass) continue;

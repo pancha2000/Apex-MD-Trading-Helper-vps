@@ -168,6 +168,180 @@ app.get('/app/api/market-scan', saasAuth.requireUserAuth, async (req, res) => {
     } catch(e) { console.error('[Market Scan]', e.message); res.status(500).json({ok:false,error:e.message}); }
 });
 
+// ─── Elite Market Scan ───────────────────────────────────────────────────
+// Extends the normal market-scan with Elite Bonus scoring:
+// BOS+ChoCH, Wyckoff, MTF OB, MM Trap, Cypher, H&S, BB Explosion, etc.
+// Returns top 5 setups ranked by eliteScore (base + bonus points).
+app.get('/app/api/elite-scan', saasAuth.requireUserAuth, async (req, res) => {
+    try {
+        const binance  = require('../lib/binance');
+        const analyzer = require('../lib/analyzer');
+
+        let userMinScore = 20;
+        try { const u = await db.getSaasUserById(req.saasUser.userId); userMinScore = u?.minScoreThreshold ?? 20; } catch(_) {}
+
+        const allCoins = binance.isReady()
+            ? binance.getWatchedCoins()
+            : await binance.getTopTrendingCoins(30).catch(() => [
+                'BTCUSDT','ETHUSDT','SOLUSDT','BNBUSDT','XRPUSDT','ADAUSDT',
+                'AVAXUSDT','DOTUSDT','LINKUSDT','MATICUSDT','ATOMUSDT','NEARUSDT',
+                'LTCUSDT','DOGEUSDT','UNIUSDT','INJUSDT','APTUSDT','ARBUSDT',
+                'OPUSDT','SUIUSDT','TIAUSDT','SEIUSDT','STXUSDT','RUNEUSDT',
+                'RENDERUSDT','FETUSDT','WLDUSDT','JUPUSDT','PYTHUSDT','ORDIUSDT',
+            ]);
+        const coins = allCoins.filter(c => !STABLES.has(c));
+
+        const fallSent = { totalBias:'0', overallSentiment:'NEUTRAL', tradingBias:'Neutral', fngEmoji:'⚪', fngValue:'N/A', btcDominance:'N/A', newsSentimentScore:0 };
+        const sent     = await withTimeout(binance.getMarketSentiment().catch(() => fallSent), 8000, fallSent);
+        const sentBias = parseFloat(sent.totalBias) || 0;
+
+        // ── Elite Bonus Calculator ────────────────────────────────────────
+        // Adds extra points on top of the base 14-factor score for rare,
+        // high-accuracy setups that the base engine scores but doesn't weight heavily.
+        function calcEliteBonus(a) {
+            let bonus = 0;
+            const reasons = [];
+            const isL = a.direction === 'LONG';
+
+            // BOS + ChoCH confluence (structure + momentum)
+            if (a.bos?.bullBOS && a.choch?.includes('Bullish') && isL)  { bonus += 4; reasons.push('BOS+ChoCH 🔺'); }
+            if (a.bos?.bearBOS && a.choch?.includes('Bearish') && !isL) { bonus += 4; reasons.push('BOS+ChoCH 🔻'); }
+
+            // Triple confluence: OB + Fib + VWAP
+            if (a.confirmation?.confirmed && a.fibConf?.hasConfluence && a.vwap?.includes(isL?'🟢':'🔴')) {
+                bonus += 3; reasons.push('OB+Fib+VWAP ✅');
+            }
+
+            // Wyckoff Spring / UTAD — highest accuracy reversal patterns
+            if (a.wyckoff?.phase === 'SPRING' && isL)  { bonus += 5; reasons.push('Wyckoff SPRING 🌱'); }
+            if (a.wyckoff?.phase === 'UTAD'   && !isL) { bonus += 5; reasons.push('Wyckoff UTAD ⚡'); }
+
+            // MTF Order Block confluence (institutional zones)
+            if (a.mtfOB?.confluenceZone) { bonus += 3; reasons.push('MTF OB Zone 🏦'); }
+
+            // Market Maker Traps
+            if (a.mmTrap?.bearTrap && isL)  { bonus += 4; reasons.push('Bear Trap 🪤'); }
+            if (a.mmTrap?.bullTrap && !isL) { bonus += 4; reasons.push('Bull Trap 🪤'); }
+
+            // MTF RSI Divergence
+            if (a.mtfRSIDiv?.mtfBull && isL)  { bonus += 4; reasons.push('MTF Bull Div 💪'); }
+            if (a.mtfRSIDiv?.mtfBear && !isL) { bonus += 4; reasons.push('MTF Bear Div 💪'); }
+
+            // Cypher Pattern (~78% win rate)
+            if (a.cypherPat?.bull && isL)  { bonus += 5; reasons.push('Cypher PRZ 🎯'); }
+            if (a.cypherPat?.bear && !isL) { bonus += 5; reasons.push('Cypher PRZ 🎯'); }
+
+            // Head & Shoulders
+            if (a.headShould?.bull && isL)  { bonus += 4; reasons.push('Inv H&S 🚀'); }
+            if (a.headShould?.bear && !isL) { bonus += 4; reasons.push('H&S Top ⚠️'); }
+
+            // BB Squeeze Explosion (momentum burst)
+            if (a.bbSqueeze?.exploding) {
+                const aligned = (isL && a.bbSqueeze.explosionDir === 'BULL') || (!isL && a.bbSqueeze.explosionDir === 'BEAR');
+                if (aligned) { bonus += 5; reasons.push('BB Explosion 💥'); }
+            }
+
+            // Renko Reversal
+            if (a.renko?.reversal && a.renko.isBull && isL)  { bonus += 3; reasons.push('Renko Bull Rev 🧱'); }
+            if (a.renko?.reversal && a.renko.isBear && !isL) { bonus += 3; reasons.push('Renko Bear Rev 🧱'); }
+
+            // CVD Divergence (hidden accumulation/distribution)
+            if (a.cvd?.bullDiv && isL)  { bonus += 3; reasons.push('CVD Accum 📊'); }
+            if (a.cvd?.bearDiv && !isL) { bonus += 3; reasons.push('CVD Dist 📊'); }
+
+            // Three Drives Pattern
+            if (a.threeDrives?.bull && isL)  { bonus += 3; reasons.push('3-Drives Bottom 🔄'); }
+            if (a.threeDrives?.bear && !isL) { bonus += 3; reasons.push('3-Drives Top 🔄'); }
+
+            // Perfect 4/4 MTF Alignment
+            if ((a.mtfAlignCount || 0) === 4) { bonus += 3; reasons.push('PERFECT MTF 4/4 ✅'); }
+
+            // BTC Macro alignment
+            if (a.btcContext?.trend === 'BULL' && isL)  { bonus += 2; reasons.push('₿ BTC Bull'); }
+            if (a.btcContext?.trend === 'BEAR' && !isL) { bonus += 2; reasons.push('₿ BTC Bear'); }
+
+            // Hurst trending + clear regime
+            if (a.dynRegime?.isTrending && !a.dynRegime?.isChoppy) { bonus += 2; reasons.push('Hurst Trend ✅'); }
+
+            return { bonus, reasons };
+        }
+
+        const results = [];
+        const scanLimit = Math.min(coins.length, 30);
+
+        for (let i = 0; i < scanLimit; i++) {
+            try {
+                const a = await analyzer.run14FactorAnalysis(coins[i], '15m');
+                if (!a || (a.score || 0) < 22) continue;  // pre-filter weak signals
+
+                const sentBonus =
+                    (a.direction === 'LONG'  && sentBias >= 1)  ?  1 :
+                    (a.direction === 'SHORT' && sentBias <= -1) ?  1 :
+                    (a.direction === 'LONG'  && sentBias <= -1) ? -1 :
+                    (a.direction === 'SHORT' && sentBias >= 1)  ? -1 : 0;
+
+                // ── RR check using TP1 (more conservative than TP2) ──────────
+                const entryN  = parseFloat(a.entryPrice) || 0;
+                const slN     = parseFloat(a.sl)  || 0;
+                const tp1N    = parseFloat(a.tp1) || 0;
+                const tp2N    = parseFloat(a.tp2) || 0;
+                const slDist  = Math.abs(entryN - slN);
+                const rr1 = slDist > 0
+                    ? (a.direction === 'LONG' ? (tp1N - entryN) : (entryN - tp1N)) / slDist
+                    : 0;
+                const rr2 = slDist > 0
+                    ? (a.direction === 'LONG' ? (tp2N - entryN) : (entryN - tp2N)) / slDist
+                    : 0;
+                if (!isFinite(rr1) || rr1 < 1.0) continue;  // skip bad RR
+
+                // ── User score threshold gate ─────────────────────────────────
+                if ((a.score + sentBonus) < userMinScore) continue;
+
+                const { bonus, reasons: bonusReasons } = calcEliteBonus(a);
+                const eliteScore = (a.score + sentBonus) + bonus;
+                const f = calcFutures(a);
+
+                results.push({
+                    coin:          coins[i].replace('USDT',''),
+                    direction:     a.direction,
+                    score:         a.score + sentBonus,    // base score
+                    eliteScore,                             // elite score (with bonuses)
+                    bonusPoints:   bonus,
+                    bonusReasons,
+                    entryPrice:    a.entryPrice,
+                    sl:            a.sl,
+                    tp1:           a.tp1,
+                    tp2:           a.tp2,
+                    tp3:           a.tp3,
+                    leverage:      f.leverage,
+                    rrr:           f.rrr,
+                    rr1:           isFinite(rr1) ? rr1.toFixed(2) : '—',
+                    reasons:       a.reasons,
+                    signalGrade:   a.signalGrade || 'B',
+                    signalGradeEmoji: a.signalGradeEmoji || '📊',
+                    mtfAlignCount: a.mtfAlignCount || 0,
+                    confScore:     a.confScore || 0,
+                    dailyAligned:  a.dailyAligned,
+                    fundingRate:   a.fundingRate ?? null,
+                });
+            } catch(_) { continue; }
+        }
+
+        results.sort((a,b) => b.eliteScore - a.eliteScore);
+        res.json({
+            ok:     true,
+            setups: results.slice(0, 5),
+            scanned: scanLimit,
+            total:   results.length,
+            userMinScore,
+            sentiment: { overall: sent.overallSentiment, fngEmoji: sent.fngEmoji, fngValue: sent.fngValue },
+        });
+    } catch(e) {
+        console.error('[Elite Scan]', e.message);
+        res.status(500).json({ ok:false, error: e.message });
+    }
+});
+
 // ─── Deep Single-Coin Scan ───────────────────────────────────────────────
 app.post('/app/api/scan', saasAuth.requireUserAuth, async (req, res) => {
     try {

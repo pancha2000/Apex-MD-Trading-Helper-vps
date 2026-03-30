@@ -1,896 +1,947 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>AI Scanner · ApexIQ</title>
-<link rel="stylesheet" href="/css/main.css">
-</head>
-<body>
-<div id="nav-root"></div>
-<div class="wrap">
+/**
+ * ═══════════════════════════════════════════════════════════════
+ *  APEX-MD  ·  scanner.js  ·  Event-Driven WebSocket Edition
+ *  ─────────────────────────────────────────────────────────────
+ *  • NO setInterval for signal scanning — 100% event-driven
+ *  • Listens to binance.wsEvents '15m_candle_close' events
+ *  • 15-second debounce batches multiple simultaneous closes
+ *    into a single scan pass (all 30 coins close at the same time)
+ *  • Trade Manager keeps its 60-second price-poll (one REST call
+ *    per active trade per minute — minimal overhead)
+ *  • WebSocket init called automatically when scanner starts
+ *
+ *  ✅ TRADE MANAGER FIX: Pending → Active fill logic now uses a
+ *     0.25% tolerance buffer so LIMIT orders fill when price
+ *     enters the entry *zone*, not only at an exact tick match.
+ *     Correct directional logic:
+ *       LONG pending  → fills when currentPrice ≤ entry × 1.0025
+ *       SHORT pending → fills when currentPrice ≥ entry × 0.9975
+ * ═══════════════════════════════════════════════════════════════
+ */
 
-  <h1 class="page-title">⚡ AI Deep Scanner</h1>
+'use strict';
 
-  <!-- A-ADS 2431249 -->
-  <div style="margin-bottom:20px;text-align:center">
-    <div id="frame" style="width:100%;margin:auto;position:relative;z-index:99998">
-      <iframe data-aa='2431249' src='//acceptable.a-ads.com/2431249/?size=Adaptive'
-        style='border:0;padding:0;width:100%;height:auto;overflow:hidden;display:block;margin:auto'></iframe>
-    </div>
-  </div>
+const { cmd } = require('../lib/commands');
+const config   = require('../config');
+const db       = require('../lib/database');
+const axios    = require('axios');
+const binance  = require('../lib/binance');
+const analyzer = require('../lib/analyzer');
+const { broadcastSignal, dispatchSignal } = require('../lib/signalDispatch');
 
-  <!-- ── Deep Analysis Hero ── -->
-  <div class="scan-hero" style="margin-bottom:20px">
-    <div style="flex:1">
-      <div style="font-family:var(--font-head);font-size:1.15rem;font-weight:700;color:#fff;margin-bottom:6px">Single Coin Deep Analysis</div>
-      <div style="font-size:.82rem;color:var(--text2)">70-Factor SMC · Funding Rate · Daily Trend · AI Summary · Min RRR 1.5:1</div>
-    </div>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
-      <div><label class="field-label">Coin</label><input type="text" id="s-coin" class="inp" placeholder="BTC, ETH..." maxlength="12" style="width:130px;font-family:var(--font-mono);font-size:1.05rem;font-weight:700;text-transform:uppercase" autocomplete="off"></div>
-      <div><label class="field-label">Timeframe</label><select id="s-tf" class="inp" style="width:120px"><option value="5m">5m</option><option value="15m" selected>15m</option><option value="1h">1h</option><option value="4h">4h</option><option value="1d">1d</option></select></div>
-      <button id="scan-btn" class="btn btn-primary" style="padding:11px 24px;font-weight:700" onclick="doScan()">⚡ Analyze</button>
-    </div>
-  </div>
+// ─── Sentiment Cache ───────────────────────────────────────────
+let cachedSentiment    = null;
+let sentimentCacheTime = 0;
+const SENTIMENT_CACHE_MS = 5 * 60 * 1000;   // refresh every 5 min
 
-  <!-- ── Loading / Error / Result ── -->\
-  <div id="scan-loading" style="display:none" class="loading-center"><div class="spinner"></div><div style="margin-top:12px;color:var(--text2)">Deep analysis running...</div></div>
-  <div id="scan-error" style="display:none" class="panel"><div class="panel-body" style="color:var(--red)"></div></div>
-  <div id="scan-result" style="display:none"></div>
-
-  <!-- ── Live Chart ── -->
-  <div id="chart-panel" class="panel" style="display:none;margin-top:16px">
-    <div class="panel-head">
-      <div class="panel-title" id="chart-title">📊 Chart</div>
-      <div style="display:flex;gap:6px;align-items:center">
-        <select id="chart-tf" class="search-input" style="width:90px;padding:5px 10px;font-size:.8rem" onchange="reloadChart()">
-          <option value="5m">5m</option>
-          <option value="15m" selected>15m</option>
-          <option value="1h">1H</option>
-          <option value="4h">4H</option>
-          <option value="1d">1D</option>
-        </select>
-        <button class="btn btn-ghost btn-sm" onclick="reloadChart()">↺</button>
-        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('chart-panel').style.display='none'">✕</button>
-      </div>
-    </div>
-    <div class="panel-body" style="padding:0">
-      <div id="chart-loading" style="display:none;padding:30px;text-align:center"><div class="spinner" style="margin:0 auto"></div></div>
-      <div id="chart-container" style="height:420px;width:100%;position:relative"></div>
-      <div id="chart-legend" style="padding:8px 14px;display:flex;gap:12px;flex-wrap:wrap;font-size:.72rem;color:var(--text2);border-top:1px solid rgba(255,255,255,.06)">
-        <span><span style="display:inline-block;width:14px;height:2px;background:#00c8ff;vertical-align:middle;margin-right:4px"></span>EMA 21</span>
-        <span><span style="display:inline-block;width:14px;height:2px;background:#ffab00;vertical-align:middle;margin-right:4px"></span>EMA 50</span>
-        <span><span style="display:inline-block;width:12px;height:10px;background:rgba(0,120,255,.3);border:1px solid rgba(0,120,255,.7);vertical-align:middle;margin-right:4px"></span>Bullish OB</span>
-        <span><span style="display:inline-block;width:12px;height:10px;background:rgba(180,0,255,.25);border:1px solid rgba(180,0,255,.6);vertical-align:middle;margin-right:4px"></span>Bearish OB</span>
-        <span><span style="display:inline-block;width:12px;height:10px;background:rgba(0,200,255,.15);border:1px dashed rgba(0,200,255,.5);vertical-align:middle;margin-right:4px"></span>Bull FVG</span>
-        <span><span style="display:inline-block;width:12px;height:10px;background:rgba(255,51,85,.12);border:1px dashed rgba(255,51,85,.45);vertical-align:middle;margin-right:4px"></span>Bear FVG</span>
-      </div>
-    </div>
-  </div>
-
-  <!-- MTF Forecast Panel (shown after scan) -->
-  <div id="mtf-panel" class="panel" style="display:none;margin-top:16px">
-    <div class="panel-head">
-      <div class="panel-title">🔮 Multi-Timeframe Forecast</div>
-      <button class="btn btn-ghost btn-sm" id="mtf-refresh-btn" onclick="loadMtfForecast()">↺ Refresh</button>
-    </div>
-    <div class="panel-body" id="mtf-body"><div class="loading-center"><div class="spinner"></div></div></div>
-  </div>
-
-  <!-- ── Scan Tabs: Normal + Elite ── -->
-  <div class="panel" style="margin-top:24px">
-
-    <!-- Tab Header -->
-    <div class="panel-head" style="flex-wrap:wrap;gap:8px">
-      <div style="display:flex;gap:4px;background:rgba(0,0,0,.25);border-radius:8px;padding:3px">
-        <button id="tab-normal-btn" class="scan-tab-btn active" onclick="switchScanTab('normal')">
-          🔍 Market Scan
-        </button>
-        <button id="tab-elite-btn" class="scan-tab-btn" onclick="switchScanTab('elite')">
-          🏆 Elite Scan
-        </button>
-      </div>
-      <div style="display:flex;gap:8px;align-items:center;margin-left:auto">
-        <span id="user-threshold-badge" style="font-size:.72rem;padding:2px 8px;border-radius:99px;background:rgba(0,200,255,.1);color:var(--accent);border:1px solid rgba(0,200,255,.2)"></span>
-        <button class="btn btn-ghost btn-sm" id="scan-refresh-btn" onclick="refreshActiveScan()">↺ Scan Now</button>
-        <a href="/app/settings" class="btn btn-ghost btn-sm" style="font-size:.72rem">⚙️ Threshold</a>
-      </div>
-    </div>
-
-    <!-- Normal Scan Body -->
-    <div id="tab-normal" class="panel-body">
-      <div id="market-scan-body"><div class="loading-center"><div class="spinner"></div></div></div>
-    </div>
-
-    <!-- Elite Scan Body -->
-    <div id="tab-elite" class="panel-body" style="display:none">
-      <div style="background:rgba(255,171,0,.06);border:1px solid rgba(255,171,0,.2);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:.78rem;color:var(--text2);line-height:1.7">
-        <strong style="color:var(--yellow)">🏆 Elite Scan</strong> — Base 14-Factor score + bonus points for rare high-accuracy setups:<br>
-        <span style="font-size:.72rem">BOS+ChoCH · Wyckoff Spring/UTAD · Cypher Pattern · MTF OB Zone · MM Trap · BB Explosion · MTF RSI Divergence · H&S · CVD · Perfect 4/4 MTF</span>
-      </div>
-      <div id="elite-scan-body"><div class="loading-center"><div class="spinner"></div></div></div>
-    </div>
-
-  </div>
-
-</div>
-
-<style>
-.scan-tab-btn {
-  background: none;
-  border: none;
-  color: var(--text2);
-  font-size: .8rem;
-  font-weight: 600;
-  padding: 6px 14px;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: background .15s, color .15s;
-}
-.scan-tab-btn.active {
-  background: rgba(0,200,255,.15);
-  color: var(--accent);
-}
-</style>
-
-<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
-<script src="/js/user.js"></script>
-<script>
-const D = window.__DATA__ || {};
-renderUserNav('scanner');
-
-const userMinScore = D.minScore || 20;
-document.getElementById('s-coin').addEventListener('keydown', e=>{if(e.key==='Enter')doScan();});
-document.getElementById('s-coin').addEventListener('input', e=>{e.target.value=e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,'');});
-
-function fmtP(n){if(!n||isNaN(n))return'—';const p=parseFloat(n);if(p>=1000)return'$'+p.toFixed(2);if(p>=1)return'$'+p.toFixed(4);return'$'+p.toFixed(6);}
-
-function fundingTag(rate) {
-  if (rate === null || rate === undefined) return '';
-  const r = parseFloat(rate);
-  if (isNaN(r)) return '';
-  const col = r > 0.1 ? 'var(--red)' : r < -0.1 ? 'var(--green)' : 'var(--text2)';
-  const warn = Math.abs(r) > 0.1 ? ' ⚠️' : '';
-  return `<span style="font-size:.7rem;color:${col};background:rgba(0,0,0,.3);padding:2px 6px;border-radius:4px;font-family:var(--font-mono)">Funding: ${r>0?'+':''}${r.toFixed(3)}%${warn}</span>`;
-}
-
-function dailyTag(aligned, trend) {
-  if (!trend || trend === 'Unknown ⚪') return '';
-  return aligned
-    ? `<span style="font-size:.7rem;color:var(--green);background:rgba(0,230,118,.1);padding:2px 6px;border-radius:4px">✅ Daily OK</span>`
-    : `<span style="font-size:.7rem;color:var(--yellow);background:rgba(255,171,0,.1);padding:2px 6px;border-radius:4px">⚠️ Against Daily</span>`;
-}
-
-async function doScan() {
-  const coin=document.getElementById('s-coin').value.trim();
-  const tf=document.getElementById('s-tf').value;
-  if(!coin){document.getElementById('s-coin').focus();return;}
-  document.getElementById('scan-result').style.display='none';
-  document.getElementById('scan-error').style.display='none';
-  document.getElementById('scan-loading').style.display='block';
-  document.getElementById('scan-btn').disabled=true;
-  try {
-    const d=await apiFetch('/app/api/scan',{method:'POST',body:JSON.stringify({coin,timeframe:tf})});
-    document.getElementById('scan-loading').style.display='none';
-    document.getElementById('scan-btn').disabled=false;
-    if(!d.ok){
-      const errMsg = d.error || 'Scan failed';
-      const debugMsg = d.debug ? `<div style="font-size:.72rem;color:var(--text2);margin-top:6px;font-family:monospace;opacity:.7">${d.debug}</div>` : '';
-      document.getElementById('scan-error').querySelector('div').innerHTML='❌ '+errMsg+debugMsg;
-      document.getElementById('scan-error').style.display='block';
-      return;
+async function getSentimentCached() {
+    if (!cachedSentiment || Date.now() - sentimentCacheTime > SENTIMENT_CACHE_MS) {
+        cachedSentiment = await binance.getMarketSentiment().catch(() => ({
+            totalBias: '0', overallSentiment: 'NEUTRAL', tradingBias: 'Neutral',
+            fngEmoji: '⚪', fngValue: 'N/A', btcDominance: 'N/A', newsSentimentScore: 0,
+        }));
+        sentimentCacheTime = Date.now();
     }
-    renderScanResult(d.analysis);
-    // Show chart + MTF forecast automatically after scan
-    const a = d.analysis;
-    window._lastScanLevels = { entry: a.entryPrice, sl: a.sl, tp1: a.tp1, tp2: a.tp2, tp3: a.tp3 };
-    window._lastScanCoin   = a.coin;
-    startLivePriceUpdate(a.coin);
-    document.getElementById('mtf-panel').style.display = '';
-    await showChart(a.coin, window._lastScanLevels);
-    await loadMtfForecast();
-  } catch(e){
-    document.getElementById('scan-loading').style.display='none';
-    document.getElementById('scan-btn').disabled=false;
-    let netMsg;
-    if (e.message.includes('Failed to fetch') || e.message.includes('NetworkError')) {
-      netMsg = '🌐 Cannot reach server. Check your connection.';
-    } else if (e.message.includes('timeout')) {
-      netMsg = '⏱️ Analysis timed out. Try again in a moment.';
-    } else if (e.message.includes('HTTP 5')) {
-      netMsg = '⚙️ Server error. Please try again. If this persists, contact admin.';
-    } else {
-      netMsg = '❌ ' + e.message;
-    }
-    document.getElementById('scan-error').querySelector('div').textContent=netMsg;
-    document.getElementById('scan-error').style.display='block';
-  }
+    return cachedSentiment;
 }
 
-function renderScanResult(a) {
-  const isLong = a.direction === 'LONG';
-  const sc     = a.score>=70?'var(--green)':a.score>=45?'var(--yellow)':'var(--red)';
-  const sent   = a.sentiment||{}, conf = a.confirmation||{}, ai = a.ai||null;
-  const ww     = a.whaleWalls||{}, liq = a.liquidation||{};
-  const fib    = a.mtfFibEntry||null;
-  const z      = fib?.nextLimitZone||null;
-  const bypassed = fib?.zoneBypassed||false;
+// ─── Signal Cooldown Map ───────────────────────────────────────
+// Prevents the same coin from appearing in consecutive auto-scans.
+// Key: coin symbol  →  Value: timestamp of last signal (ms)
+// Cooldown: 4 hours (= 16 × 15m candles) before a coin can re-appear.
+const SIGNAL_COOLDOWN_MS = 4 * 60 * 60 * 1000;  // 4h
+const _lastSignalTime    = new Map();
 
-  const scoreBar = `<div style="background:rgba(255,255,255,.07);border-radius:99px;height:5px;margin-top:6px;overflow:hidden"><div style="width:${Math.min(a.score,100)}%;height:100%;background:${sc};border-radius:99px;transition:.6s"></div></div>`;
-  const row  = (lbl,val,col='') => `<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;font-size:.79rem"><span style="color:var(--text2)">${lbl}</span><span style="font-family:var(--font-mono);${col?'color:'+col:''}">${val||'—'}</span></div>`;
-  const sec  = (t,body) => `<div style="margin-top:14px;border-top:1px solid rgba(255,255,255,.06);padding-top:12px"><div style="font-size:.63rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">${t}</div>${body}</div>`;
-  const pill = (t,col) => `<span style="background:${col||'rgba(255,255,255,.07)'};border-radius:4px;padding:2px 7px;font-size:.7rem;font-weight:600">${t}</span>`;
-
-  // ── COMPACT CARD ──────────────────────────────────────────────────────
-  const compactHTML = `
-  <div class="signal-card ${isLong?'long-card':'short-card'}">
-
-    <!-- Header -->
-    <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:10px">
-      <div class="score-ring-lg" style="border-color:${sc};color:${sc}">${a.score}</div>
-      <div style="flex:1">
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
-          <span style="font-family:var(--font-head);font-size:1.3rem;font-weight:800;color:#fff">${a.coin}</span>
-          <span class="pill ${isLong?'pill-long':'pill-short'}">${isLong?'▲':'▼'} ${a.direction}</span>
-          ${pill(a.timeframe,'rgba(0,200,255,.12)')}
-          ${(bypassed || (a.deepEntry?.decision==='LIMIT_NEAR'||a.deepEntry?.decision==='LIMIT_FAR')) ? pill(a.deepEntry?.decision==='LIMIT_NEAR'?'⏳ LIMIT NEAR':'⏳ LIMIT ZONE','rgba(255,171,0,.18)') : ''}
-        </div>
-        <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:4px">
-          ${fundingTag(a.fundingRate)}
-          ${dailyTag(a.dailyAligned,a.dailyTrend)}
-          ${a.currentPrice ? `<span id="scan-live-price" style="font-size:.72rem;font-family:var(--font-mono);background:rgba(255,255,255,.06);padding:2px 8px;border-radius:4px">Now: <strong>${fmtP(a.currentPrice)}</strong></span>` : ''}
-        </div>
-        ${scoreBar}
-        <div style="font-size:.72rem;color:var(--text2);margin-top:4px">4H:${a.trend4H||'—'} · 1H:${a.trend1H||'—'} · ${conf.strength||'—'}</div>
-      </div>
-    </div>
-
-    <!-- ⚠️ ZONE BYPASS WARNING — prominent -->
-    ${bypassed ? `
-    <div style="margin-bottom:12px;border-radius:8px;border:2px solid rgba(255,171,0,.5);background:rgba(255,171,0,.08);padding:10px 14px">
-      <div style="font-size:.8rem;font-weight:700;color:var(--yellow);margin-bottom:4px">⚠️ ZONE BYPASSED — DO NOT ENTER AT MARKET</div>
-      <div style="font-size:.73rem;color:var(--text2);line-height:1.5">
-        Price already ran past the entry zone toward TP.<br>
-        <strong style="color:var(--text)">Wait for pullback to the Limit Zone below</strong> — set a limit order instead.
-      </div>
-    </div>` : ''}
-
-    <!-- Trade Levels Grid -->
-    <div class="signal-levels" style="margin-bottom:12px">
-      <div class="sig-level">
-        <div class="sig-level-label">${bypassed?'⏸ Was Entry':'Entry'}</div>
-        <div class="sig-level-val ${bypassed?'':'c-cyan'}" style="${bypassed?'color:rgba(255,255,255,.35);text-decoration:line-through':''}">${fmtP(a.entryPrice)}</div>
-        <div style="font-size:.6rem;color:var(--text2)">${a.slLabel||'ATR'}</div>
-      </div>
-      <div class="sig-level"><div class="sig-level-label">TP 1</div><div class="sig-level-val c-green">${fmtP(a.tp1)}</div><div style="font-size:.6rem;color:var(--text2)">${a.tp1Label||''}</div></div>
-      <div class="sig-level"><div class="sig-level-label">TP 2</div><div class="sig-level-val c-green">${fmtP(a.tp2)}</div><div style="font-size:.6rem;color:var(--text2)">${a.tp2Label||''}</div></div>
-      <div class="sig-level"><div class="sig-level-label">TP 3 🚀</div><div class="sig-level-val c-green">${fmtP(a.tp3)}</div></div>
-      <div class="sig-level"><div class="sig-level-label">Stop Loss</div><div class="sig-level-val c-red">${fmtP(a.sl)}</div></div>
-      <div class="sig-level"><div class="sig-level-label">DCA 1</div><div class="sig-level-val c-yellow">${fmtP(a.dca1)}</div></div>
-      <div class="sig-level"><div class="sig-level-label">DCA 2</div><div class="sig-level-val c-yellow">${fmtP(a.dca2)}</div></div>
-      <div class="sig-level"><div class="sig-level-label">Leverage</div><div class="sig-level-val c-yellow">${a.leverage||1}x</div></div>
-      <div class="sig-level">
-        <div class="sig-level-label">RRR</div>
-        <div class="sig-level-val" style="color:${parseFloat(a.rrr||0)>=2?'var(--green)':parseFloat(a.rrr||0)>=1.5?'var(--yellow)':'var(--red)'}">${a.rrr||'—'}:1</div>
-      </div>
-    </div>
-
-    <!-- Confluences (compact) -->
-    ${a.reasons ? `<div style="font-size:.72rem;color:var(--text2);line-height:1.65;background:rgba(0,0,0,.15);border-radius:6px;padding:8px 10px;margin-bottom:10px">✔️ ${String(a.reasons).replace(/,/g,' · ')}</div>` : ''}
-
-    <!-- Entry Quality -->
-    ${a.entryQuality ? `<div style="padding:9px 13px;border-radius:7px;border-left:4px solid ${a.entryQuality.color==='green'?'var(--green)':a.entryQuality.color==='red'?'var(--red)':'var(--yellow)'};background:rgba(0,0,0,.15);margin-bottom:10px">
-      <div style="font-size:.74rem;font-weight:700;color:${a.entryQuality.color==='green'?'var(--green)':a.entryQuality.color==='red'?'var(--red)':'var(--yellow)'}">${a.entryQuality.action} <span style="font-size:.67rem;opacity:.7">[${a.entryQuality.grade}]</span></div>
-      <div style="font-size:.72rem;color:var(--text2);margin-top:2px">${a.entryQuality.detail}</div>
-    </div>` : ''}
-
-    <!-- 📍 SMART LIMIT ZONE -->
-    ${z ? `
-    <div style="border-radius:10px;border:1.5px solid rgba(0,200,255,.4);background:rgba(0,200,255,.05);padding:14px 16px;margin-bottom:12px">
-      <div style="font-size:.7rem;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">📍 Smart Limit Zone — Best Entry</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px 12px;background:rgba(0,0,0,.2);border-radius:8px;padding:10px 12px;margin-bottom:10px">
-        <div style="font-size:.7rem;color:var(--text2)">Zone</div>
-        <div style="font-size:.72rem;font-weight:700;color:${z.strength==='STRONG'?'var(--accent)':'var(--yellow)'}">${z.strength==='STRONG'?'💪':'📌'} ${z.label}</div>
-        <div style="font-size:.7rem;color:var(--text2)">🎯 Limit Entry</div>
-        <div style="font-family:monospace;font-size:.78rem;color:var(--accent);font-weight:700">$${z.price}</div>
-        <div style="font-size:.7rem;color:var(--text2)">🛡️ Stop Loss</div>
-        <div style="font-family:monospace;font-size:.78rem;color:var(--red)">$${z.newSL}</div>
-        ${z.tp1?`<div style="font-size:.7rem;color:var(--text2)">TP1</div><div style="font-family:monospace;font-size:.78rem;color:var(--green)">$${z.tp1}</div>`:''}
-        <div style="font-size:.7rem;color:var(--text2)">TP2</div>
-        <div style="font-family:monospace;font-size:.78rem;color:var(--green);font-weight:700">$${z.tp2||'—'}</div>
-        ${z.tp3?`<div style="font-size:.7rem;color:var(--text2)">TP3 🚀</div><div style="font-family:monospace;font-size:.78rem;color:var(--green)">$${z.tp3}</div>`:''}
-        ${z.rrr?`<div style="font-size:.7rem;color:var(--text2)">⚖️ RRR</div><div style="font-family:monospace;font-size:.78rem;color:${parseFloat(z.rrr)>=2?'var(--green)':parseFloat(z.rrr)>=1.5?'var(--yellow)':'var(--red)'}">  ${z.rrr}:1 ${parseFloat(z.rrr)>=2?'✅':''}</div>`:''}
-        <div style="font-size:.7rem;color:var(--text2)">Distance</div>
-        <div style="font-family:monospace;font-size:.78rem;color:var(--text2)">${z.distPct}% away</div>
-      </div>
-      <button class="btn btn-primary" style="width:100%;font-size:.8rem;padding:9px"
-        onclick="placeLimitOrder(${JSON.stringify(z).replace(/"/g,'&quot;')})">
-        📌 Place Limit Order — Wait for Zone
-      </button>
-      ${z.eta?`<div style="font-size:.7rem;color:var(--yellow);margin-top:6px;text-align:center">⏰ ETA to zone: <strong>${z.eta}</strong></div>`:''}
-      ${z.confSources?.length?`<div style="font-size:.65rem;color:var(--text2);margin-top:4px;text-align:center">${z.confSources.join(' · ')}</div>`:''}
-      <div style="font-size:.67rem;color:var(--text2);margin-top:5px;text-align:center">🕐 Watcher every 3 min · 📲 WhatsApp alert on trigger</div>
-    </div>` : ''}
-
-    <!-- AI Summary -->
-    ${ai ? `<div style="background:rgba(0,200,255,.05);border:1px solid rgba(0,200,255,.15);border-radius:8px;padding:11px 13px;margin-bottom:10px">
-      <div style="font-size:.68rem;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px">🤖 AI Summary</div>
-      <div style="font-size:.81rem;color:var(--text);line-height:1.6">${ai.summary||''}</div>
-      ${ai.confidence?`<div style="font-size:.72rem;color:var(--text2);margin-top:5px">Confidence: <strong style="color:var(--accent)">${ai.confidence}</strong> · Risk: <strong style="color:${ai.risk==='high'?'var(--red)':ai.risk==='low'?'var(--green)':'var(--yellow)'}">${ai.risk||'—'}</strong>${ai.keyLevel?` · Key: <strong style="color:var(--text)">${ai.keyLevel}</strong>`:''}</div>`:''}</div>` : ''}
-
-    <!-- Action Buttons -->
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
-      ${z
-        ? `<button class="btn btn-primary" style="font-size:.8rem" onclick="openLimitDirect()">📌 Set Limit Order — Wait for Zone</button>`
-        : `<button class="btn btn-warn" onclick="openPaperFromScan()">📄 Market Paper Trade</button>`}
-      <button class="btn btn-ghost" onclick="toggleMoreInfo()" id="more-info-btn">📊 More Info</button>
-      <button class="btn btn-ghost" style="margin-left:auto" onclick="document.getElementById('scan-result').style.display='none'">✕</button>
-    </div>
-  </div>
-
-  </div>
-
-  <!-- ═══ MORE INFO PANEL (inline, toggleable) ═══════════════════════ -->
-  <div id="more-info-panel" style="display:none;margin-top:12px">
-  <div class="signal-card" style="padding:16px">
-
-    ${sec('📐 MTF Fibonacci Zones', fib?.zones?.length ? `
-      ${fib.zones.slice(0,3).map(z=>`
-        <div style="display:flex;justify-content:space-between;font-size:.75rem;padding:4px 0;border-bottom:1px solid rgba(255,255,255,.04)">
-          <span style="color:${z.strength==='STRONG'?'var(--accent)':'var(--text2)'}">${z.strength==='STRONG'?'💪':'📌'} ${z.label}</span>
-          <span style="font-family:var(--font-mono)">$${parseFloat(z.price).toFixed(4)}
-            <span style="color:var(--text2);font-size:.68rem">(${(Math.abs(z.price-parseFloat(a.currentPrice||0))/parseFloat(a.currentPrice||1)*100).toFixed(1)}% away)</span>
-          </span>
-        </div>`).join('')}
-      ${fib.tps?.length?`<div style="font-size:.67rem;color:var(--text2);text-transform:uppercase;margin:8px 0 4px">Fib TP Targets</div>
-        ${fib.tps.slice(0,3).map(t=>`<div style="display:flex;justify-content:space-between;font-size:.74rem;padding:2px 0">
-          <span style="color:var(--text2)">${t.label}</span>
-          <span style="font-family:var(--font-mono);color:var(--green)">$${parseFloat(t.price).toFixed(4)}</span>
-        </div>`).join('')}`:''}
-    ` : '<div style="color:var(--text2);font-size:.75rem">No Fib data</div>')}
-
-    ${a.btcContext&&a.btcContext.trend!=='UNKNOWN'?sec('₿ BTC Context',`
-      <div style="font-size:.78rem">BTC: <strong style="color:${a.btcContext.trend==='BULL'?'var(--green)':a.btcContext.trend==='BEAR'?'var(--red)':'var(--yellow)'}">${a.btcContext.display}</strong></div>
-    `):''}
-
-    ${a.hiddenDivergence&&(a.hiddenDivergence.bull||a.hiddenDivergence.bear)?sec('🔀 Hidden Divergence',`
-      <div style="font-size:.78rem;color:var(--green)">${a.hiddenDivergence.display}</div>
-    `):''}
-
-    ${sec('📊 Technical Indicators',
-      row('RSI', a.rsi?parseFloat(a.rsi).toFixed(1):'—', parseFloat(a.rsi||50)>70?'var(--red)':parseFloat(a.rsi||50)<30?'var(--green)':'') +
-      row('MACD', a.macd||'—') +
-      row('Bollinger', typeof a.bb==='object'?a.bb?.signal||'—':a.bb||a.bbands?.signal||'—') +
-      row('ADX', a.adx||'—') +
-      row('StochRSI', a.stochRSI?.signal||'—') +
-      row('Supertrend', a.supertrend?.signal||'—') +
-      row('EMA Ribbon', a.emaRibbon?.signal||'—') +
-      row('ChoCH', a.choch||'—') +
-      row('Liq Sweep', a.liquiditySweep||'—') +
-      row('VWAP', a.vwap?'$'+parseFloat(a.vwap).toFixed(4):'—')
-    )}
-
-    ${sec('🧠 Advanced Intelligence',
-      row('Wyckoff Phase', a.wyckoff?.phase||'—') +
-      row('Breaker Block', a.breakers?.display||'None') +
-      row('EQH/EQL', a.equalHL?.display||'None') +
-      row('Ichimoku', a.ichimoku?.signal||'—') +
-      row('CVD', a.cvd?.trend||'—') +
-      row('Heikin Ashi', a.heikinAshi?.signal||'—') +
-      row('Williams %R', a.williamsR?.value||'—') +
-      row('Pivot Signal', a.pivotSignal?.display||'—') +
-      row('Fib Confluence', a.fibConf?.hasConfluence?a.fibConf.count+'× at $'+a.fibConf.zone:'None') +
-      row('OTE Zone', a.fibLevels?.isAtOTE?'🎯 AT OTE':'Not at OTE') +
-      row('Dynamic S/R', a.dynamicSR?.nearSupport?'At Support 📊':a.dynamicSR?.nearResist?'At Resistance 📊':'Neutral')
-    )}
-
-    ${sec('⚡ Momentum & Volatility',
-      row('BB Squeeze', a.bbSqueeze?.isSqueezing?'⚡ SQUEEZING':a.bbSqueeze?.exploding?'💥 EXPLOSION':'Normal') +
-      row('Vol Expansion', a.volExpansion?.expanding?'📈 Expanding':'Stable') +
-      row('MM Trap', a.mmTrap?.display||'None') +
-      row('Momentum', a.momentumShift?.isBull?'BULL '+a.momentumShift.bullSignals+'/6':a.momentumShift?.isBear?'BEAR '+a.momentumShift.bearSignals+'/6':'Neutral') +
-      row('BOS', a.bos?.bullBOS?'🔺 Bullish':a.bos?.bearBOS?'🔻 Bearish':'None') +
-      row('MFI', a.mfi?.value?a.mfi.value.toFixed(0)+' ('+a.mfi.signal+')':'—') +
-      row('CCI', a.cci?.value?a.cci.value.toFixed(0):'—') +
-      row('ROC', a.roc?.value?a.roc.value.toFixed(2)+'%':'—')
-    )}
-
-    ${sec('🔮 v7 PRO Signals',
-      row('3TF Aligned', a.tf3Align?.aligned?(a.tf3Align.allBull?'🟢🟢🟢 All Bull':'🔴🔴🔴 All Bear'):'Partial') +
-      row('Gann', a.gannAngles?.signal||'—') +
-      row('Renko', a.renko?.isBull?'🧱 Bull '+a.renko.streak+'x':a.renko?.isBear?'🧱 Bear '+a.renko.streak+'x':'Neutral') +
-      row('Candle Pattern', a.advCandles?.pattern||'None') +
-      row('Daily Trend', (a.dailyTrend||'—')+' '+(a.dailyAligned?'✅':'⚠️'))
-    )}
-
-    ${sec('🌊 Market Context',
-      row('🐋 Buy Wall', ww.supportWall&&ww.supportWall!=='N/A'?fmtP(ww.supportWall)+(ww.supportVol?' ('+ww.supportVol+')':''):'N/A') +
-      row('🔴 Sell Wall', ww.resistWall&&ww.resistWall!=='N/A'?fmtP(ww.resistWall)+(ww.resistVol?' ('+ww.resistVol+')':''):'N/A') +
-      row('Liquidation', liq.sentiment||'N/A') +
-      row('F&G Index', (sent.fngEmoji||'')+' '+(sent.fng||'N/A')) +
-      row('BTC Dominance', sent.btcDom?sent.btcDom+'%':'N/A') +
-      row('News Score', sent.newsSentimentScore!=null?(sent.newsSentimentScore>0?'+':'')+sent.newsSentimentScore:'N/A') +
-      row('Market Bias', sent.overall||'—')
-    )}
-
-    ${conf.totalScore!=null?sec('🔬 Entry Confirmation',
-      row('Score', (conf.totalScore>=0?'+':'')+conf.totalScore+' ('+conf.strength+')', conf.strength==='STRONG'?'var(--green)':conf.strength==='WEAK'?'var(--red)':'var(--yellow)') +
-      row('Stablecoin Flow', conf.usdtDom||'N/A') +
-      row('Open Interest', conf.oiChange||'N/A') +
-      row('CVD Signal', conf.cvd||'N/A') +
-      row('BTC Correlation', conf.btcCorr||'N/A')
-    ):''}
-
-  </div>
-  </div>`;
-
-  document.getElementById('scan-result').style.display='block';
-  document.getElementById('scan-result').innerHTML = `
-    ${a.score<userMinScore?`<div style="background:rgba(255,171,0,.08);border:1px solid rgba(255,171,0,.25);border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:.82rem;color:var(--yellow)">⚠️ Score ${a.score} below your threshold (${userMinScore}). <a href="/app/settings" style="color:var(--accent)">Adjust →</a></div>`:''}
-    ${compactHTML}`;
-  window._lastScan = a;
+function isOnCooldown(coin) {
+    const last = _lastSignalTime.get(coin);
+    return last && (Date.now() - last) < SIGNAL_COOLDOWN_MS;
+}
+function markSignalSent(coin) {
+    _lastSignalTime.set(coin, Date.now());
 }
 
-function toggleMoreInfo() {
-  const panel = document.getElementById('more-info-panel');
-  const btn   = document.getElementById('more-info-btn');
-  if(!panel) return;
-  const open = panel.style.display === 'none';
-  panel.style.display = open ? 'block' : 'none';
-  btn.textContent = open ? '📊 Less Info' : '📊 More Info';
-  if(open) panel.scrollIntoView({behavior:'smooth', block:'start'});
-}
+// ─── Top 5 Setups Scanner ─────────────────────────────────────
+/**
+ * Scans all watched coins (already in WS cache) for high-probability
+ * setups using the 14-Factor analyzer.
+ * No REST calls are made here — everything reads from the in-memory cache.
+ */
+async function getTopDownSetups(ignoreCooldown = false) {
+    const foundSetups = [];
 
-async function openPaperFromScan() {
-  if(!window._lastScan){showToast('❌ No scan result','err');return;}
-  const a=window._lastScan;
-  const d=await apiFetch('/app/api/paper/open',{method:'POST',body:JSON.stringify({coin:a.coin,direction:a.direction,entry:a.entryPrice,tp1:a.tp1,tp2:a.tp2,tp3:a.tp3,sl:a.sl,leverage:a.leverage||10})});
-  if(d.ok)showToast('✅ Paper trade opened! View in Paper tab.');else showToast('❌ '+(d.error||'Failed'),'err');
-}
+    const coinsToScan = binance.isReady()
+        ? binance.getWatchedCoins()
+        : await binance.getTopTrendingCoins(20);
 
-// ── Direct limit paper trade — works for deepEntry AND fib zones ────────
-async function openLimitDirect() {
-  if(!window._lastScan){showToast('❌ No scan data','err');return;}
-  const a = window._lastScan;
-  // FIX: Use nextLimitZone regardless of source (fib or deepEntry)
-  const z = a.mtfFibEntry?.nextLimitZone || null;
-  if(!z){showToast('❌ No limit zone found','err');return;}
-  const confirmed = await showLimitConfirmModal({coin:a.coin,direction:a.direction,zone:z,leverage:a.leverage||10});
-  if(!confirmed) return;
-  showToast('⏳ Placing limit order…','ok');
-  const payload={
-    coin:a.coin, direction:a.direction,
-    limitPrice:z.price, tp1:z.tp1||null, tp2:z.tp2, tp3:z.tp3||null,
-    sl:z.newSL, leverage:a.leverage||10,
-    zoneLabel:z.label, zoneStrength:z.strength,
-    // Pass deepEntry metadata for smarter fill logic
-    deepEntryPrice:  z.source==='deepEntry' ? z.price : null,
-    deepEntryLabel:  z.source==='deepEntry' ? z.label : null,
-    deepEntryConf:   z.entryConfScore || 0,
-    deepEntryEta:    z.eta || null,
-    deepEntryScore:  z.entryConfScore || 0,
-    analysisScore:   a.score,
-    analysisTimeframe: a.timeframe,
-  };
-  const btn=document.getElementById('limit-confirm-btn');
-  if(btn){btn.disabled=true;btn.textContent='Placing...';}
-  const d=await apiFetch('/app/api/paper/open-limit',{method:'POST',body:JSON.stringify(payload)});
-  closeLimitModal();
-  if(d.ok){
-    showToast(`📌 Limit order placed at $${parseFloat(z.price).toFixed(4)} — ${z.label}\n⏰ ETA: ${z.eta||'—'}`);
-  } else {
-    showToast('❌ '+(d.error||'Failed'),'err');
-  }
-}
+    for (const coin of coinsToScan) {
+        try {
+            // Skip coins on signal cooldown (auto-scan only — manual .scan ignores cooldown)
+            if (!ignoreCooldown && isOnCooldown(coin)) continue;
 
+            const aData = await analyzer.run14FactorAnalysis(coin, '15m');
+            if (!aData) continue; // guard: analysis returned nothing
 
-// ── Place Smart Limit Order at best Fib zone ────────────────────────────
-async function placeLimitOrder(zone) {
-  if(!window._lastScan){showToast('❌ No scan data','err');return;}
-  const a=window._lastScan;
-  const confirmed=await showLimitConfirmModal({coin:a.coin,direction:a.direction,zone,leverage:a.leverage||10});
-  if(!confirmed) return;
-  const payload={coin:a.coin,direction:a.direction,limitPrice:zone.price,tp1:zone.tp1,tp2:zone.tp2,tp3:zone.tp3,sl:zone.newSL,leverage:a.leverage||10,zoneLabel:zone.label,zoneStrength:zone.strength};
-  const btn=document.getElementById('limit-confirm-btn');
-  if(btn){btn.disabled=true;btn.textContent='Placing...';}
-  const d=await apiFetch('/app/api/paper/open-limit',{method:'POST',body:JSON.stringify(payload)});
-  closeLimitModal();
-  if(d.ok) showToast('📌 Limit order placed! Watching for zone hit — WhatsApp alert when triggered.');
-  else showToast('❌ '+(d.error||'Failed'),'err');
-}
+            // ── SCORE GATE v9 (High-Accuracy Win-Rate Mode) ──────────────────
+            // Score normalized 0-100. Threshold raised to 32.
+            // Grades: A+(Elite) / A(High) / B(Standard) only pass auto-scan.
+            // C/D grade always blocked. Asian session B grade blocked.
+            // RR ratio < 1.2 always blocked regardless of grade.
+            if (aData.score >= 32) {
+                const sent      = await getSentimentCached();
+                const sentBias  = parseFloat(sent.totalBias) || 0;
+                const sentBonus =
+                    (aData.direction === 'LONG'  && sentBias >= 1)  ?  1 :
+                    (aData.direction === 'SHORT' && sentBias <= -1) ?  1 :
+                    (aData.direction === 'LONG'  && sentBias <= -1) ? -1 :
+                    (aData.direction === 'SHORT' && sentBias >= 1)  ? -1 : 0;
 
-function showLimitConfirmModal({coin,direction,zone,leverage}) {
-  return new Promise(resolve => {
-    const old=document.getElementById('limit-modal-overlay');if(old)old.remove();
-    const isL=direction==='LONG',rrrN=parseFloat(zone.rrr||0);
-    const rrrCol=rrrN>=2?'#00e676':rrrN>=1.5?'#ffd740':'#ff5252';
-    const overlay=document.createElement('div');
-    overlay.id='limit-modal-overlay';
-    overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
-    overlay.innerHTML=`<div style="background:#131a23;border:1px solid rgba(0,200,255,.25);border-radius:14px;padding:22px 20px;max-width:360px;width:100%">
-      <div style="font-size:.7rem;font-weight:700;color:#00b8d4;text-transform:uppercase;letter-spacing:.08em;margin-bottom:14px">📌 Confirm Limit Order</div>
-      <div style="background:rgba(0,0,0,.3);border-radius:8px;padding:12px 14px;margin-bottom:14px">
-        <div style="display:flex;justify-content:space-between;margin-bottom:8px;align-items:center">
-          <strong style="font-size:1rem">${coin}</strong>
-          <span style="background:${isL?'rgba(0,230,118,.15)':'rgba(255,82,82,.15)'};color:${isL?'#00e676':'#ff5252'};padding:3px 10px;border-radius:5px;font-size:.76rem;font-weight:700">${isL?'▲ LONG':'▼ SHORT'}</span>
-        </div>
-        <div style="font-size:.72rem;color:#90a4ae;margin-bottom:10px">${zone.strength==='STRONG'?'💪 Strong':'📌 Medium'} — ${zone.label}</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 14px;font-size:.75rem">
-          <div style="color:#90a4ae">Limit Entry</div><div style="font-family:monospace;color:#e0f7fa;font-weight:700">$${zone.price}</div>
-          <div style="color:#90a4ae">Stop Loss</div><div style="font-family:monospace;color:#ff5252">$${zone.newSL}</div>
-          ${zone.tp1?`<div style="color:#90a4ae">TP1</div><div style="font-family:monospace;color:#00e676">$${zone.tp1}</div>`:''}
-          <div style="color:#90a4ae">TP2</div><div style="font-family:monospace;color:#00e676;font-weight:700">$${zone.tp2||'—'}</div>
-          ${zone.tp3?`<div style="color:#90a4ae">TP3 🚀</div><div style="font-family:monospace;color:#00e676">$${zone.tp3}</div>`:''}
-          <div style="color:#90a4ae">RRR</div><div style="font-family:monospace;color:${rrrCol};font-weight:700">${zone.rrr||'—'}:1</div>
-          <div style="color:#90a4ae">Leverage</div><div style="font-family:monospace;color:#ffd740">${leverage}x</div>
-        </div>
-      </div>
-      <div style="background:rgba(255,215,64,.07);border:1px solid rgba(255,215,64,.2);border-radius:7px;padding:9px 12px;font-size:.71rem;color:#b0bec5;margin-bottom:16px;line-height:1.6">
-        ⏰ Watcher checks every <strong style="color:#ffd740">3 min</strong> · 📲 WhatsApp alert on trigger<br>
-        ✏️ Edit or cancel from <strong>Paper tab</strong> anytime
-      </div>
-      <div style="display:flex;gap:10px">
-        <button onclick="document.getElementById('limit-modal-overlay').remove();window._limitResolve&&window._limitResolve(false)"
-          style="flex:1;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,.15);background:transparent;color:#90a4ae;cursor:pointer;font-size:.82rem">Cancel</button>
-        <button id="limit-confirm-btn" onclick="window._limitResolve&&window._limitResolve(true)"
-          style="flex:2;padding:10px;border-radius:8px;border:none;background:linear-gradient(135deg,#00b8d4,#0091ea);color:#fff;font-weight:700;cursor:pointer;font-size:.84rem">📌 Place Limit Order</button>
-      </div>
-    </div>`;
-    window._limitResolve=resolve;
-    document.body.appendChild(overlay);
-    overlay.addEventListener('click',e=>{if(e.target===overlay){overlay.remove();resolve(false);}});
-  });
-}
-function closeLimitModal(){const m=document.getElementById('limit-modal-overlay');if(m)m.remove();delete window._limitResolve;}
+                const adjustedScore   = aData.score + sentBonus;
+                const confScore       = aData.confScore || 0;
+                const confGate        = aData.confGate  || false;
+                const signalGrade     = aData.signalGrade || 'C';
+                const mtfAlign        = aData.mtfAlignCount || 0;
 
-// ══════════════════════════════════════════════════════════════════
-//  CHART ENGINE  (lightweight-charts v4)
-// ══════════════════════════════════════════════════════════════════
-let _chart = null, _candleSeries = null, _chartCoin = '';
+                // Block C/D grades during Asian session low-liquidity hours
+                if (aData.sessionBlocked) continue;
 
-function destroyChart() {
-  if (_chart) { try { _chart.remove(); } catch(_){} _chart = null; _candleSeries = null; }
-  document.getElementById('chart-container').innerHTML = '';
-}
+                const coreConf = [
+                    aData.choch && aData.choch.includes(aData.direction === 'LONG' ? 'Bullish' : 'Bearish'),
+                    aData.liquiditySweep && aData.liquiditySweep.includes(aData.direction === 'LONG' ? 'Bullish' : 'Bearish'),
+                    aData.choch5m && aData.choch5m.includes(aData.direction === 'LONG' ? 'Bullish' : 'Bearish'),
+                    aData.sweep5m && aData.sweep5m.includes(aData.direction === 'LONG' ? 'Bullish' : 'Bearish'),
+                ].filter(Boolean).length;
 
-async function showChart(coin, signalLevels = {}) {
-  _chartCoin = coin;
-  const tf  = document.getElementById('chart-tf').value;
-  const panel = document.getElementById('chart-panel');
-  panel.style.display = '';
-  document.getElementById('chart-title').textContent = `📊 ${coin} / USDT  (${tf.toUpperCase()})`;
-  document.getElementById('chart-loading').style.display = '';
-  document.getElementById('chart-container').style.opacity = '0';
-  destroyChart();
+                // ── RR Ratio Gate ──────────────────────────────────────────────
+                // TP1 must give at least 1.2× reward vs SL risk.
+                // Bad RR setups get skipped immediately — no exceptions.
+                const entryForRR = parseFloat(aData.entryPrice || aData.currentPrice) || 1;
+                const tp1ForRR   = parseFloat(aData.tp1) || 0;
+                const slForRR    = parseFloat(aData.sl)  || 0;
+                const rrSlDist   = Math.abs(entryForRR - slForRR);
+                const rrRatio    = (rrSlDist > 0)
+                    ? (aData.direction === 'LONG'
+                        ? (tp1ForRR - entryForRR) / rrSlDist
+                        : (entryForRR - tp1ForRR) / rrSlDist)
+                    : 0;
+                if (!isFinite(rrRatio) || rrRatio < 1.2) continue;  // Bad RR = skip
 
-  try {
-    const d = await apiFetch(`/app/api/chart-data?coin=${coin}&timeframe=${tf}&limit=150`);
-    if (!d.ok) throw new Error(d.error);
+                // ── Asian Session B-Grade Block ───────────────────────────────
+                // 00:00–08:00 UTC = low liquidity (Asian session).
+                // B-grade setups in low liquidity = high slippage / stop hunts.
+                const utcNow       = new Date().getUTCHours();
+                const isAsianHours = utcNow >= 0 && utcNow < 8;
+                if (isAsianHours && signalGrade === 'B') continue;
 
-    document.getElementById('chart-loading').style.display = 'none';
-    document.getElementById('chart-container').style.opacity = '1';
+                // ── Grade-Based Quality Pass ──────────────────────────────────
+                // A+: Elite — needs perfect MTF+conf+score alignment
+                // A:  High Quality — requires daily alignment (not just 1H/4H)
+                // B:  Standard — needs strong conf gate + core SMC + MTF 2/4
+                // C/D: Never pass auto-scan
+                const qualityPass =
+                    (signalGrade === 'A+') ? (adjustedScore >= 55 && mtfAlign >= 3 && confScore >= 8) :
+                    (signalGrade === 'A')  ? (adjustedScore >= 45 && mtfAlign >= 2 && confScore >= 6 && aData.dailyAligned) :
+                    (signalGrade === 'B')  ? (adjustedScore >= 35 && confGate && coreConf >= 2 && mtfAlign >= 2) :
+                    false; // C and D never pass auto-scan
 
-    const container = document.getElementById('chart-container');
-    _chart = LightweightCharts.createChart(container, {
-      layout:     { background: { color: '#060d17' }, textColor: '#5c87a8' },
-      grid:       { vertLines: { color: 'rgba(28,51,73,0.4)' }, horzLines: { color: 'rgba(28,51,73,0.4)' } },
-      crosshair:  { mode: LightweightCharts.CrosshairMode.Normal },
-      rightPriceScale: { borderColor: 'rgba(28,51,73,0.6)' },
-      timeScale:  { borderColor: 'rgba(28,51,73,0.6)', timeVisible: true, secondsVisible: false },
-      width:  container.clientWidth,
-      height: container.clientHeight || 420,
-    });
+                if (!qualityPass) continue;
 
-    // Candles
-    _candleSeries = _chart.addCandlestickSeries({
-      upColor: '#00e676', downColor: '#ff3355',
-      borderUpColor: '#00c853', borderDownColor: '#c62828',
-      wickUpColor: '#00c853', wickDownColor: '#c62828',
-    });
-    _candleSeries.setData(d.candles);
+                markSignalSent(coin);
 
-    // EMA 21
-    if (d.ema21 && d.ema21.length) {
-      const ema21s = _chart.addLineSeries({ color: '#00c8ff', lineWidth: 1.5, title: 'EMA21' });
-      ema21s.setData(d.ema21);
-    }
-    // EMA 50
-    if (d.ema50 && d.ema50.length) {
-      const ema50s = _chart.addLineSeries({ color: '#ffab00', lineWidth: 1.5, title: 'EMA50' });
-      ema50s.setData(d.ema50);
+                foundSetups.push({
+                    coin:             coin.replace('USDT', ''),
+                    type:             aData.direction === 'LONG' ? 'LONG 🟢' : 'SHORT 🔴',
+                    rawScore:         adjustedScore,
+                    score:            `${adjustedScore}/${aData.maxScore || 100}`,
+                    signalGrade,
+                    signalGradeEmoji: aData.signalGradeEmoji || '📊',
+                    signalGradeLabel: aData.signalGradeLabel || 'STANDARD',
+                    price:            aData.priceStr,
+                    tp1:              aData.tp1,
+                    tp2:              aData.tp2,
+                    tp3:              aData.tp3,
+                    tp:               aData.tp2,
+                    sl:               aData.sl,
+                    adx:              aData.adxData?.value ?? 0,
+                    reasons:          aData.reasons,
+                    liquiditySweep:   aData.liquiditySweep || 'None',
+                    choch:            aData.choch || 'None',
+                    choch5m:          aData.choch5m || 'None',
+                    sweep5m:          aData.sweep5m || 'None',
+                    sentEmoji:        sentBonus > 0 ? '📰✅' : sentBonus < 0 ? '📰⚠️' : '',
+                    tradeCategory:    aData.tradeCategory ? aData.tradeCategory.label : null,
+                    orderType:        aData.orderSuggestion ? aData.orderSuggestion.type : null,
+                    dailyTrend:       aData.dailyTrend || '',
+                    dailyAligned:     aData.dailyAligned,
+                    mtfAlignCount:    mtfAlign,
+                    bbSqueeze:        aData.bbSqueeze,
+                    volExpansion:     aData.volExpansion,
+                    mmTrap:           aData.mmTrap,
+                    tf3Align:         aData.tf3Align,
+                    coreConf,
+                    confScore,
+                    confGate,
+                    dynRegime:        aData.dynRegime || null,
+                });
+            }
+        } catch (_e) { /* skip failed coin */ }
     }
 
-    // Order Blocks as price band markers
-    (d.orderBlocks || []).forEach(ob => {
-      const isBull = (ob.type||'').toLowerCase().includes('bull');
-      [ob.high, ob.low].forEach(price => {
-        if (!price) return;
-        const s = _chart.addLineSeries({
-          color: isBull ? 'rgba(0,120,255,0.55)' : 'rgba(180,0,255,0.55)',
-          lineWidth: 1, lineStyle: 2, lastValueVisible: false, priceLineVisible: false,
-          title: isBull ? '📦 BullOB' : '📦 BearOB',
-        });
-        const firstTime = d.candles[Math.max(0, d.candles.length - 30)].time;
-        const lastTime  = d.candles[d.candles.length - 1].time;
-        s.setData([{ time: firstTime, value: parseFloat(price) }, { time: lastTime, value: parseFloat(price) }]);
-      });
-    });
-
-    // FVGs as price band markers
-    (d.fvgs || []).forEach(fvg => {
-      const isBull = (fvg.type||'').toLowerCase().includes('bull');
-      [fvg.upper, fvg.lower].forEach(price => {
-        if (!price) return;
-        const s = _chart.addLineSeries({
-          color: isBull ? 'rgba(0,200,255,0.4)' : 'rgba(255,51,85,0.38)',
-          lineWidth: 1, lineStyle: 1, lastValueVisible: false, priceLineVisible: false,
-          title: isBull ? 'FVG▲' : 'FVG▼',
-        });
-        const firstTime = d.candles[Math.max(0, d.candles.length - 30)].time;
-        const lastTime  = d.candles[d.candles.length - 1].time;
-        s.setData([{ time: firstTime, value: parseFloat(price) }, { time: lastTime, value: parseFloat(price) }]);
-      });
-    });
-
-    // Signal levels (Entry / SL / TP1 / TP2 / TP3)
-    const levelDefs = [
-      { key: 'entry', color: '#ffffff', title: 'Entry', style: 2 },
-      { key: 'sl',    color: '#ff3355', title: 'SL',    style: 0 },
-      { key: 'tp1',   color: '#00e676', title: 'TP1',   style: 0 },
-      { key: 'tp2',   color: '#00e676', title: 'TP2',   style: 1 },
-      { key: 'tp3',   color: '#00e676', title: 'TP3🚀', style: 1 },
-    ];
-    const firstT = d.candles[0].time;
-    const lastT  = d.candles[d.candles.length - 1].time;
-    levelDefs.forEach(({ key, color, title, style }) => {
-      const val = parseFloat(signalLevels[key]);
-      if (!val) return;
-      const s = _chart.addLineSeries({ color, lineWidth: 1.5, lineStyle: style, title, lastValueVisible: true, priceLineVisible: false });
-      s.setData([{ time: firstT, value: val }, { time: lastT, value: val }]);
-    });
-
-    // Auto-fit
-    _chart.timeScale().fitContent();
-
-    // Resize observer
-    const ro = new ResizeObserver(() => { if (_chart) _chart.applyOptions({ width: container.clientWidth }); });
-    ro.observe(container);
-
-    panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-
-  } catch (err) {
-    document.getElementById('chart-loading').style.display = 'none';
-    document.getElementById('chart-container').innerHTML =
-      `<div style="padding:30px;color:var(--red);text-align:center">❌ Chart error: ${err.message}</div>`;
-  }
+    foundSetups.sort((a, b) => b.rawScore - a.rawScore);
+    return foundSetups.slice(0, 5);
 }
 
-async function reloadChart() {
-  if (_chartCoin) await showChart(_chartCoin, window._lastScanLevels || {});
+// ─── Scanner / Trade Manager State ────────────────────────────
+let _scannerActive   = false;
+let activeTradeManager = null;
+let _15mCloseHandler = null;
+let _debounceTimer   = null;
+let _connRef         = null;
+let _ownerJidRef     = null;
+
+// ─── Trade Manager (60-second price poll) ─────────────────────
+/**
+ * Checks every 60 seconds:
+ *   PENDING trades → activate when price enters the entry zone
+ *   ACTIVE trades  → check TP1, TP2, TP3, SL, DCA, trailing SL
+ *
+ * ✅ FIX: Fill tolerance of 0.25% added to PENDING → ACTIVE transition.
+ *    Real exchange limit orders fill inside a zone, not only at a single tick.
+ *    Without tolerance, a LONG order at $100.00 would never fill if the lowest
+ *    live price polled is $100.02 — now it fills at $100.25 or below.
+ *
+ *    LONG  pending fills: currentPrice ≤ entry × (1 + FILL_TOLERANCE)
+ *    SHORT pending fills: currentPrice ≥ entry × (1 - FILL_TOLERANCE)
+ */
+function startTradeManager(conn) {
+    if (activeTradeManager) return;
+
+    // Fill zone tolerance: 0.25%
+    // Meaning: a LONG order at $100 will fill if price reaches $100.25 or lower.
+    // This mirrors how exchange limit orders fill inside a price band.
+    const FILL_TOLERANCE = 0.0025;
+
+    activeTradeManager = setInterval(async () => {
+        try {
+            const activeTrades = await db.Trade.find({ status: { $in: ['active', 'pending'] } });
+            if (!activeTrades || activeTrades.length === 0) return;
+            const currentSettings = await db.getSettings();
+
+            for (const trade of activeTrades) {
+                try {
+                    const res = await axios.get(
+                        `https://api.binance.com/api/v3/ticker/price?symbol=${trade.coin}`,
+                        { timeout: 5000 }
+                    );
+                    const currentPrice = parseFloat(res.data.price);
+                    const isLong  = trade.direction === 'LONG';
+                    const isPaper = !!trade.isPaper;
+                    const cb      = trade.coin.replace('USDT', '');
+                    const de      = isLong ? '🟢' : '🔴';
+                    const dir     = trade.direction;
+
+                    // ═══════════════════════════════════════════════════════
+                    // PENDING → ACTIVE (LIMIT ORDER FILL)
+                    // ═══════════════════════════════════════════════════════
+                    //
+                    // Logic:
+                    //   LONG  limit: we placed a buy order BELOW current price.
+                    //                It fills when price DROPS to or below entry.
+                    //                Fill zone: currentPrice ≤ entry × (1 + FILL_TOLERANCE)
+                    //                (0.25% tolerance: fills if price is within 0.25% above entry)
+                    //
+                    //   SHORT limit: we placed a sell order ABOVE current price.
+                    //                It fills when price RISES to or above entry.
+                    //                Fill zone: currentPrice ≥ entry × (1 - FILL_TOLERANCE)
+                    //                (0.25% tolerance: fills if price is within 0.25% below entry)
+                    //
+                    if (trade.status === 'pending') {
+                        // ── LIMIT ORDER EXPIRY CHECK ─────────────────────────────────────────
+                        // LIMIT orders that haven't filled within expiresAt are auto-cancelled.
+                        // Default: 48h from openTime (set when trade is created).
+                        // Falls back to 48h from openTime if expiresAt not set (legacy trades).
+                        const expiry = trade.expiresAt
+                            ? new Date(trade.expiresAt)
+                            : new Date(new Date(trade.openTime).getTime() + 48 * 3600 * 1000);
+
+                        if (Date.now() > expiry.getTime()) {
+                            trade.status = 'expired';
+                            trade.result = 'EXPIRED';
+                            await trade.save();
+
+                            const openedAgo = Math.round((Date.now() - new Date(trade.openTime)) / 3600000);
+                            try {
+                                await conn.sendMessage(trade.userJid, { text:
+                                    `⏰ *LIMIT ORDER EXPIRED* ❌\n━━━━━━━━━━━━━━━━\n` +
+                                    `🪙 *${cb}/USDT* ${de} *${dir}*\n\n` +
+                                    `📋 Order Type: ⏳ LIMIT → ❌ EXPIRED\n` +
+                                    `📍 Entry Zone: $${parseFloat(trade.entry).toFixed(4)}\n` +
+                                    `💹 Current:    $${currentPrice.toFixed(4)}\n` +
+                                    `⏱️ Open for:   ${openedAgo}h — price never reached entry zone\n\n` +
+                                    `✅ *Order auto-cancelled — capital freed*\n` +
+                                    `_Market moved away from your entry zone._`,
+                                });
+                            } catch (_) {}
+                            continue; // skip TP/SL checks
+                        }
+
+                        // ── Safety check: LIMIT order should only fill from the correct side ──
+                        // LONG  limit: entry is BELOW current open price → price must DROP to fill
+                        //              → Only check fill if price is still >= entry (hasn't blown through)
+                        // SHORT limit: entry is ABOVE current open price → price must RISE to fill
+                        //              → Only check fill if price is still <= entry
+                        // This prevents a wrong-direction trade from filling immediately.
+                        const correctSideCheck = isLong
+                            ? currentPrice <= parseFloat(trade.entry) * (1 + FILL_TOLERANCE)   // LONG: price at or below entry ±tol
+                            : currentPrice >= parseFloat(trade.entry) * (1 - FILL_TOLERANCE);  // SHORT: price at or above entry ±tol
+
+                        if (correctSideCheck) {
+                            // Activate the trade — record actual fill price
+                            trade.status    = 'active';
+                            trade.fillPrice = currentPrice;
+                            await trade.save();
+
+                            if (isPaper) {
+                                await conn.sendMessage(trade.userJid, { text:
+                                    `🤖 *PAPER LIMIT ORDER FILLED!* ✅\n━━━━━━━━━━━━━━━━\n` +
+                                    `🪙 *${cb}/USDT* ${de} *${dir}*\n\n` +
+                                    `📋 Order Type:  ⏳ LIMIT → ✅ FILLED\n` +
+                                    `📍 Set Entry:   $${parseFloat(trade.entry).toFixed(4)}\n` +
+                                    `💹 Fill Price:  $${currentPrice.toFixed(4)}\n\n` +
+                                    `🎯 TP1: $${parseFloat(trade.tp1 || trade.tp).toFixed(4)}\n` +
+                                    `🎯 TP2: $${parseFloat(trade.tp2 || trade.tp).toFixed(4)}\n` +
+                                    `🛡️ SL:  $${parseFloat(trade.sl).toFixed(4)}\n\n` +
+                                    `📊 *.myptrades* ගසා Live P&L බලන්න`,
+                                });
+                            } else {
+                                await conn.sendMessage(trade.userJid, { text:
+                                    `🔔 *LIMIT ORDER ENTRY ZONE!*\n━━━━━━━━━━━━━━━━\n` +
+                                    `🪙 *${cb}/USDT* ${de} *${dir}*\n\n` +
+                                    `📋 Order Type: ⏳ LIMIT\n` +
+                                    `📍 Entry Zone: $${parseFloat(trade.entry).toFixed(4)}\n` +
+                                    `💹 Current:    $${currentPrice.toFixed(4)}\n\n` +
+                                    `✅ *Exchange හිදී Order Fill Confirm කරන්න!*\n\n` +
+                                    `🎯 TP1: $${parseFloat(trade.tp1 || trade.tp).toFixed(4)}\n` +
+                                    `🎯 TP2: $${parseFloat(trade.tp2 || trade.tp).toFixed(4)}\n` +
+                                    `🛡️ SL:  $${parseFloat(trade.sl).toFixed(4)}`,
+                                });
+                            }
+                        }
+                        // Skip TP/SL checks — trade is not yet active
+                        continue;
+                    }
+
+                    // ── STALE TRADE WARNING (48h without TP1) ───────────────
+                    // Trades open for 48h+ without TP1 hit = capital locked, opportunity cost
+                    if (!trade.tp1Hit && trade.status === 'active') {
+                        const hoursOpen = (Date.now() - new Date(trade.openTime)) / 3600000;
+                        // ✅ BUG 5 FIX: Use persisted `trade.staleWarned` (not in-memory `_staleWarned`)
+                        // Old: trade._staleWarned was lost on bot restart → warning re-fired every restart
+                        if (hoursOpen >= 48 && !trade.staleWarned) {
+                            trade.staleWarned = true;  // persisted to MongoDB
+                            await trade.save();
+                            await conn.sendMessage(trade.userJid, { text:
+                                `⏰ *STALE TRADE WARNING!*\n━━━━━━━━━━━━━━━━\n` +
+                                `🪙 *${cb}/USDT* ${de} *${dir}*\n\n` +
+                                `⏱️ *${hoursOpen.toFixed(0)} hours open* — TP1 not hit yet.\n\n` +
+                                `📍 Entry: $${parseFloat(trade.entry).toFixed(4)}\n` +
+                                `💹 Current: $${currentPrice.toFixed(4)}\n` +
+                                `🎯 TP1: $${parseFloat(trade.tp1||trade.tp).toFixed(4)}\n\n` +
+                                `*Options:*\n` +
+                                `• Wait — setup still valid\n` +
+                                `• *.${isPaper ? 'closepaper' : 'closetrade'} ${cb}* — exit manually\n` +
+                                `⚠️ _Capital tied up for 2+ days without progress_`,
+                            });
+                        }
+                    }
+
+                    // ── TP1 HIT ─────────────────────────────────────────
+                    if (trade.tp1 && !trade.tp1Hit) {
+                        const tp1v   = parseFloat(trade.tp1);
+                        const tp1Hit = isLong ? currentPrice >= tp1v : currentPrice <= tp1v;
+                        if (tp1Hit) {
+                            trade.tp1Hit = true;
+                            if (isPaper) {
+                                const pQty = (trade.quantity || 0) * 0.33;
+                                const pPnl = Math.abs(tp1v - parseFloat(trade.entry)) * pQty;
+                                await db.updatePaperBalance(trade.userJid, pPnl, pPnl > 0, false, false); // ✅ BUG 2 FIX: countTrade=false (partial TP1)
+                                // ✅ FIX: SL → entry + profit buffer (not just breakeven)
+                                // 33% profit already booked → protect remaining 67% from going negative
+                                const { getPostTP1SL } = require('../lib/indicators');
+                                const postTP1 = getPostTP1SL(trade.entry, trade.direction || (isLong?'LONG':'SHORT'), tp1v);
+                                trade.sl = postTP1.sl;  // slightly above entry = locked profit
+                                await trade.save();
+                                await conn.sendMessage(trade.userJid, { text:
+                                    `🎯 *PAPER TP1 HIT!* 💰\n━━━━━━━━━━━━━━━━\n` +
+                                    `🪙 *${cb}/USDT* ${de} *${dir}*\n\n` +
+                                    `✅ TP1: $${tp1v.toFixed(4)} Hit!\n` +
+                                    `💰 +33% Profit: +$${pPnl.toFixed(2)} ✅ Auto-booked\n` +
+                                    `🛡️ SL → +${postTP1.profitLocked}% LOCKED PROFIT ✅ Auto-moved\n\n` +
+                                    `🎯 TP2: $${parseFloat(trade.tp2 || trade.tp).toFixed(4)} targeting...`,
+                                });
+                            } else {
+                                await trade.save();
+                                const est = trade.quantity
+                                    ? `~$${(Math.abs(tp1v - parseFloat(trade.entry)) * trade.quantity * 0.33).toFixed(2)}`
+                                    : '?';
+                                await conn.sendMessage(trade.userJid, { text:
+                                    `🎯 *TP1 HIT!* 💰\n━━━━━━━━━━━━━━━━\n` +
+                                    `🪙 *${cb}/USDT* ${de} *${dir}*\n\n` +
+                                    `✅ TP1: $${tp1v.toFixed(4)} Hit! (Est. ${est})\n\n` +
+                                    `*Exchange හිදී කරන්න:*\n` +
+                                    `• Position ෙන් 33% Close කරන්න\n` +
+                                    `• SL → Entry ($${parseFloat(trade.entry).toFixed(4)}) Move කරන්න\n` +
+                                    `• TP2: $${parseFloat(trade.tp2 || trade.tp).toFixed(4)} target`,
+                                });
+                            }
+                        }
+                    }
+
+                    // ── TP2 HIT ─────────────────────────────────────────
+                    if (trade.tp1Hit && !trade.tp2Hit && trade.tp2) {
+                        const tp2v   = parseFloat(trade.tp2);
+                        const tp2Hit = isLong ? currentPrice >= tp2v : currentPrice <= tp2v;
+                        if (tp2Hit) {
+                            trade.tp2Hit = true;
+                            await trade.save();
+                            if (isPaper) {
+                                const pQty = (trade.quantity || 0) * 0.33;
+                                const pPnl = Math.abs(tp2v - parseFloat(trade.entry)) * pQty;
+                                await db.updatePaperBalance(trade.userJid, pPnl, true, false, false); // ✅ BUG 1+2 FIX: isWin=true, countTrade=false (partial)
+                                await conn.sendMessage(trade.userJid, { text:
+                                    `🎯 *PAPER TP2 HIT!* 🔥\n━━━━━━━━━━━━━━━━\n` +
+                                    `🪙 *${cb}/USDT* ${de} *${dir}*\n\n` +
+                                    `🔥 TP2: $${tp2v.toFixed(4)} Hit!\n` +
+                                    `💰 +33% Profit: +$${pPnl.toFixed(2)} ✅ Auto-booked\n\n` +
+                                    `🎯 Remaining 34% → TP3: $${parseFloat(trade.tp).toFixed(4)}`,
+                                });
+                            } else {
+                                await conn.sendMessage(trade.userJid, { text:
+                                    `🎯 *TP2 HIT!* 🔥\n━━━━━━━━━━━━━━━━\n` +
+                                    `🪙 *${cb}/USDT* ${de} *${dir}*\n\n` +
+                                    `🔥 TP2: $${tp2v.toFixed(4)} Hit!\n\n` +
+                                    `*Exchange හිදී කරන්න:*\n` +
+                                    `• Position ෙන් 33% Close කරන්න\n` +
+                                    `• TP3: $${parseFloat(trade.tp).toFixed(4)} target hold`,
+                                });
+                            }
+                        }
+                    }
+
+                    // ── DCA ZONE ─────────────────────────────────────────
+                    if (trade.dcaLevel === 0) {
+                        const entryN  = parseFloat(trade.entry);
+                        const slN     = parseFloat(trade.sl);
+                        const risk    = Math.abs(entryN - slN);
+                        const dcaZone = isLong
+                            ? entryN - risk * 0.7
+                            : entryN + risk * 0.7;
+                        const atDca = isLong
+                            ? (currentPrice <= dcaZone && currentPrice > slN)
+                            : (currentPrice >= dcaZone && currentPrice < slN);
+                        if (atDca) {
+                            trade.dcaLevel = 1;
+                            await trade.save();
+                            const avg = ((trade.entry + currentPrice) / 2).toFixed(4);
+                            await conn.sendMessage(trade.userJid, { text:
+                                `⚠️ *DCA ZONE!* 📉\n━━━━━━━━━━━━━━━━\n` +
+                                `🪙 *${cb}/USDT* ${de} *${dir}*\n\n` +
+                                `📍 Entry: $${parseFloat(trade.entry).toFixed(4)}\n` +
+                                `📉 DCA Price: $${currentPrice.toFixed(4)}\n` +
+                                `📊 Avg (if DCA): $${avg}\n\n` +
+                                (isPaper
+                                    ? `• *.paper* reply කරලා 2nd position open කරන්න\n• SL: $${parseFloat(trade.sl).toFixed(4)} (unchanged)`
+                                    : `• Exchange ෙල් same margin DCA order දාන්න\n• SL: $${parseFloat(trade.sl).toFixed(4)} (unchanged)`) +
+                                `\n\n⚠️ _SL zone ළඟා නොවූ විට DCA කරන්න!_`,
+                            });
+                        }
+                    }
+
+                    // ── TRAILING SL (Break-even) ──────────────────────────
+                    if (currentSettings.trailingSl && !trade.tp1Hit) {
+                        const entryF   = parseFloat(trade.entry);
+                        const slF      = parseFloat(trade.sl);
+                        const risk     = Math.abs(entryF - slF);
+                        const beTarget = isLong
+                            ? entryF + risk
+                            : entryF - risk;
+                        let trail = false;
+                        if (isLong  && currentPrice >= beTarget && slF < entryF) { trade.sl = entryF; trail = true; }
+                        if (!isLong && currentPrice <= beTarget && slF > entryF) { trade.sl = entryF; trail = true; }
+                        if (trail) {
+                            await trade.save();
+                            await conn.sendMessage(trade.userJid, { text:
+                                `🛡️ *SL → BREAK-EVEN!*\n━━━━━━━━━━━━━━━━\n` +
+                                `🪙 *${cb}/USDT* ${de} *${dir}*\n\n` +
+                                `Stop Loss → Entry $${parseFloat(trade.entry).toFixed(4)}\n` +
+                                (isPaper ? `✅ Auto-updated` : `✅ Exchange හිදී SL update කරන්න!`) +
+                                `\n_Trade 100% Risk-Free!_ 🎉`,
+                            });
+                        }
+                    }
+
+                    // ── TP3 / SL HIT → CLOSE ─────────────────────────────
+                    let hitType = null, result = '';
+                    const tp3v = parseFloat(trade.tp), slv = parseFloat(trade.sl);
+                    if (isLong) {
+                        if (currentPrice >= tp3v)     { hitType = 'TP3'; result = 'WIN'; }
+                        else if (currentPrice <= slv) { hitType = 'SL';  result = slv > parseFloat(trade.entry) ? 'WIN' : slv === parseFloat(trade.entry) ? 'BREAK-EVEN' : 'LOSS'; }
+                    } else {
+                        if (currentPrice <= tp3v)     { hitType = 'TP3'; result = 'WIN'; }
+                        else if (currentPrice >= slv) { hitType = 'SL';  result = slv < parseFloat(trade.entry) ? 'WIN' : slv === parseFloat(trade.entry) ? 'BREAK-EVEN' : 'LOSS'; }
+                    }
+
+                    if (hitType) {
+                        const emoji = result === 'WIN' ? '🏆' : result === 'BREAK-EVEN' ? '🛡️' : '💀';
+
+                        if (isPaper) {
+                            const remFactor = trade.tp1Hit && trade.tp2Hit ? 0.34 : trade.tp1Hit ? 0.67 : 1.0;
+                            const closeQty  = (trade.quantity || 0) * remFactor;
+                            const entryF2   = parseFloat(trade.entry);
+                            const priceDiff = isLong ? currentPrice - entryF2 : entryF2 - currentPrice;
+                            const profit    = priceDiff * closeQty;
+                            const pnlPct    = trade.marginUsed > 0 ? (profit / trade.marginUsed * 100) : 0;
+                            await db.closeTrade(trade._id, result, pnlPct, profit);
+                            await db.updatePaperBalance(trade.userJid, profit, result === 'WIN', result === 'BREAK-EVEN');
+                            const user = await db.getUser(trade.userJid);
+                            await conn.sendMessage(trade.userJid, { text:
+                                `${emoji} *PAPER TRADE CLOSED!* ${hitType === 'TP3' ? '🎯' : '⛔'}\n━━━━━━━━━━━━━━━━\n` +
+                                `🪙 *${cb}/USDT* ${de} *${dir}*\n\n` +
+                                `*${result}* — ${hitType} @ $${currentPrice.toFixed(4)}\n` +
+                                `📍 Entry: $${parseFloat(trade.entry).toFixed(4)}\n` +
+                                `📋 Order: ${trade.orderType === 'LIMIT' ? '⏳ LIMIT (Filled)' : '⚡ MARKET'}\n\n` +
+                                `💰 *PnL: ${profit >= 0 ? '+' : ''}$${profit.toFixed(2)} (${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(1)}%)*\n` +
+                                `💼 Balance: $${(user.paperBalance || 0).toFixed(2)}\n\n` +
+                                `📜 *.paperhistory* | 📊 *.margin*`,
+                            });
+                        } else {
+                            const action = hitType === 'TP3'
+                                ? `• Position සම්පූර්ණයෙන් Close කරන්න\n• Profit Withdraw/Reinvest decide කරන්න`
+                                : `• Position Close කරන්න\n• Loss accept කරලා next setup බලන්න`;
+                            // ✅ BUG 4 FIX: Real trade PnL was always saved as 0 (hardcoded).
+                            // Now calculates actual PnL% from entry price.
+                            const entryF3    = parseFloat(trade.entry);
+                            const priceDiff  = isLong ? currentPrice - entryF3 : entryF3 - currentPrice;
+                            const realPnlPct = entryF3 > 0 ? (priceDiff / entryF3) * 100 : 0;
+                            await db.closeTrade(trade._id, result, parseFloat(realPnlPct.toFixed(2)), 0);
+                            await conn.sendMessage(trade.userJid, { text:
+                                `${emoji} *${hitType} HIT!* ${hitType === 'TP3' ? '🎉' : '⛔'}\n━━━━━━━━━━━━━━━━\n` +
+                                `🪙 *${cb}/USDT* ${de} *${dir}*\n\n` +
+                                `*${result}* — ${hitType} @ $${currentPrice.toFixed(4)}\n` +
+                                `📍 Entry was: $${parseFloat(trade.entry).toFixed(4)}\n\n` +
+                                `*Exchange හිදී කරන්න:*\n` + action + `\n\n` +
+                                `_✅ Bot tracking ෙන් auto-removed_`,
+                            });
+                        }
+                    }
+
+                } catch (_e) { /* skip failed individual trade */ }
+            }
+        } catch (_e) { /* top-level guard */ }
+    }, 60000);
 }
 
-// ══════════════════════════════════════════════════════════════════
-//  MTF FORECAST PANEL
-// ══════════════════════════════════════════════════════════════════
-async function loadMtfForecast() {
-  if (!_chartCoin) return;
-  const btn  = document.getElementById('mtf-refresh-btn');
-  const body = document.getElementById('mtf-body');
-  if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
-  body.innerHTML = '<div class="loading-center"><div class="spinner"></div></div>';
-  try {
-    const d = await apiFetch(`/app/api/mtf-forecast?coin=${_chartCoin}`);
-    if (!d.ok) throw new Error(d.error);
-    const forecasts = d.forecasts || {};
-    const tfOrder   = ['1H', '4H', '1D'];
-    const labels    = { '1H': '1 Hour', '4H': '4 Hour', '1D': 'Daily' };
-    body.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;padding:4px">` +
-      tfOrder.map(tf => {
-        const f = forecasts[tf];
-        if (!f) return `<div style="border:1px solid rgba(255,255,255,.07);border-radius:10px;padding:16px;text-align:center;color:var(--text2)">${labels[tf]}<br><small>No data</small></div>`;
-        const trend = (f.future_trend_4h||'').toLowerCase();
-        const isBull = trend.includes('bull'), isBear = trend.includes('bear');
-        const col   = isBull ? 'var(--green)' : isBear ? 'var(--red)' : 'var(--text2)';
-        const arrow = isBull ? '▲' : isBear ? '▼' : '→';
-        const regime = f.market_regime || '—';
-        const regCol = regime === 'Trending' ? 'var(--green)' : regime === 'Choppy' ? 'var(--red)' : 'var(--yellow)';
-        const hurst  = f.hurst_exponent != null ? parseFloat(f.hurst_exponent).toFixed(2) : '—';
-        const target = f.ai_predicted_target_price;
-        const upside = f.predicted_upside_pct;
-        return `<div style="border:1px solid ${isBull?'rgba(0,230,118,.25)':isBear?'rgba(255,51,85,.25)':'rgba(255,255,255,.07)'};border-radius:10px;padding:16px;background:rgba(0,0,0,.15)">
-          <div style="font-size:.68rem;color:var(--text2);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">${labels[tf]} Forecast</div>
-          <div style="font-size:1.2rem;font-weight:800;color:${col};margin-bottom:8px">${arrow} ${f.future_trend_4h||'—'}</div>
-          ${target ? `<div style="font-size:.78rem;margin-bottom:4px">🎯 Target: <span style="font-family:var(--font-mono);color:${col}">$${parseFloat(target).toFixed(4)}</span>
-            ${upside != null ? `<span style="font-size:.7rem;color:${parseFloat(upside)>=0?'var(--green)':'var(--red)'}"> (${parseFloat(upside)>=0?'+':''}${parseFloat(upside).toFixed(2)}%)</span>` : ''}</div>` : ''}
-          <div style="font-size:.72rem;color:var(--text2);margin-bottom:3px">Regime: <span style="color:${regCol}">${regime}</span></div>
-          <div style="font-size:.72rem;color:var(--text2);margin-bottom:3px">Hurst H: <span style="font-family:var(--font-mono)">${hurst}</span></div>
-          ${f.confidence != null ? `<div style="font-size:.72rem;color:var(--text2)">Confidence: <span style="color:var(--accent)">${Math.round(f.confidence)}%</span></div>` : ''}
-          ${f.signal_blocked ? `<div style="margin-top:8px;font-size:.7rem;color:var(--yellow);background:rgba(255,171,0,.1);border-radius:5px;padding:4px 8px">⚠️ Chop Filter Active</div>` : ''}
-          ${f.logic_reason ? `<div style="margin-top:8px;font-size:.68rem;color:var(--text2);line-height:1.5">${f.logic_reason}</div>` : ''}
-        </div>`;
-      }).join('') + `</div>
-      <div style="font-size:.7rem;color:var(--text2);padding:10px 4px 0">⚡ Leading SMC analysis — predicts where price is going, not confirming where it has been.</div>`;
-  } catch (err) {
-    body.innerHTML = `<div style="color:var(--red);padding:20px">❌ ${err.message}</div>`;
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '↺ Refresh'; }
-  }
+// ─── Signal Scanner (Event-Driven) ────────────────────────────
+
+/**
+ * Debounced scan runner.
+ * Called when a 15m candle closes. Multiple coins close at the same
+ * wall-clock second, so we collect all close events for 15 seconds
+ * before running a single scan pass.
+ */
+function scheduleDebounced() {
+    if (_debounceTimer) return;   // already waiting
+    _debounceTimer = setTimeout(async () => {
+        _debounceTimer = null;
+        await runSignalScan();
+    }, 15000);
 }
 
-// ── Live price updater for scan result ──────────────────────────────────
-let _livePriceTicker = null;
-function startLivePriceUpdate(coin) {
-  if (_livePriceTicker) clearInterval(_livePriceTicker);
-  const update = async () => {
-    const el = document.getElementById('scan-live-price');
-    if (!el) return;
+async function runSignalScan() {
+    if (!_connRef || !_ownerJidRef) return;
+
     try {
-      const r = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${coin}USDT`);
-      const d = await r.json();
-      const p = parseFloat(d.price);
-      if (!p) return;
-      const fmt = p>=10000?'$'+p.toFixed(2) : p>=1?'$'+p.toFixed(4) : '$'+p.toFixed(6);
-      el.innerHTML = `Now: <strong>${fmt}</strong>`;
-    } catch(_){}
-  };
-  update();
-  _livePriceTicker = setInterval(update, 10000);
+        const setups = await getTopDownSetups(false);  // auto-scan: respect cooldown to avoid repeating same coins
+        if (!setups || setups.length === 0) return;
+        const sent  = await getSentimentCached();
+
+        // ── Owner summary message (market overview) ────────────────
+        let summaryMsg = `🚀 *14-FACTOR AUTO SIGNAL ALERT* 🚀\n_Top ${setups.length} Best Setups Now_\n\n`;
+        summaryMsg += `🧠 *Market:* ${sent.overallSentiment} | ${sent.fngEmoji} F&G: ${sent.fngValue}\n\n`;
+        setups.forEach((s, i) => {
+            const catTag   = s.tradeCategory ? `\n   📅 ${s.tradeCategory}` : '';
+            const orderTag = s.orderType
+                ? (s.orderType.includes('LIMIT') ? ' ⏳ LIMIT' : ' ⚡ MARKET')
+                : '';
+            const dayTag   = s.dailyTrend ? ` | Daily: ${s.dailyTrend} ${s.dailyAligned ? '✅' : '⚠️'}` : '';
+            const trapTag  = s.mmTrap && (s.mmTrap.bullTrap || s.mmTrap.bearTrap) ? ` 🪤` : '';
+            const sqzTag   = s.bbSqueeze && s.bbSqueeze.exploding ? ` 💥` : '';
+            summaryMsg +=
+                `*${i + 1}. ${s.signalGradeEmoji||'📊'} ${s.signalGrade||'B'} | #${s.coin}* - ${s.type} (${s.score} ⭐) ${s.sentEmoji || ''}${orderTag}${trapTag}${sqzTag}\n` +
+                `   ${s.signalGradeLabel||''} | MTF ${s.mtfAlignCount||0}/4 aligned | Conf: ${s.confScore||0}${catTag}\n` +
+                `   📍 $${s.price} | ADX: ${s.adx}${dayTag}\n` +
+                `   ✔️ ${s.reasons}\n` +
+                `   🤖 .future ${s.coin} 15m\n\n`;
+        });
+        summaryMsg += `_⏱️ Next scan on 15m candle close | .set 1 off ගසා Stop කරන්න_`;
+
+        // Send the summary overview to owner first
+        await _connRef.sendMessage(_ownerJidRef, { text: summaryMsg.trim() });
+
+        // ── Per-user dispatch (respects tradingMode per user) ───────
+        // Each setup is broadcast individually so each user receives
+        // a clean per-coin alert and the correct mode (auto/signal).
+        for (const setup of setups) {
+            try {
+                await broadcastSignal(_connRef, setup, _ownerJidRef);
+            } catch (_be) {
+                console.warn(`[Scanner] Broadcast failed for ${setup.coin}:`, _be.message);
+            }
+        }
+
+    } catch (_e) { /* silent — keep the listener alive */ }
 }
 
-async function loadMarketScan() {
-  const body=document.getElementById('market-scan-body');
-  body.innerHTML='<div class="loading-center"><div class="spinner"></div></div>';
-  try {
-    const d=await apiFetch('/app/api/market-scan');
-    if(!d.ok){body.innerHTML='<div style="color:var(--red);padding:20px">❌ '+(d.error||'')+'</div>';return;}
-    const setups=d.setups||[];
-    // Update threshold badge
-    const badge=document.getElementById('user-threshold-badge');
-    if(badge){const t=d.userMinScore||userMinScore;badge.textContent='Min Score: '+t;}
-    body.innerHTML = setups.length===0
-      ? '<div class="empty-state"><div class="empty-icon">🔍</div><div class="empty-msg">No high-probability setups right now — try again soon.</div></div>'
-      : setups.map(s=>{
-          const isL=s.direction==='LONG';const sc=s.score>=70?'var(--green)':s.score>=45?'var(--yellow)':'var(--red)';
-          return `<div class="signal-card ${isL?'long-card':'short-card'}" style="margin-bottom:12px">
-            <div style="display:flex;align-items:center;gap:14px">
-              <div class="score-ring" style="border-color:${sc};color:${sc}">${s.score}</div>
-              <div style="flex:1">
-                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
-                  <strong style="font-family:var(--font-head);font-size:1rem">${s.coin}</strong>
-                  <span class="pill ${isL?'pill-long':'pill-short'}">${isL?'▲':'▼'} ${s.direction}</span>
-                  <span style="font-size:.72rem;color:var(--text2);font-family:var(--font-mono)">Lev:${s.leverage}x · RRR:${s.rrr}:1</span>
-                  ${s.dailyAligned===false?'<span style="font-size:.65rem;color:var(--yellow)">⚠️Daily</span>':''}
-                  ${s.fundingRate!==null&&s.fundingRate!==undefined&&Math.abs(parseFloat(s.fundingRate))>0.1?`<span style="font-size:.65rem;color:${parseFloat(s.fundingRate)>0?'var(--red)':'var(--green)'}">F:${parseFloat(s.fundingRate).toFixed(3)}%</span>`:''}
-                  ${s.isLimitEntry?'<span style="font-size:.65rem;color:var(--accent);background:rgba(0,200,255,.1);padding:1px 6px;border-radius:4px">⏳ LIMIT</span>':''}
-                  ${s.entryZoneBonus>0?`<span style="font-size:.65rem;color:var(--green);background:rgba(0,230,118,.1);padding:1px 6px;border-radius:4px">+${s.entryZoneBonus} Zone✓</span>`:''}
-                </div>
-                <div style="font-size:.78rem;color:var(--text2);font-family:var(--font-mono)">
-                  Entry:${fmtP(s.entryPrice)} · TP2:${fmtP(s.tp2)} · SL:${fmtP(s.sl)}
-                </div>
-              </div>
-              <button class="btn btn-ghost btn-sm" onclick="document.getElementById('s-coin').value='${s.coin}';doScan()">Deep Scan + Chart →</button>
-            </div>
-          </div>`;
-        }).join('') + `<div style="font-size:.75rem;color:var(--text2);margin-top:10px;text-align:right">Scanned ${d.scanned||0} coins · Min Score: ${d.userMinScore||userMinScore}</div>`;
-  } catch(e){
-    const msg = e.message.includes('Failed to fetch') ? '🌐 Cannot reach server.' : e.message.includes('HTTP 5') ? '⚙️ Server error — try again.' : '❌ '+e.message;
-    body.innerHTML='<div style="color:var(--red);padding:20px">'+msg+'</div>';
-  }
-}
-loadMarketScan();
+/**
+ * Attach the 15m candle-close listener to binance.wsEvents.
+ * Each time ANY watched coin closes its 15m bar the debounce fires.
+ */
+function startSignalScanner(conn, ownerJid) {
+    if (_scannerActive) return;
 
-// ══════════════════════════════════════════════════════════════════
-//  SCAN TAB SWITCHER
-// ══════════════════════════════════════════════════════════════════
-let _activeTab = 'normal';
-let _eliteLoaded = false;
+    _connRef       = conn;
+    _ownerJidRef   = ownerJid;
+    _scannerActive = true;
 
-function switchScanTab(tab) {
-  _activeTab = tab;
-  document.getElementById('tab-normal').style.display = tab === 'normal' ? '' : 'none';
-  document.getElementById('tab-elite').style.display  = tab === 'elite'  ? '' : 'none';
-  document.getElementById('tab-normal-btn').classList.toggle('active', tab === 'normal');
-  document.getElementById('tab-elite-btn').classList.toggle('active', tab === 'elite');
-  if (tab === 'elite' && !_eliteLoaded) { _eliteLoaded = true; loadEliteScan(); }
-}
+    _15mCloseHandler = () => scheduleDebounced();
+    binance.wsEvents.on('15m_candle_close', _15mCloseHandler);
 
-function refreshActiveScan() {
-  if (_activeTab === 'normal') loadMarketScan();
-  else { _eliteLoaded = true; loadEliteScan(); }
-}
+    console.log('[Scanner] ✅ Event-driven signal scanner started (listening for 15m closes).');
 
-// ══════════════════════════════════════════════════════════════════
-//  ELITE SCAN LOADER
-// ══════════════════════════════════════════════════════════════════
-async function loadEliteScan() {
-  const body = document.getElementById('elite-scan-body');
-  body.innerHTML = '<div class="loading-center"><div class="spinner"></div><div style="margin-top:10px;color:var(--text2);font-size:.8rem">Elite scanning... calculating bonus scores...</div></div>';
-  try {
-    const d = await apiFetch('/app/api/elite-scan');
-    if (!d.ok) { body.innerHTML = `<div style="color:var(--red);padding:20px">❌ ${d.error||'Elite scan failed'}</div>`; return; }
-
-    const setups = d.setups || [];
-    const sent   = d.sentiment || {};
-    const badge  = document.getElementById('user-threshold-badge');
-    if (badge) badge.textContent = 'Min Score: ' + (d.userMinScore || 20);
-
-    if (setups.length === 0) {
-      body.innerHTML = '<div class="empty-state"><div class="empty-icon">🏆</div><div class="empty-msg">No elite setups right now. All coins below quality threshold.</div></div>';
-      return;
+    if (binance.isReady()) {
+        runSignalScan().catch(() => {});
     }
-
-    const sentLine = sent.overall
-      ? `<div style="font-size:.75rem;color:var(--text2);margin-bottom:14px">🧠 ${sent.overall} · ${sent.fngEmoji||''} F&G: ${sent.fngValue||'N/A'} · Scanned ${d.scanned||0} coins · ${d.total||0} qualifying</div>`
-      : '';
-
-    body.innerHTML = sentLine + setups.map((s, i) => {
-      const isL  = s.direction === 'LONG';
-      const sc   = s.eliteScore >= 80 ? 'var(--green)' : s.eliteScore >= 55 ? 'var(--yellow)' : 'var(--red)';
-      const gradeCol = s.signalGrade === 'A+' ? 'var(--green)' : s.signalGrade === 'A' ? 'var(--accent)' : 'var(--yellow)';
-      const rrrN = parseFloat(s.rrr || 0);
-      const rrrCol = rrrN >= 2 ? 'var(--green)' : rrrN >= 1.5 ? 'var(--yellow)' : 'var(--red)';
-
-      // Bonus reasons as colored chips
-      const bonusChips = (s.bonusReasons || []).slice(0,4).map(r =>
-        `<span style="font-size:.65rem;background:rgba(255,171,0,.12);color:var(--yellow);border:1px solid rgba(255,171,0,.25);padding:2px 6px;border-radius:4px;white-space:nowrap">${r}</span>`
-      ).join('');
-
-      return `<div class="signal-card ${isL?'long-card':'short-card'}" style="margin-bottom:12px">
-        <div style="display:flex;align-items:flex-start;gap:12px">
-
-          <!-- Elite Score Ring (shows elite score, not base) -->
-          <div style="min-width:52px;text-align:center">
-            <div class="score-ring" style="border-color:${sc};color:${sc}">${s.eliteScore}</div>
-            <div style="font-size:.6rem;color:var(--text2);margin-top:3px">Elite</div>
-            ${s.bonusPoints > 0 ? `<div style="font-size:.6rem;color:var(--yellow)">+${s.bonusPoints} bonus</div>` : ''}
-          </div>
-
-          <div style="flex:1;min-width:0">
-            <!-- Header row -->
-            <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:5px">
-              <strong style="font-family:var(--font-head);font-size:1rem">${s.coin}</strong>
-              <span class="pill ${isL?'pill-long':'pill-short'}">${isL?'▲':'▼'} ${s.direction}</span>
-              <span style="font-size:.72rem;font-weight:700;color:${gradeCol}">${s.signalGradeEmoji||'📊'} ${s.signalGrade||'B'}</span>
-              <span style="font-size:.7rem;color:var(--text2)">MTF ${s.mtfAlignCount||0}/4</span>
-              ${s.dailyAligned === false ? '<span style="font-size:.65rem;color:var(--yellow)">⚠️Daily</span>' : '<span style="font-size:.65rem;color:var(--green)">✅Daily</span>'}
-              ${s.fundingRate !== null && s.fundingRate !== undefined && Math.abs(parseFloat(s.fundingRate)) > 0.1
-                ? `<span style="font-size:.65rem;color:${parseFloat(s.fundingRate)>0?'var(--red)':'var(--green)'}">F:${parseFloat(s.fundingRate).toFixed(3)}%</span>`
-                : ''}
-            </div>
-
-            <!-- Trade levels -->
-            <div style="font-size:.78rem;color:var(--text2);font-family:var(--font-mono);margin-bottom:6px">
-              Entry:${fmtP(s.entryPrice)} · TP2:${fmtP(s.tp2)} · SL:${fmtP(s.sl)}
-              · <span style="color:${rrrCol}">RRR ${s.rrr}:1</span>
-              · <span style="color:var(--text2)">Lev ${s.leverage}x</span>
-              · <span style="color:var(--text2)">Conf ${s.confScore||0}</span>
-            </div>
-
-            <!-- Bonus reasons (elite-only signals) -->
-            ${bonusChips ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px">${bonusChips}</div>` : ''}
-
-            <!-- Base reasons (compact) -->
-            ${s.reasons ? `<div style="font-size:.68rem;color:var(--text2);line-height:1.5;opacity:.8">${String(s.reasons).split(',').slice(0,6).join(' · ')}</div>` : ''}
-          </div>
-
-          <!-- Deep Scan button -->
-          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px;min-width:90px">
-            <button class="btn btn-primary btn-sm" style="font-size:.72rem;padding:6px 10px;white-space:nowrap"
-              onclick="document.getElementById('s-coin').value='${s.coin}';doScan()">
-              ⚡ Deep Scan
-            </button>
-            <div style="font-size:.63rem;color:var(--text2);text-align:right">Base: ${s.score}</div>
-          </div>
-
-        </div>
-      </div>`;
-    }).join('') + `<div style="font-size:.73rem;color:var(--text2);margin-top:8px;text-align:right">🏆 Ranked by Elite Score · Min Score: ${d.userMinScore||20}</div>`;
-
-  } catch(e) {
-    const msg = e.message.includes('Failed to fetch') ? '🌐 Cannot reach server.' : '❌ ' + e.message;
-    body.innerHTML = `<div style="color:var(--red);padding:20px">${msg}</div>`;
-  }
 }
-</script>
-</body>
-</html>
+
+function stopSignalScanner() {
+    if (!_scannerActive) return;
+    if (_15mCloseHandler) {
+        binance.wsEvents.off('15m_candle_close', _15mCloseHandler);
+        _15mCloseHandler = null;
+    }
+    if (_debounceTimer) {
+        clearTimeout(_debounceTimer);
+        _debounceTimer = null;
+    }
+    _scannerActive = false;
+    console.log('[Scanner] 🔴 Signal scanner stopped.');
+}
+
+// ─── Funding Rate Extreme Alert (.fundingalert) ───────────────
+/**
+ * Checks funding rates for top 15 coins.
+ * Extreme positive rate (>0.1%) = longs overloaded → SHORT squeeze risk.
+ * Extreme negative rate (<-0.1%) = shorts overloaded → LONG squeeze risk.
+ * These contrarian setups have the highest reward potential.
+ */
+cmd({
+    pattern: 'fundingalert', alias: ['funding', 'squeeze', 'fundrates'],
+    desc: 'Extreme funding rate scanner — find squeeze setups',
+    category: 'crypto', react: '💸', filename: __filename,
+},
+async (conn, mek, m, { reply }) => {
+    try {
+        await m.react('⏳');
+        const axios = require('axios');
+        const res = await axios.get('https://fapi.binance.com/fapi/v1/premiumIndex', { timeout: 8000 });
+        const data = res.data;
+        if (!data || !data.length) return await reply('❌ Funding data ලබාගැනීමට නොහැකිය.');
+
+        const coins = ['BTCUSDT','ETHUSDT','SOLUSDT','BNBUSDT','XRPUSDT','ADAUSDT','AVAXUSDT',
+                       'DOTUSDT','LINKUSDT','MATICUSDT','ATOMUSDT','NEARUSDT','LTCUSDT','DOGEUSDT','UNIUSDT'];
+
+        const extremes = [], mildLong = [], mildShort = [];
+        coins.forEach(coin => {
+            const d = data.find(x => x.symbol === coin);
+            if (!d) return;
+            const rate = parseFloat(d.lastFundingRate) * 100;
+            const name = coin.replace('USDT','');
+            if (rate > 0.1)       extremes.push({ name, rate, dir: 'SHORT', label: `🔴 Longs overloaded → SHORT squeeze!` });
+            else if (rate < -0.1) extremes.push({ name, rate, dir: 'LONG',  label: `🟢 Shorts overloaded → LONG squeeze!` });
+            else if (rate > 0.05) mildLong.push({ name, rate });
+            else if (rate < -0.05) mildShort.push({ name, rate });
+        });
+
+        extremes.sort((a,b) => Math.abs(b.rate) - Math.abs(a.rate));
+
+        let msg = `💸 *FUNDING RATE EXTREME SCANNER*\n━━━━━━━━━━━━━━━━━━\n\n`;
+        if (extremes.length === 0) {
+            msg += `⚪ *No extreme funding rates right now.*\nAll rates within normal range (-0.1% ~ +0.1%).\n\n`;
+        } else {
+            msg += `🚨 *EXTREME RATES (>0.1%) — Squeeze Risk!*\n`;
+            extremes.forEach(e => {
+                const sign = e.rate > 0 ? '+' : '';
+                msg += `\n💀 *#${e.name}* — ${sign}${e.rate.toFixed(4)}%\n`;
+                msg += `   ${e.label}\n`;
+                msg += `   🤖 *.future ${e.name}* (look for ${e.dir} setup)\n`;
+            });
+            msg += '\n';
+        }
+        if (mildLong.length || mildShort.length) {
+            msg += `━━━━━━━━━━━━━━━━━━\n⚠️ *Elevated Rates (Watch)*\n`;
+            mildLong.forEach(e  => msg += `🔴 #${e.name}: +${e.rate.toFixed(4)}% (Longs paying)\n`);
+            mildShort.forEach(e => msg += `🟢 #${e.name}: ${e.rate.toFixed(4)}% (Shorts paying)\n`);
+        }
+        msg += `\n━━━━━━━━━━━━━━━━━━\n💡 *Funding Rate Guide:*\n`;
+        msg += `> +0.1%+ = Longs crowded → Short squeeze imminent\n`;
+        msg += `< -0.1% = Shorts crowded → Long squeeze imminent\n`;
+        msg += `0.01% neutral zone = balanced market\n\n`;
+        msg += `_ℹ️ Every 8h funds transfer. Next: check .news for sentiment_`;
+
+        await reply(msg.trim());
+        await m.react('✅');
+    } catch(e) { await reply('❌ Error: ' + e.message); }
+});
+
+// ─── Manual Scan Command (.scan) ──────────────────────────────
+cmd({
+    pattern:  'scan',
+    alias:    ['superscan', 'scanner'],
+    desc:     'Manual Market Scan - Top 5 Best Setups',
+    category: 'crypto',
+    react:    '🔍',
+    filename: __filename,
+},
+async (conn, mek, m, { reply }) => {
+    try {
+        await m.react('⏳');
+
+        const wsStatus = binance.isReady()
+            ? '🟢 *WebSocket:* LIVE (Zero-Latency Cache Active)'
+            : '🟡 *WebSocket:* Initialising...';
+        const scanStatus = _scannerActive
+            ? '🟢 *Auto Scanner:* ON (.set 1 off ගසා Stop)'
+            : '🔴 *Auto Scanner:* OFF (.set 1 on ගසා Start)';
+
+        await reply(
+            `🔍 *MANUAL SCAN ක්‍රියාත්මක වේ...*\n${wsStatus}\n${scanStatus}\n\n` +
+            `Top ${binance.isReady() ? binance.getWatchedCoins().length : 20} Coins Scan වෙමින් පවතී... ⏳\n` +
+            `_(No REST polling — reads from live WS cache)_`
+        );
+
+        const setups = await getTopDownSetups(true);  // ignoreCooldown: manual scan always shows current best
+
+        if (setups.length === 0) {
+            return await reply(
+                `╔═══════════════════════════╗\n║  🔍 *MANUAL SCAN RESULTS*  ║\n╚═══════════════════════════╝\n\n` +
+                `Score 20/100 ට වඩා ලබාගත් Setups දැනට නොමැත. ⚪\n\nකිසිවේලාවකට පසු නැවත .scan ගසන්න.\n\n${scanStatus}`
+            );
+        }
+
+        const sent = await getSentimentCached();
+        let outMsg = `╔═══════════════════════════╗\n║  🎯 *TOP 5 SNIPER SETUPS*  ║\n╚═══════════════════════════╝\n\n`;
+        outMsg += `🧠 *Market Sentiment:* ${sent.overallSentiment}\n`;
+        outMsg += `${sent.fngEmoji} F&G: ${sent.fngValue} | ₿ BTC.D: ${sent.btcDominance}% | 📰 ${sent.newsSentimentScore > 0 ? '+' : ''}${sent.newsSentimentScore}\n\n`;
+
+        setups.forEach((s, i) => {
+            const mSweep    = s.liquiditySweep !== 'None'  ? `\n   💧 ${s.liquiditySweep}` : '';
+            const mChoch    = s.choch !== 'None'           ? `\n   🔄 ${s.choch}` : '';
+            const mChoch5m  = s.choch5m && s.choch5m !== 'None' ? `\n   ⚡ 5m: ${s.choch5m}` : '';
+            const catLine   = s.tradeCategory              ? `\n   📅 ${s.tradeCategory}` : '';
+            const orderTag  = s.orderType
+                ? (s.orderType.includes('LIMIT') ? '\n   📋 ⏳ LIMIT ORDER' : '\n   📋 ⚡ MARKET ORDER')
+                : '';
+            const dayTag    = s.dailyTrend ? `\n   📅 Daily: ${s.dailyTrend} ${s.dailyAligned ? '✅' : '⚠️'}` : '';
+            const trapTag   = s.mmTrap && (s.mmTrap.bullTrap || s.mmTrap.bearTrap)
+                ? `\n   🪤 ${s.mmTrap.display}` : '';
+            const sqzTag    = s.bbSqueeze && (s.bbSqueeze.exploding || s.bbSqueeze.isSqueezing)
+                ? `\n   ${s.bbSqueeze.exploding ? '💥' : '⚡'} ${s.bbSqueeze.display}` : '';
+            const tfTag     = s.tf3Align && s.tf3Align.aligned
+                ? `\n   ✅ ${s.tf3Align.display}` : '';
+            const confTag   = `\n   🔒 Confirmations: ${s.confScore || s.coreConf}/${s.confScore ? '21' : '4'} ${s.confGate ? '✅' : ''}`;
+            const wyckTag   = s.reasons && s.reasons.includes('Wyckoff') ? `\n   🌊 ${s.reasons.split(',').find(r=>r.includes('Wyckoff'))?.trim()}` : '';
+            const ichiTag   = s.reasons && s.reasons.includes('Ichimoku') ? `\n   ☁️ ${s.reasons.split(',').find(r=>r.includes('Ichimoku'))?.trim()}` : '';
+            outMsg +=
+                `*${i + 1}. #${s.coin}* - ${s.type} (Score: ${s.score} ⭐) ${s.sentEmoji || ''}\n` +
+                `   📍 Price: $${s.price} | 🔥 ADX: ${s.adx}\n` +
+                `   🎯 TP1: $${s.tp1} | TP2: $${s.tp2} | SL: $${s.sl}\n` +
+                `   ✔️ ${s.reasons}${mSweep}${mChoch}${mChoch5m}${dayTag}${trapTag}${sqzTag}${tfTag}${wyckTag}${ichiTag}${catLine}${orderTag}${confTag}\n` +
+                `   🤖 *.future ${s.coin} 15m*\n\n`;
+        });
+        outMsg += `${wsStatus}\n${scanStatus}`;
+
+        await reply(outMsg.trim());
+        await m.react('✅');
+    } catch (e) { await reply('❌ Error: ' + e.message); }
+});
+
+// ─── Exports for settings.js ───────────────────────────────────
+function getScannerStatus() {
+    return _scannerActive;
+}
+
+/**
+ * Called by settings.js when the user enables the scanner.
+ * Initialises the WebSocket (idempotent), starts trade manager,
+ * then attaches the event-driven signal scanner.
+ */
+async function startScannerFromSettings(conn, ownerJid) {
+    if (_scannerActive) return false;
+    await binance.initWebSocketStreams(30);
+    startTradeManager(conn);
+    startSignalScanner(conn, ownerJid);
+    return true;
+}
+
+function stopScannerFromSettings() {
+    if (!_scannerActive && !activeTradeManager) return false;
+    stopSignalScanner();
+    if (activeTradeManager) { clearInterval(activeTradeManager); activeTradeManager = null; }
+    return true;
+}
+
+/**
+ * ✅ FIX: Auto-start just the trade manager on every bot connect.
+ * Called from index.js after 'connection.open' fires so TP/SL monitoring
+ * works immediately without needing the user to run .set 1 on.
+ * Safe to call multiple times — startTradeManager() is idempotent.
+ */
+function autoStartTradeManager(conn) {
+    startTradeManager(conn);
+}
+
+// ── Weekly Adaptive Weight Cron ───────────────────────────────────────────
+// Every Sunday at 00:05 UTC, analyze last 7 days of closed paper trades
+// and update indicator weights for the coming week.
+async function runWeeklyAdaptiveUpdate() {
+    try {
+        const db = require('../lib/database');
+        const { computeAndSaveAdaptiveWeights } = require('../lib/dynamicWeights');
+
+        const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        const trades = await db.Trade.find({
+            status: 'closed',
+            isPaper: true,
+            result: { $in: ['WIN', 'LOSS'] },
+            closedAt: { $gte: since },
+            reasons: { $exists: true, $ne: '' },
+        }).lean();
+
+        if (trades.length >= 10) {
+            const result = await computeAndSaveAdaptiveWeights(trades);
+            if (result) {
+                console.log(`[AdaptiveWeights] Weekly update: ${result.sampleSize} trades, WR=${result.winRate?.toFixed(1)}%, ${Object.keys(result.weights).length} indicators`);
+            }
+        } else {
+            console.log(`[AdaptiveWeights] Skipping — only ${trades.length} trades (need 10+)`);
+        }
+    } catch(e) {
+        console.warn('[AdaptiveWeights] Weekly update failed:', e.message);
+    }
+}
+
+// Schedule: check every hour, run on Sundays at 00:xx UTC
+setInterval(() => {
+    const now = new Date();
+    if (now.getUTCDay() === 0 && now.getUTCHours() === 0) {
+        runWeeklyAdaptiveUpdate();
+    }
+}, 60 * 60 * 1000);
+
+// ─── Full Scan Command (.scan20) ──────────────────────────────
+cmd({
+    pattern:  'scan20',
+    alias:    ['fullscan', 'topscan', 'scan10'],
+    desc:     'Full Multi-Coin Scanner - All Qualifying Setups (Top 20)',
+    category: 'crypto',
+    react:    '🔭',
+    filename: __filename,
+},
+async (conn, mek, m, { reply }) => {
+    try {
+        await m.react('⏳');
+        await reply(`🔭 *FULL MARKET SCAN ක්‍රියාත්මක වේ...*\n⏳ Top 20 coins 14-Factor analysis...\n_ටිකක් ගන්නවා — patience!_`);
+
+        // Run full scan without the top-5 slice
+        const foundSetups = [];
+        const coinsToScan = binance.isReady()
+            ? binance.getWatchedCoins()
+            : await binance.getTopTrendingCoins(20);
+
+        for (const coin of coinsToScan) {
+            try {
+                const aData = await analyzer.run14FactorAnalysis(coin, '15m');
+                if (!aData || aData.score < 20) continue;
+                const sent     = await getSentimentCached();
+                const sentBias = parseFloat(sent.totalBias) || 0;
+                const sentBonus =
+                    (aData.direction === 'LONG'  && sentBias >= 1)  ?  1 :
+                    (aData.direction === 'SHORT' && sentBias <= -1) ?  1 :
+                    (aData.direction === 'LONG'  && sentBias <= -1) ? -1 :
+                    (aData.direction === 'SHORT' && sentBias >= 1)  ? -1 : 0;
+
+                foundSetups.push({
+                    coin:          coin.replace('USDT', ''),
+                    type:          aData.direction === 'LONG' ? 'LONG 🟢' : 'SHORT 🔴',
+                    rawScore:      aData.score + sentBonus,
+                    score:         `${aData.score + sentBonus}/${aData.maxScore || 100}`,
+                    signalGrade:   aData.signalGrade || 'C',
+                    signalGradeEmoji: aData.signalGradeEmoji || '📊',
+                    price:         aData.priceStr,
+                    entry:         aData.entryPrice,
+                    tp1:           aData.tp1,
+                    tp2:           aData.tp2,
+                    sl:            aData.sl,
+                    orderType:     aData.orderSuggestion ? aData.orderSuggestion.type : '',
+                    reasons:       aData.reasons,
+                    sentEmoji:     sentBonus > 0 ? '📰✅' : sentBonus < 0 ? '📰⚠️' : '',
+                    dailyAligned:  aData.dailyAligned,
+                    dailyTrend:    aData.dailyTrend || '',
+                    mtfAlignCount: aData.mtfAlignCount || 0,
+                });
+            } catch (_e) { /* skip failed coin */ }
+        }
+
+        foundSetups.sort((a, b) => b.rawScore - a.rawScore);
+        const top20 = foundSetups.slice(0, 20);
+
+        if (top20.length === 0) {
+            return await reply(`🔭 *FULL SCAN RESULTS*\n\n⚪ Score 20+ ලබාගත් setups නොමැත.\n\nMarket low-volume / consolidating ඇති. ටිකකට පසු නැවත scan කරන්න.`);
+        }
+
+        const sent = await getSentimentCached();
+        let out = `╔══════════════════════════════╗\n║  🔭 *FULL SCAN — TOP ${top20.length} SETUPS*  ║\n╚══════════════════════════════╝\n\n`;
+        out += `🧠 *Sentiment:* ${sent.overallSentiment} | ${sent.fngEmoji} F&G: ${sent.fngValue}\n\n`;
+
+        // Group by grade
+        const elite  = top20.filter(s => s.signalGrade === 'A+');
+        const high   = top20.filter(s => s.signalGrade === 'A');
+        const std    = top20.filter(s => s.signalGrade === 'B');
+        const watch  = top20.filter(s => !['A+','A','B'].includes(s.signalGrade));
+
+        const renderGroup = (label, items) => {
+            if (!items.length) return '';
+            let g = `*${label}*\n`;
+            items.forEach((s, i) => {
+                const orderTag = s.orderType
+                    ? (s.orderType.includes('LIMIT') ? ' ⏳' : s.orderType.includes('SKIP') ? ' ⛔' : ' ⚡')
+                    : '';
+                const dayTag = s.dailyAligned ? ' ✅D' : ' ⚠️D';
+                g += `${i+1}. *#${s.coin}* ${s.type} (${s.score})${s.sentEmoji}${orderTag}${dayTag}\n`;
+                g += `   📍 $${s.price} | TP1: $${s.tp1} | SL: $${s.sl}\n`;
+                g += `   MTF ${s.mtfAlignCount}/4 | *.future ${s.coin} 15m*\n\n`;
+            });
+            return g;
+        };
+
+        out += renderGroup('🏆 ELITE A+ SETUPS', elite);
+        out += renderGroup('🥇 HIGH QUALITY A', high);
+        out += renderGroup('🥈 STANDARD B', std);
+        out += renderGroup('👁️ WATCH (C/D)', watch);
+        out += `━━━━━━━━━━━━━━━━━━\n📊 Total qualifying: ${foundSetups.length} / ${coinsToScan.length} coins`;
+
+        await reply(out.trim());
+        await m.react('✅');
+    } catch (e) { await reply('❌ Error: ' + e.message); }
+});
+
+module.exports = { getScannerStatus, startScannerFromSettings, stopScannerFromSettings, autoStartTradeManager };
